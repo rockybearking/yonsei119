@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>카카오맵 실시간 내 위치 & 응급의료기관 조회</title>
     <link rel="stylesheet" href="style.css">
-    <!-- 카카오 지도 Web SDK (services 라이브러리 포함) -->
+    <!-- 카카오 지도 Web SDK (services 라이브러리 포함, autoload=false로 안정적 로드 제어) -->
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&libraries=services&autoload=false"></script>
 </head>
 
@@ -23,11 +23,17 @@
 </div>
 
 <!-- ======================================================================= -->
-<!-- [우측 하단] 주소 검색 입력창 및 버튼                                    -->
+<!-- [우측 하단] 실시간 병원 이름 검색창 및 자동완성 목록                    -->
 <!-- ======================================================================= -->
 <div id="search-box">
-    <input type="text" id="keyword" placeholder="주소 검색" style="border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 6px; outline: none; font-size: 12px;">
-    <button id="search-btn" style="background: #007aff; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">검색</button>
+    <!-- 위쪽으로 펼쳐지는 실시간 검색 결과 자동완성 드롭다운 -->
+    <ul id="search-results-list" class="search-results-list"></ul>
+
+    <!-- 검색 입력창 및 버튼 컨테이너 -->
+    <div class="search-input-wrap">
+        <input type="text" id="keyword" placeholder="병원 이름 검색 (예: 서울, 대구)" autocomplete="off">
+        <button id="search-btn">검색</button>
+    </div>
 </div>
 
 <!-- ======================================================================= -->
@@ -129,19 +135,37 @@
         <button id="sheet-close-btn" class="sheet-close-btn" aria-label="닫기">&times;</button>
     </div>
 
-    <!-- 바텀시트 본문: 병상 정보, 전화 통화 버튼, 응급실 특이사항 공지 -->
+    <!-- 바텀시트 본문: 병상 정보, 핫라인/대표 전화, 응급실 공지, 실시간 중증질환 수용 현황 -->
     <div class="sheet-body">
         <div class="sheet-row">
             <span class="sheet-label">응급실 가용병상</span>
             <span id="sheet-bed-badge" class="bed-badge bed-warning">확인 중</span>
         </div>
-        <div class="sheet-row">
-            <span class="sheet-label">대표 전화번호</span>
-            <a id="sheet-tel-link" href="#" class="sheet-tel-btn">📞 전화 연결</a>
+
+        <!-- 응급실 직통(핫라인) 전화 연결 행 -->
+        <div class="sheet-row" id="sheet-er-tel-row">
+            <span class="sheet-label">🚨 응급실 직통</span>
+            <a id="sheet-er-tel-link" href="#" class="sheet-tel-btn er-tel-btn">📞 응급실 통화</a>
         </div>
+
+        <!-- 병원 대표 콜센터 전화 연결 행 -->
+        <div class="sheet-row" id="sheet-main-tel-row">
+            <span class="sheet-label">🏥 대표 전화</span>
+            <a id="sheet-main-tel-link" href="#" class="sheet-tel-btn main-tel-btn">📞 대표번호 통화</a>
+        </div>
+
+        <!-- 실시간 특이사항/공지 메시지 -->
         <div class="sheet-msg-section">
             <div class="sheet-msg-title">⚠️ 실시간 응급실 진료 공지 / 특이사항</div>
             <div id="sheet-msg-content" class="sheet-msg-box">등록된 실시간 공지사항이 없습니다.</div>
+        </div>
+
+        <!-- 실시간 중증 응급질환 28개 세부 수용 현황 섹션 -->
+        <div class="sheet-severe-section">
+            <div class="sheet-severe-title">🩺 실시간 중증 응급질환 수용 현황</div>
+            <div id="sheet-severe-content" class="sheet-severe-box">
+                <span style="color:#64748b; font-size:12px;">확인 중...</span>
+            </div>
         </div>
     </div>
 </div>
