@@ -1,5 +1,5 @@
 /* ==========================================================================
-   기본 스타일 초기화 및 레이아웃 설정
+   기본 레이아웃 및 폰트 설정
    ========================================================================== */
 * {
     margin: 0;
@@ -14,9 +14,7 @@ html, body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* ==========================================================================
-   카카오 지도 전체화면 컨테이너
-   ========================================================================== */
+/* 지도 컨테이너: 화면 전체 채움 */
 #map {
     width: 100vw;
     height: 100vh;
@@ -30,7 +28,7 @@ html, body {
 }
 
 /* ==========================================================================
-   좌측 상단: 현재 내 위치 / 좌표 정보 카드
+   좌측 상단 상태 안내 카드
    ========================================================================== */
 #status-card {
     position: absolute;
@@ -44,11 +42,11 @@ html, body {
     font-size: 13px;
     line-height: 1.5;
     max-width: 340px;
-    pointer-events: none;
+    pointer-events: none; /* 지도 조작 방해 방지 */
 }
 
 /* ==========================================================================
-   우측 하단: 실시간 병원 이름 검색창 및 자동완성 목록 스타일
+   우측 하단 검색창 및 자동완성 목록 드롭다운
    ========================================================================== */
 #search-box {
     position: absolute;
@@ -102,7 +100,6 @@ html, body {
     background: #0063d1;
 }
 
-/* 실시간 검색 자동완성 드롭다운 (위쪽으로 펼쳐짐) */
 .search-results-list {
     display: none;
     position: absolute;
@@ -171,7 +168,7 @@ html, body {
 }
 
 /* ==========================================================================
-   좌측 하단 공통 플로팅 버튼 컴포넌트
+   좌측 하단 플로팅 원형 버튼 및 팝업 메뉴
    ========================================================================== */
 .floating-circle-btn {
     width: 44px;
@@ -192,7 +189,6 @@ html, body {
     transform: scale(0.92);
 }
 
-/* 3단 수직 위치 배치 */
 #my-loc-btn {
     position: absolute;
     bottom: 20px;
@@ -222,9 +218,6 @@ html, body {
     gap: 8px;
 }
 
-/* ==========================================================================
-   플로팅 팝업 메뉴 공통 스타일
-   ========================================================================== */
 .floating-popup-menu {
     display: none;
     background: rgba(255, 255, 255, 0.96);
@@ -240,7 +233,6 @@ html, body {
     flex-direction: column;
 }
 
-/* 반경 선택 버튼 그리드 레이아웃 */
 .radius-grid {
     display: none;
     grid-template-columns: repeat(2, 1fr);
@@ -281,9 +273,6 @@ html, body {
     border-color: #2563eb;
 }
 
-/* ==========================================================================
-   병원 분류 필터 팝업 및 라벨 색상 스타일
-   ========================================================================== */
 #filter-options {
     min-width: 220px;
     gap: 8px;
@@ -328,7 +317,7 @@ html, body {
 }
 
 /* ==========================================================================
-   지도 위 커스텀 마커 / 오버레이 스타일 (축소/확대 앵커 밀림 버그 수정)
+   지도 오버레이 요소 (내 위치 펄스, 반경 라벨, 병원 버블, 검색 핀)
    ========================================================================== */
 .my-location-marker {
     position: relative;
@@ -376,14 +365,13 @@ html, body {
     transition: background-color 0.2s ease;
 }
 
-/* xAnchor: 0.5, yAnchor: 1.0의 정확한 좌표를 제공하는 플렉스 컨테이너 */
 .hospital-overlay-wrapper {
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
     align-items: center;
     cursor: pointer;
     user-select: none;
-    filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.22));
+    position: relative;
 }
 
 .hospital-bubble {
@@ -394,6 +382,7 @@ html, body {
     min-width: 165px;
     font-size: 11px;
     line-height: 1.4;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22);
     transition: box-shadow 0.15s ease;
 }
 
@@ -401,7 +390,6 @@ html, body {
     box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
 }
 
-/* 실제 DOM으로 렌더링되어 꼬리 끝이 좌표 최하단(yAnchor: 1.0)에 밀착되는 삼각형 */
 .hospital-bubble-tail {
     width: 0;
     height: 0;
@@ -466,8 +454,24 @@ html, body {
 .bed-warning { background: #fef9c3; color: #a16207; }
 .bed-danger  { background: #fee2e2; color: #b91c1c; }
 
+.search-target-pin {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+    width: 36px;
+    height: 44px;
+    transform-origin: bottom center;
+    animation: popInPin 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes popInPin {
+    0% { transform: scale(0) translateY(20px); opacity: 0; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
 /* ==========================================================================
-   하단 슬라이드 바텀시트 및 딤 오버레이
+   바텀시트(Bottom Sheet) 모달 및 내비게이션 버튼 스타일
    ========================================================================== */
 .sheet-dim {
     position: fixed;
@@ -530,12 +534,13 @@ html, body {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 }
 
 .sheet-title-wrap {
     flex: 1;
-    padding-right: 12px;
+    padding-right: 8px;
+    min-width: 0;
 }
 
 .sheet-badge-wrap {
@@ -549,10 +554,82 @@ html, body {
     line-height: 1.3;
 }
 
+/* 주소 및 내비게이션 버튼을 가로로 정렬하는 행 컨테이너 */
+.sheet-address-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 5px;
+}
+
+.sheet-address-col {
+    flex: 1;
+    min-width: 0; /* 긴 주소 자동 줄바꿈 허용 */
+}
+
+.sheet-address {
+    font-size: 12.5px;
+    color: #475569;
+    line-height: 1.35;
+    word-break: keep-all;
+}
+
 .sheet-distance {
-    font-size: 12px;
+    font-size: 11.5px;
     color: #64748b;
     font-weight: 500;
+    display: inline-block;
+    margin-top: 1px;
+}
+
+/* 3대 내비게이션 바로가기 버튼 그룹 */
+.sheet-navi-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0; /* 모바일 폭 축소 시 찌그러짐 방지 */
+}
+
+/* 개별 내비게이션 버튼 공통 스타일 (모바일 터치 친화적 높이 30px 적용) */
+.navi-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 30px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none;
+    user-select: none;
+    white-space: nowrap;
+    transition: transform 0.1s ease, opacity 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.navi-btn:active {
+    transform: scale(0.93);
+    opacity: 0.85;
+}
+
+/* 카카오내비/맵 버튼 */
+.navi-kakao {
+    background-color: #fee500;
+    color: #191919;
+    border: 1px solid #facc15;
+}
+
+/* 네이버지도 버튼 */
+.navi-naver {
+    background-color: #03c75a;
+    color: #ffffff;
+}
+
+/* 티맵 버튼 */
+.navi-tmap {
+    background-color: #0046fe;
+    color: #ffffff;
 }
 
 .sheet-close-btn {
@@ -592,7 +669,6 @@ html, body {
     color: #475569;
 }
 
-/* 전화 통화 버튼 */
 .sheet-tel-btn {
     display: inline-block;
     color: #ffffff;
@@ -640,9 +716,6 @@ html, body {
     word-break: break-all;
 }
 
-/* ==========================================================================
-   실시간 중증 응급질환 28개 세부 수용 현황 스타일
-   ========================================================================== */
 .sheet-severe-section {
     margin-top: 6px;
 }
