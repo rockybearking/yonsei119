@@ -5,8 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>카카오맵 실시간 내 위치 & 응급의료기관 조회</title>
-    <link rel="stylesheet" href="style.css">
-    <!-- 카카오 지도 Web SDK (services: 지오코딩 및 장소검색 라이브러리, autoload=false: 수동 초기화 제어) -->
+    <!-- 모바일 브라우저 캐시 강제 갱신용 버전 쿼리스트링 추가 -->
+    <link rel="stylesheet" href="style.css?v=2.1">
+    <!-- 카카오 지도 Web SDK -->
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&libraries=services&autoload=false"></script>
 </head>
 
@@ -31,7 +32,7 @@
 
 <!-- [좌측 하단 3단 플로팅 메뉴 스택] -->
 
-<!-- 1. 병원 분류 필터 메뉴 (상급종합 / 지역의료 / 일반병원) -->
+<!-- 1. 병원 분류 필터 메뉴 -->
 <div id="filter-menu-wrapper">
     <div id="filter-options" class="floating-popup-menu">
         <div class="filter-title">🏥 응급실 분류 필터</div>
@@ -57,7 +58,7 @@
     </button>
 </div>
 
-<!-- 2. 탐색 반경 선택 플로팅 메뉴 (5km ~ 전국) -->
+<!-- 2. 탐색 반경 선택 플로팅 메뉴 -->
 <div id="radius-menu-wrapper">
     <div id="radius-options" class="floating-popup-menu radius-grid">
         <button class="radius-btn" data-radius="5">5km</button>
@@ -91,18 +92,16 @@
     </svg>
 </button>
 
-<!-- 카카오 지도 렌더링 컨테이너 -->
+<!-- 지도 컨테이너 -->
 <div id="map"></div>
 
-<!-- 병원 상세 정보 바텀시트 및 배경 어둡게 처리(Dim) 레이어 -->
+<!-- 병원 상세 정보 바텀시트 및 배경 Dim 레이어 -->
 <div id="sheet-dim" class="sheet-dim"></div>
 <div id="bottom-sheet" class="bottom-sheet">
-    <!-- 바텀시트 상단 모바일 터치 드래그 핸들 바 -->
     <div class="sheet-drag-handle-area" id="sheet-drag-area">
         <div class="sheet-drag-bar"></div>
     </div>
 
-    <!-- 바텀시트 헤더: 병원명, 분류 뱃지, 주소 및 3대 내비게이션 바로가기 버튼 그룹 -->
     <div class="sheet-header">
         <div class="sheet-title-wrap">
             <div class="sheet-badge-wrap">
@@ -110,30 +109,22 @@
             </div>
             <h2 id="sheet-hospital-name" class="sheet-hospital-name">병원명</h2>
 
-            <!-- 주소/거리와 내비 버튼을 좌우 배치하는 가로 컨테이너 -->
             <div class="sheet-address-row">
                 <div class="sheet-address-col">
-                    <div id="sheet-address" class="sheet-address">주소 정보가 없습니다.</div>
+                    <div id="sheet-address" class="sheet-address">주소 정보 확인 중...</div>
                     <span id="sheet-distance" class="sheet-distance">0.0km</span>
                 </div>
-                <!-- 3대 내비게이션 바로가기 버튼 그룹 (배경 로고 이미지 연하게 삽입됨) -->
+                <!-- 3대 내비게이션 바로가기 버튼 (button 태그로 변경하여 기본 점프 동작 차단) -->
                 <div class="sheet-navi-group">
-                    <a id="navi-kakao" href="#" target="_blank" rel="noopener noreferrer" class="navi-btn navi-kakao" title="카카오맵 길안내">
-                        <span class="navi-btn-text">카카오</span>
-                    </a>
-                    <a id="navi-naver" href="#" target="_blank" rel="noopener noreferrer" class="navi-btn navi-naver" title="네이버지도 길안내">
-                        <span class="navi-btn-text">네이버</span>
-                    </a>
-                    <a id="navi-tmap" href="#" class="navi-btn navi-tmap" title="티맵 길안내">
-                        <span class="navi-btn-text">티맵</span>
-                    </a>
+                    <button type="button" id="navi-kakao" class="navi-btn navi-kakao" title="카카오맵 길안내">카카오</button>
+                    <button type="button" id="navi-naver" class="navi-btn navi-naver" title="네이버지도 길안내">네이버</button>
+                    <button type="button" id="navi-tmap" class="navi-btn navi-tmap" title="티맵 길안내">티맵</button>
                 </div>
             </div>
         </div>
         <button id="sheet-close-btn" class="sheet-close-btn" aria-label="닫기">&times;</button>
     </div>
 
-    <!-- 바텀시트 본문: 가용 병상 수, 직통 전화, 실시간 제한 공지, 중증질환 수용 목록 -->
     <div class="sheet-body">
         <div class="sheet-row">
             <span class="sheet-label">응급실 가용병상</span>
@@ -164,6 +155,6 @@
     </div>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=2.1"></script>
 </body>
 </html>
