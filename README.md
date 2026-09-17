@@ -6,7 +6,7 @@
 ## 팀 멤버 및 역할
 |이름|[🧑‍🎓 김관호(조장)]|[🧑‍🎓 이재원]|[👩‍🎓 장안나]|
 |:---:|:---:|:---:|:---:|
-|학과|소프트웨어학과|소프트웨어학과|검퓨터정보통신공학부|
+|학과|소프트웨어학과|소프트웨어학과|컴퓨터정보통신공학부|
 |학번|2021245078|2023245138|2020253074|
 |역할| 프론트엔드 <br/> UI/UX 개발 <br/> | 백엔드 <br/> 공공데이터API연동 <br/> | 데이터 분석 <br/> 추천 알고리즘 설계|
 
@@ -43,3 +43,52 @@
 - 기술 스택 (Tech Stack): Vanilla Web
   - HTML5 & CSS3: 반응형 레이아웃 및 디바이스(iOS/안드로이드) 맞춤형 UI 구조 설계
   - Vanilla JavaScript: 프레임워크 없이 브라우저 내장 API(Geolocation, Fetch 등)와 카카오맵 SDK를 직접 핸들링하여 가볍고 빠른 성능 확보
+
+## Initialization
+<img src="./Assets/kakao_develop.jpg" width="300" alt="카카오_디벨로퍼_logo">
+
+- 카카오디벨로퍼스에 접속하여 JavaScript API KEY 우선적으로 획득
+<br>&nbsp;<br>
+<img src="./Assets/공공데이터포탈_logo.png" width="300" alt="카카오_디벨로퍼_logo">
+
+- 국립공공데이터포탈로 접속하여 'XML_국립중앙의료원_전국 병·의원 찾기 서비스' 활용 신청
+  - 승인을 받았다면 참고문서(이용_설명서)를 활용하여 프로젝트에 필요한 서비스를 간추려 선택.
+  - 서비스는 아래와 같음. <br>
+    <table>
+      <tr>
+        <th align="center">활용신청 상세기능정보</th>
+      </tr>
+      <tr>
+        <td align="center">응급실 실시간 가용병상정보 조회<br>/getEmrrmRltmUsefulSckbdInfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">중증질환자 수용가능정보 조회<br>/getSrsillDissAceptncPosblInfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">응급의료기관 목록정보 조회<br>/getEgytListInfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">응급의료기관 위치정보 조회<br>/getEgytLcinfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">응급의료기관 기본정보 조회<br>/getEgytBassInfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">응급의료기관 기본정보 조회<br>/getEgytBassInfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">응급의료기관 기본정보 조회<br>/getEgytBassInfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">외상센터 목록정보 조회<br>/getStrmListInfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">외상센터 위치정보 조회<br>/getStrmLcinfoInqire</td>
+      </tr>
+      <tr>
+        <td align="center">외상센터 기본정보 조회<br>/getStrmBassInfoInqire</td>
+      </tr>
+    <tr>
+      <td align="center">응급실 및 중증질환 메시지 조회<br>/getEmrrmSrsillDissMsgInqire</td>
+    </tr>
+    </table>
