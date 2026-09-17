@@ -92,7 +92,7 @@
       <td align="center">응급실 및 중증질환 메시지 조회<br>/getEmrrmSrsillDissMsgInqire</td>
     </tr>
     </table>
-  - 프로젝트에 필요한 서비스는 9개 중 4개로 결정 <br><br>
+  - 프로젝트에 필요한 서비스는 팀원 간 회의를 통해 최종적으로 9개 중 4개로 결정 <br><br>
     <table>
       <tr>
         <th align="center">선정 서비스명</th>
@@ -116,3 +116,6 @@
       </tr>
     </table> <br>
     <img src="./Assets/서비스_API.webp" alt="서비스_API">
+
+## 시스템 동작 원리
+<img src="./Assets/시스템_동작_원리.jpg" alt="시스템_동작_원">
