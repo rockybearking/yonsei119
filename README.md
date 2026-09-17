@@ -49,11 +49,11 @@
 
 - 카카오디벨로퍼스에 접속하여 JavaScript API KEY 우선적으로 획득
 <br>&nbsp;<br>
-<img src="./Assets/공공데이터포탈_logo.png" width="300" alt="카카오_디벨로퍼_logo">
+<img src="./Assets/공공데이터포탈_logo.png" width="300" alt="공공데이터포탈_logo">
 
 - 국립공공데이터포탈로 접속하여 'XML_국립중앙의료원_전국 병·의원 찾기 서비스' 활용 신청
   - 승인을 받았다면 참고문서(이용_설명서)를 활용하여 프로젝트에 필요한 서비스를 간추려 선택.
-  - 전체 서비스는 아래와 같음. <br>
+  - 전체 서비스는 아래와 같음. <br><br>
     <table>
       <tr>
         <th align="center">활용신청 상세기능정보</th>
@@ -92,4 +92,27 @@
       <td align="center">응급실 및 중증질환 메시지 조회<br>/getEmrrmSrsillDissMsgInqire</td>
     </tr>
     </table>
-  - 프로젝트에 필요한 서비스는 9개 중 4개로 결정 <br> **응급의료기관_목록정보_조회** <br> **응급실_실시간_가용병상정보_조회** <br> **응급실_및_중증질환_메시지_조회** <br> **중증질환자_수용가능정보_조회**
+  - 프로젝트에 필요한 서비스는 9개 중 4개로 결정 <br><br>
+    <table>
+      <tr>
+        <th align="center">선정 서비스명</th>
+        <th align="center">오퍼레이션 명</th>
+      </tr>
+      <tr>
+        <td><b>응급의료기관 목록정보 조회</b></td>
+        <td><code>getEgytListInfoInqire</code></td>
+      </tr>
+      <tr>
+        <td><b>응급실 실시간 가용병상정보 조회</b></td>
+        <td><code>getEmrrmRltmUsefulSckbdInfoInqire</code></td>
+      </tr>
+      <tr>
+        <td><b>응급실 및 중증질환 메시지 조회</b></td>
+        <td><code>getEmrrmSrsillDissMsgInqire</code></td>
+      </tr>
+      <tr>
+        <td><b>중증질환자 수용가능정보 조회</b></td>
+        <td><code>getSrsillDissAceptncPosblInfoInqire</code></td>
+      </tr>
+    </table> <br>
+    <img src="./Assets/서비스_API.webp" alt="서비스_API">
