@@ -764,3 +764,32 @@ html, body {
         font-size: 10.5px;
     }
 }
+
+/* ==========================================================================
+   광역/전국 축척(LOD) 초경량 미니멀 마커 스타일
+   ========================================================================== */
+.hospital-mini-dot {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    transition: transform 0.12s ease;
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
+}
+
+.hospital-mini-dot:hover, .hospital-mini-dot:active {
+    transform: scale(1.6);
+    z-index: 99;
+}
+
+/* 병상 여유 상태 색상 */
+.dot-normal  { background-color: #22c55e; }
+.dot-warning { background-color: #eab308; }
+.dot-danger  { background-color: #ef4444; }
+
+/* 병원 종류 테두리 (상급종합: 진한 레드, 지역의료: 블루, 일반: 슬레이트) */
+.border-tertiary { border: 2.5px solid #b91c1c; }
+.border-regional { border: 2.5px solid #1d4ed8; }
+.border-general  { border: 2px solid #ffffff; }

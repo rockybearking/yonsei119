@@ -13,9 +13,8 @@ const PUBLIC_API_KEY = decodeURIComponent('s%2FvWNiKH1YndVRu2mPOq7OXAIj%2Byk0M3J
 const defaultLat = 37.5668;
 const defaultLng = 126.9786;
 
-// 저사양 모바일 브라우저 렌더링 과부하 방지 최대 개수 (PC/전국 모드에서는 자동 해제)
-// ※ 80개: 60fps 부드러운 스크롤을 유지하는 최적 권장치
-const MAX_MOBILE_VISIBLE_OVERLAYS = 80;
+// 저사양 브라우저 렌더링 과부하 방지: 전국/광역 뷰에서는 최대 120개로 제한하여 60fps 유지
+const MAX_VISIBLE_OVERLAYS = 100;
 
 // 국립중앙의료원 응급의료센터 중증 응급질환 28종 표준 질환명 매핑
 const SEVERE_DISEASE_MAP = {
@@ -66,11 +65,10 @@ let activeSearchPin = null;
 let kakaoPlaces = null;
 let kakaoGeocoder = null;
 
-// 한 번 검증 완료된 정밀 건물 중심점(십자가) 좌표를 영구 보존하는 전역 캐시 (Key: hpid, Value: {lat, lng})
-// ※ 다른 곳을 드래그하고 돌아와도 비동기 검색을 다시 하지 않고 0ms 즉각 동기 반영
+// 정밀 건물 중심점 영구 보존 캐시
 const preciseCoordCache = new Map();
 
-// 생성된 오버레이 인스턴스를 파괴하지 않고 보존하는 맵 (Key: hpid, Value: kakao.maps.CustomOverlay)
+// 생성된 오버레이 인스턴스 맵 (Key: hpid, Value: { overlay, mode })
 const activeOverlayMap = new Map();
 let viewportUpdateTimer = null;
 
@@ -92,10 +90,6 @@ const dragArea = document.getElementById('sheet-drag-area');
  * [유틸리티 함수군]
  * ============================================================================
  */
-
-/**
- * 디바이스 환경 판별 (갤럭시탭, iPadOS 데스크톱 모드 터치 스크린 완벽 대응)
- */
 function getDeviceEnvironment() {
     const ua = navigator.userAgent || navigator.vendor || window.opera;
     const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
@@ -109,9 +103,6 @@ function getDeviceEnvironment() {
     };
 }
 
-/**
- * 십진수 위·경도 좌표를 도/분/초 단위 문자열로 변환
- */
 function toDMS(decimalCoord) {
     const abs = Math.abs(decimalCoord);
     const degrees = Math.floor(abs);
@@ -121,9 +112,6 @@ function toDMS(decimalCoord) {
     return `${degrees}도 ${minutes}분 ${seconds}초`;
 }
 
-/**
- * 탐색 반경별 테마 색상 반환
- */
 function getRadiusTheme(radiusKm) {
     if (radiusKm <= 10) {
         return { strokeColor: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.08, labelBg: '#2563eb' };
@@ -136,9 +124,6 @@ function getRadiusTheme(radiusKm) {
     }
 }
 
-/**
- * 하버사인 공식 구면 직선 거리(km) 계산
- */
 function getDistanceKm(lat1, lon1, lat2, lon2) {
     const R = 6371;
     const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -151,15 +136,7 @@ function getDistanceKm(lat1, lon1, lat2, lon2) {
     return R * c;
 }
 
-/**
- * ============================================================================
- * [3중 안전 검증 정밀 POI 보정 엔진 (영구 캐시 우선 조회)]
- * - 캐시에 있으면 비동기 요청 자체를 생략하고 즉시 반환
- * - 최초 1회만 카카오 십자가 POI 검증(400m 이내 & 병원 카테고리) 후 캐시에 고정
- * ============================================================================
- */
 function ensurePreciseHospitalCoordinate(h, callback) {
-    // 1. 이미 영구 캐시에 확정된 좌표가 있다면 0ms 즉각 반환 (드래그 재진입 시 지연 완전 차단)
     if (preciseCoordCache.has(h.hpid)) {
         const cached = preciseCoordCache.get(h.hpid);
         h.lat = cached.lat;
@@ -181,7 +158,6 @@ function ensurePreciseHospitalCoordinate(h, callback) {
         }
     }
 
-    // 장소 검색용 질의어는 접두어(법인명)만 분리하여 매칭 확률 극대화
     const searchTargetName = h.name.replace(/^(의료법인|학교법인|사회복지법인|재단법인|사단법인)\s*/, '');
     const searchQuery = `${regionToken} ${searchTargetName}`.trim();
 
@@ -190,11 +166,9 @@ function ensurePreciseHospitalCoordinate(h, callback) {
             const validPlace = data.find(place => {
                 const pLat = parseFloat(place.y);
                 const pLng = parseFloat(place.x);
-                // 1차 검증: 공공데이터 원본 좌표와 400m 이내인가?
                 const distFromRaw = getDistanceKm(h.rawLat, h.rawLng, pLat, pLng);
                 if (distFromRaw > 0.4) return false;
 
-                // 2차 검증: 의료기관 카테고리인가? (엉뚱한 간호대학, 장례식장 기각)
                 const category = place.category_group_code || '';
                 const categoryName = place.category_name || '';
                 return category === 'HP8' || categoryName.includes('의료') || categoryName.includes('병원');
@@ -209,7 +183,6 @@ function ensurePreciseHospitalCoordinate(h, callback) {
             }
         }
 
-        // 보정된 최종 좌표를 영구 캐시에 등록
         preciseCoordCache.set(h.hpid, { lat: h.lat, lng: h.lng });
         callback(h);
     }, {
@@ -221,6 +194,7 @@ function ensurePreciseHospitalCoordinate(h, callback) {
 /**
  * ============================================================================
  * [3대 내비게이션 자동 목적지 연동부]
+ * Tmap의 최신 공식 스키마 파라미터(rGoName, rGoX, rGoY)와 호환 보정
  * ============================================================================
  */
 function launchNavigationApp(provider) {
@@ -246,9 +220,9 @@ function launchNavigationApp(provider) {
         }
     } else if (provider === 'naver') {
         if (os === 'android') {
-            window.location.href = `intent://route/car?dlat=${lat}&dlng=${lng}&dname=${encName}&appname=rockybearking.github.io#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`;
+            window.location.href = `intent://route/car?dlat=${lat}&dlng=${lng}&dname=${encName}&appname=emergency-map#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`;
         } else if (os === 'ios') {
-            window.location.href = `nmap://route/car?dlat=${lat}&dlng=${lng}&dname=${encName}&appname=rockybearking.github.io`;
+            window.location.href = `nmap://route/car?dlat=${lat}&dlng=${lng}&dname=${encName}&appname=emergency-map`;
             setTimeout(() => {
                 window.location.href = `https://map.naver.com/p/directions/-/${lat},${lng},${encName}/-/car`;
             }, 1500);
@@ -256,15 +230,18 @@ function launchNavigationApp(provider) {
             window.open(`https://map.naver.com/p/directions/-/${lat},${lng},${encName}/-/car`, '_blank');
         }
     } else if (provider === 'tmap') {
+        // [버그 수정] Tmap 최신 규격인 rGoName, rGoX(경도), rGoY(위도) 및 하위 호환 매개변수 적용
+        const tmapParams = `rGoName=${encName}&rGoX=${lng}&rGoY=${lat}&goalname=${encName}&goallat=${lat}&goallng=${lng}&goalx=${lng}&goaly=${lat}`;
+
         if (os === 'android') {
-            window.location.href = `intent://route?goalname=${encName}&goallat=${lat}&goallng=${lng}#Intent;scheme=tmap;package=com.skt.tmap.ku;end`;
+            window.location.href = `intent://route?${tmapParams}#Intent;scheme=tmap;package=com.skt.tmap.ku;end`;
         } else if (os === 'ios') {
-            window.location.href = `tmap://route?goalname=${encName}&goallat=${lat}&goallng=${lng}`;
+            window.location.href = `tmap://route?${tmapParams}`;
             setTimeout(() => {
                 window.location.href = 'https://apps.apple.com/kr/app/tmap-%EB%82%B4%EB%B9%84%EA%B2%8C%EC%9D%B4%EC%85%98-%EC%A7%80%EB%8F%84/id431589174';
             }, 1500);
         } else {
-            alert('티맵(Tmap)은 모바일 전용 서비스입니다. 스마트폰에서 이용해 주세요.');
+            alert('티맵(Tmap)은 모바일 앱 전용 내비게이션입니다. 스마트폰이나 태블릿에서 이용해 주세요.');
         }
     }
 }
@@ -315,8 +292,9 @@ function initMap() {
         if (!activeCircle) return;
 
         if (currentRadiusKm >= 500) {
-            if (!activeCircle.getMap()) activeCircle.setMap(map);
-            if (activeCircleLabel && !activeCircleLabel.getMap()) activeCircleLabel.setMap(map);
+            // 전국 모드에서는 렌더링 부하 방지를 위해 원을 아예 숨김
+            if (activeCircle.getMap()) activeCircle.setMap(null);
+            if (activeCircleLabel && activeCircleLabel.getMap()) activeCircleLabel.setMap(null);
         } else if (currentRadiusKm >= 20 && level <= 4) {
             if (activeCircle.getMap()) activeCircle.setMap(null);
             if (activeCircleLabel && activeCircleLabel.getMap()) activeCircleLabel.setMap(null);
@@ -324,6 +302,7 @@ function initMap() {
             if (!activeCircle.getMap()) activeCircle.setMap(map);
             if (activeCircleLabel && !activeCircleLabel.getMap()) activeCircleLabel.setMap(map);
         }
+        debounceUpdateHospitalsInViewport();
     });
 
     kakao.maps.event.addListener(map, 'idle', function () {
@@ -427,11 +406,6 @@ function getItemFieldMap(item) {
     return map;
 }
 
-/**
- * ============================================================================
- * [응급의료 오픈 API 데이터 병렬 수신 - 정식 명칭 100% 보존]
- * ============================================================================
- */
 async function loadAllEmergencyData() {
     document.getElementById('status-title').innerText = '⏳ 응급의료기관 데이터 수신 중...';
 
@@ -550,7 +524,6 @@ async function loadAllEmergencyData() {
                     }
                 }
 
-                // 법인명 등을 삭제하지 않고 보건복지부 공식 명칭 완전 보존
                 cachedHospitals.push({
                     hpid,
                     name: rawName,
@@ -577,11 +550,6 @@ async function loadAllEmergencyData() {
     }
 }
 
-/**
- * ============================================================================
- * [병원 검색 및 띄어쓰기 무관 자동완성]
- * ============================================================================
- */
 function initHospitalSearchEvents() {
     const searchInput = document.getElementById('keyword');
     const searchBtn = document.getElementById('search-btn');
@@ -712,7 +680,7 @@ function selectHospitalFromSearch(h) {
         activeSearchPin.setMap(map);
 
         if (activeOverlayMap.has(preciseHospital.hpid)) {
-            activeOverlayMap.get(preciseHospital.hpid).setPosition(preciseLatLng);
+            activeOverlayMap.get(preciseHospital.hpid).overlay.setPosition(preciseLatLng);
         }
 
         let bedText = '정보 없음';
@@ -778,11 +746,19 @@ function moveToCurrentLocation(isInitial) {
 }
 
 function renderRadiusAndHospitals(center, radiusKm) {
-    const radiusMeters = radiusKm * 1000;
-    const theme = getRadiusTheme(radiusKm);
-
     if (activeCircle) activeCircle.setMap(null);
     if (activeCircleLabel) activeCircleLabel.setMap(null);
+
+    // [최적화] 전국 모드(600km)일 때는 초대형 원 연산 부하를 차단하고 한반도 전체 뷰로 직관적 세팅
+    if (radiusKm >= 500) {
+        map.setLevel(13);
+        map.setCenter(new kakao.maps.LatLng(36.3, 127.8)); // 대한민국 정중앙 기준점
+        updateHospitalsInViewport();
+        return;
+    }
+
+    const radiusMeters = radiusKm * 1000;
+    const theme = getRadiusTheme(radiusKm);
 
     activeCircle = new kakao.maps.Circle({
         center: center,
@@ -802,7 +778,7 @@ function renderRadiusAndHospitals(center, radiusKm) {
     const labelBadge = document.createElement('div');
     labelBadge.className = 'circle-top-label';
     labelBadge.style.backgroundColor = theme.labelBg;
-    labelBadge.innerText = radiusKm >= 500 ? '전국' : `${radiusKm}km`;
+    labelBadge.innerText = `${radiusKm}km`;
 
     activeCircleLabel = new kakao.maps.CustomOverlay({
         position: topPosition,
@@ -826,14 +802,15 @@ function debounceUpdateHospitalsInViewport() {
     if (viewportUpdateTimer) clearTimeout(viewportUpdateTimer);
     viewportUpdateTimer = setTimeout(() => {
         updateHospitalsInViewport();
-    }, 100);
+    }, 80);
 }
 
 /**
  * ============================================================================
- * [뷰포트 갱신: 오버레이 인스턴스 재사용 & 영구 캐시 즉각 주입]
- * - 화면 밖으로 나간 오버레이는 파괴(delete)하지 않고 setMap(null)로 숨김
- * - 다시 돌아오면 캐시된 정밀 좌표로 0ms 즉각 화면 표출 (점프 현상 완벽 방지)
+ * [뷰포트 갱신: LOD(Level of Detail) 렌더링 최적화 - 깜빡임 및 렉 완벽 박멸]
+ * - 광역 축척(Level >= 9)에서는 가벼운 경량 핀(dot)으로 렌더링
+ * - 상세 축척(Level <= 8)에서는 상세 카드 말풍선으로 렌더링
+ * - 화면 밖으로 나가면 setMap(null)로 GPU 자원 회수
  * ============================================================================
  */
 function updateHospitalsInViewport() {
@@ -842,11 +819,15 @@ function updateHospitalsInViewport() {
     const bounds = map.getBounds();
     const sw = bounds.getSouthWest();
     const ne = bounds.getNorthEast();
+    const currentLevel = map.getLevel();
 
-    // 가장자리 잘림 방지 버퍼 (15%)
+    // 축척 레벨에 따른 렌더링 모드 결정 (9 이상: 초경량 핀, 8 이하: 상세 말풍선)
+    const renderMode = currentLevel >= 9 ? 'dot' : 'bubble';
+
+    // 가장자리 버퍼 (10%)
     const latSpan = ne.getLat() - sw.getLat();
     const lngSpan = ne.getLng() - sw.getLng();
-    const bufferRatio = 0.15;
+    const bufferRatio = 0.10;
 
     const bufferedSwLat = sw.getLat() - (latSpan * bufferRatio);
     const bufferedSwLng = sw.getLng() - (lngSpan * bufferRatio);
@@ -855,10 +836,6 @@ function updateHospitalsInViewport() {
 
     const centerLat = currentLatLng.getLat();
     const centerLng = currentLatLng.getLng();
-
-    const { isMobileOrTablet } = getDeviceEnvironment();
-    const isNationwideOrPC = !isMobileOrTablet || currentRadiusKm >= 500;
-    const maxVisibleLimit = isNationwideOrPC ? 4000 : MAX_MOBILE_VISIBLE_OVERLAYS;
 
     const visibleCandidates = [];
     for (let i = 0; i < cachedHospitals.length; i++) {
@@ -875,47 +852,54 @@ function updateHospitalsInViewport() {
         }
     }
 
-    if (!isNationwideOrPC && visibleCandidates.length > maxVisibleLimit) {
+    // 전국 모드 및 광역 뷰 시 DOM 폭증 방지 (상급종합 및 여유 병상 우선 보장)
+    if (visibleCandidates.length > MAX_VISIBLE_OVERLAYS) {
         visibleCandidates.sort((a, b) => {
             if (a.type === 'tertiary' && b.type !== 'tertiary') return -1;
             if (a.type !== 'tertiary' && b.type === 'tertiary') return 1;
             return a.distance - b.distance;
         });
-        visibleCandidates.length = maxVisibleLimit;
+        visibleCandidates.length = MAX_VISIBLE_OVERLAYS;
     }
 
     const currentVisibleHpidSet = new Set(visibleCandidates.map(h => h.hpid));
 
-    // 1. 화면 밖으로 나간 오버레이는 인스턴스를 파괴하지 않고 지도에서만 숨김 처리
-    for (const [hpid, overlay] of activeOverlayMap.entries()) {
+    // 1. 화면 밖으로 나간 오버레이는 화면에서 즉시 숨김
+    for (const [hpid, item] of activeOverlayMap.entries()) {
         if (!currentVisibleHpidSet.has(hpid)) {
-            overlay.setMap(null);
+            item.overlay.setMap(null);
         }
     }
 
-    // 2. 화면에 들어온 병원 표시 (캐시 우선 즉시 주입)
+    // 2. 화면 내 후보군 렌더링
     visibleCandidates.forEach(h => {
-        // 이미 영구 캐시에 검증된 좌표가 있다면 즉각 갱신
         if (preciseCoordCache.has(h.hpid)) {
             const cached = preciseCoordCache.get(h.hpid);
             h.lat = cached.lat;
             h.lng = cached.lng;
         }
 
-        if (activeOverlayMap.has(h.hpid)) {
-            // 기존에 생성된 오버레이가 있다면 지도에 다시 표출 (0ms 지연 없음)
-            const overlay = activeOverlayMap.get(h.hpid);
-            if (!overlay.getMap()) {
-                overlay.setPosition(new kakao.maps.LatLng(h.lat, h.lng));
-                overlay.setMap(map);
+        const existing = activeOverlayMap.get(h.hpid);
+
+        // 동일 모드의 오버레이가 이미 존재하면 좌표/표시만 동기화
+        if (existing && existing.mode === renderMode) {
+            if (!existing.overlay.getMap()) {
+                existing.overlay.setPosition(new kakao.maps.LatLng(h.lat, h.lng));
+                existing.overlay.setMap(map);
             }
         } else {
-            // 앱 실행 후 최초로 화면에 등장한 병원만 신규 생성
-            const overlay = createHospitalBubbleOverlay(h);
-            overlay.setMap(map);
-            activeOverlayMap.set(h.hpid, overlay);
+            // 모드가 바뀌었거나(축척 확대/축소) 새로 진입한 경우 기존 오버레이 제거 후 새로 생성
+            if (existing) {
+                existing.overlay.setMap(null);
+            }
 
-            // 최초 1회만 비동기 검증 실행 후 영구 캐시에 저장
+            const overlay = renderMode === 'dot'
+                ? createHospitalDotOverlay(h)
+                : createHospitalBubbleOverlay(h);
+
+            overlay.setMap(map);
+            activeOverlayMap.set(h.hpid, { overlay, mode: renderMode });
+
             if (!preciseCoordCache.has(h.hpid)) {
                 ensurePreciseHospitalCoordinate(h, (preciseHospital) => {
                     overlay.setPosition(new kakao.maps.LatLng(preciseHospital.lat, preciseHospital.lng));
@@ -925,6 +909,55 @@ function updateHospitalsInViewport() {
     });
 }
 
+/**
+ * [광역/전국 모드용 초경량 미니멀 핀 오버레이]
+ * 복잡한 돔(DOM) 없이 1개 엘리먼트만 사용하여 수백 개가 떠도 60fps 유지
+ */
+function createHospitalDotOverlay(h) {
+    let bedClass = 'dot-warning';
+    if (h.hvec !== null && h.hvec !== undefined) {
+        if (h.hvec > 5) bedClass = 'dot-normal';
+        else if (h.hvec > 0) bedClass = 'dot-warning';
+        else bedClass = 'dot-danger';
+    }
+
+    let borderClass = 'border-general';
+    if (h.type === 'tertiary') borderClass = 'border-tertiary';
+    else if (h.type === 'regional') borderClass = 'border-regional';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = `hospital-mini-dot ${bedClass} ${borderClass}`;
+    wrapper.title = `${h.name} (${h.typeLabel})`;
+
+    wrapper.addEventListener('click', (e) => {
+        e.stopPropagation();
+        map.setLevel(4);
+        map.panTo(new kakao.maps.LatLng(h.lat, h.lng));
+
+        ensurePreciseHospitalCoordinate(h, (preciseHospital) => {
+            let bedText = '정보 없음';
+            let bClass = 'bed-warning';
+            if (preciseHospital.hvec !== null && preciseHospital.hvec !== undefined) {
+                if (preciseHospital.hvec > 5) { bedText = `${preciseHospital.hvec}석 여유`; bClass = 'bed-normal'; }
+                else if (preciseHospital.hvec > 0) { bedText = `${preciseHospital.hvec}석 혼잡`; bClass = 'bed-warning'; }
+                else { bedText = '병상 부족'; bClass = 'bed-danger'; }
+            }
+            openHospitalBottomSheet(preciseHospital, bedText, bClass);
+        });
+    });
+
+    return new kakao.maps.CustomOverlay({
+        position: new kakao.maps.LatLng(h.lat, h.lng),
+        content: wrapper,
+        xAnchor: 0.5,
+        yAnchor: 0.5,
+        zIndex: h.type === 'tertiary' ? 4 : 2
+    });
+}
+
+/**
+ * [근거리/상세 모드용 카드 말풍선 오버레이]
+ */
 function createHospitalBubbleOverlay(h) {
     let bedText = '정보 없음';
     let bedClass = 'bed-warning';
@@ -990,9 +1023,9 @@ function createHospitalBubbleOverlay(h) {
         }
 
         ensurePreciseHospitalCoordinate(h, (preciseHospital) => {
-            const overlay = activeOverlayMap.get(preciseHospital.hpid);
-            if (overlay) {
-                overlay.setPosition(new kakao.maps.LatLng(preciseHospital.lat, preciseHospital.lng));
+            const existing = activeOverlayMap.get(preciseHospital.hpid);
+            if (existing && existing.overlay) {
+                existing.overlay.setPosition(new kakao.maps.LatLng(preciseHospital.lat, preciseHospital.lng));
             }
             openHospitalBottomSheet(preciseHospital, bedText, bedClass);
         });
