@@ -3,17 +3,20 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>카카오맵 실시간 내 위치 & 응급의료기관 조회</title>
-    <!-- 모바일 브라우저 캐시 강제 갱신용 버전 쿼리스트링 추가 -->
-    <link rel="stylesheet" href="style.css?v=2.1">
+    <!-- viewport-fit=cover: 모바일/태블릿 노치 및 Safe Area 대응 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>카카오맵 실시간 내 위치 & 응급의료기관 정밀 조회</title>
+
+    <!-- 모바일 브라우저 캐시 방지용 버전 파라미터 -->
+    <link rel="stylesheet" href="style.css?v=3.3">
+
     <!-- 카카오 지도 Web SDK -->
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&libraries=services&autoload=false"></script>
 </head>
 
 <body>
 
-<!-- [좌측 상단] 실시간 GPS 수신 상태 및 도/분/초 단위 정밀 좌표 안내 카드 -->
+<!-- [좌측 상단] 실시간 GPS 수신 상태 및 정밀 좌표 안내 카드 -->
 <div id="status-card">
     <strong id="status-title" style="color: #007aff;">📍 위치 확인 중...</strong>
     <div id="coords" style="color: #475569; margin-top: 5px; line-height: 1.6;">
@@ -21,16 +24,16 @@
     </div>
 </div>
 
-<!-- [우측 하단] 실시간 병원 이름 검색창 및 키워드 자동완성 드롭다운 -->
+<!-- [우측 하단] 띄어쓰기 무관 병원 검색창 및 자동완성 드롭다운 -->
 <div id="search-box">
     <ul id="search-results-list" class="search-results-list"></ul>
     <div class="search-input-wrap">
-        <input type="text" id="keyword" placeholder="병원 이름 검색" autocomplete="off">
+        <input type="text" id="keyword" placeholder="병원 이름 검색 (띄어쓰기 무관)" autocomplete="off">
         <button id="search-btn">검색</button>
     </div>
 </div>
 
-<!-- [좌측 하단 3단 플로팅 메뉴 스택] -->
+<!-- [좌측 하단 플로팅 메뉴 스택] -->
 
 <!-- 1. 병원 분류 필터 메뉴 -->
 <div id="filter-menu-wrapper">
@@ -92,10 +95,10 @@
     </svg>
 </button>
 
-<!-- 지도 컨테이너 -->
+<!-- 카카오 지도 렌더링 컨테이너 -->
 <div id="map"></div>
 
-<!-- 병원 상세 정보 바텀시트 및 배경 Dim 레이어 -->
+<!-- 병원 상세 바텀시트 모달 -->
 <div id="sheet-dim" class="sheet-dim"></div>
 <div id="bottom-sheet" class="bottom-sheet">
     <div class="sheet-drag-handle-area" id="sheet-drag-area">
@@ -114,7 +117,7 @@
                     <div id="sheet-address" class="sheet-address">주소 정보 확인 중...</div>
                     <span id="sheet-distance" class="sheet-distance">0.0km</span>
                 </div>
-                <!-- 3대 내비게이션 바로가기 버튼 (button 태그로 변경하여 기본 점프 동작 차단) -->
+                <!-- 3대 내비게이션 바로가기 버튼 -->
                 <div class="sheet-navi-group">
                     <button type="button" id="navi-kakao" class="navi-btn navi-kakao" title="카카오맵 길안내">카카오</button>
                     <button type="button" id="navi-naver" class="navi-btn navi-naver" title="네이버지도 길안내">네이버</button>
@@ -155,6 +158,6 @@
     </div>
 </div>
 
-<script src="app.js?v=2.1"></script>
+<script src="app.js?v=3.3"></script>
 </body>
 </html>
