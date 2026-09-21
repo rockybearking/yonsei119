@@ -13,7 +13,7 @@ const PUBLIC_API_KEY = decodeURIComponent('s%2FvWNiKH1YndVRu2mPOq7OXAIj%2Byk0M3J
 const defaultLat = 37.5668;
 const defaultLng = 126.9786;
 
-// 저사양 브라우저 렌더링 과부하 방지: 전국/광역 뷰에서는 최대 120개로 제한하여 60fps 유지
+// 저사양 브라우저 렌더링 과부하 방지: 전국/광역 뷰에서는 최대 100개로 제한
 const MAX_VISIBLE_OVERLAYS = 100;
 
 // 국립중앙의료원 응급의료센터 중증 응급질환 28종 표준 질환명 매핑
@@ -72,11 +72,11 @@ const preciseCoordCache = new Map();
 const activeOverlayMap = new Map();
 let viewportUpdateTimer = null;
 
-// 분류 필터 상태
+// 필터 기본값: 상급종합병원만 활성화
 let hospitalFilters = {
     tertiary: true,
-    regional: true,
-    general: true
+    regional: false,
+    general: false
 };
 
 let currentSelectedHospital = null;
@@ -193,8 +193,143 @@ function ensurePreciseHospitalCoordinate(h, callback) {
 
 /**
  * ============================================================================
+ * [병상 상태 판정 및 통일된 링/초과 수용 처리 함수]
+ * ============================================================================
+ */
+function evaluateBedStatus(curVal, totalVal, type = 'count') {
+    // 분만실: 원형 링 디자인 통일 (가능: 정상 링, 불가: 위험 링)
+    if (type === 'delivery') {
+        const strVal = String(curVal || '').trim().toUpperCase();
+        const total = totalVal !== null && totalVal !== undefined && !isNaN(totalVal) ? Math.max(0, parseInt(totalVal, 10)) : null;
+
+        if (strVal === 'Y' || parseInt(strVal, 10) > 0) {
+            return {
+                indicatorClass: 'bed-ind-normal',
+                indicatorText: '가능',
+                valueText: total ? `가능/${total}` : '가능',
+                barClass: 'bg-normal',
+                tooltip: total ? `가능/${total}` : '가능'
+            };
+        } else if (strVal === 'N' || parseInt(strVal, 10) <= 0) {
+            return {
+                indicatorClass: 'bed-ind-danger',
+                indicatorText: '불가',
+                valueText: total ? `0/${total}` : '불가',
+                barClass: 'bg-danger',
+                tooltip: total ? `0/${total} (불가)` : '불가'
+            };
+        } else {
+            return {
+                indicatorClass: 'bed-ind-none',
+                indicatorText: '-',
+                valueText: '-',
+                barClass: 'bg-muted',
+                tooltip: '정보 없음'
+            };
+        }
+    }
+
+    if (curVal === null || curVal === undefined || isNaN(curVal)) {
+        return {
+            indicatorClass: 'bed-ind-none',
+            indicatorText: '-',
+            valueText: '-',
+            barClass: 'bg-muted',
+            tooltip: '정보 없음'
+        };
+    }
+
+    const rawCur = parseInt(curVal, 10);
+    const rawTotal = totalVal !== null && totalVal !== undefined && !isNaN(totalVal) ? parseInt(totalVal, 10) : null;
+    const total = rawTotal !== null ? Math.max(0, rawTotal) : null;
+
+    // 음수 병상 예외 처리: 실제 가용 병상은 0으로 두고, 초과 인원을 '초과 수용'으로 명시
+    const isOverCapacity = rawCur < 0;
+    const overCapacityCount = isOverCapacity ? Math.abs(rawCur) : 0;
+    const available = Math.max(0, rawCur);
+
+    let displayVal = '';
+    let tooltipVal = '';
+
+    if (isOverCapacity) {
+        if (total !== null) {
+            displayVal = `0/${total}<span style="display:block; font-size:9.5px; color:#ef4444; font-weight:600; margin-top:2px;">${overCapacityCount}석 초과 수용</span>`;
+            tooltipVal = `0/${total} (${overCapacityCount}석 초과 수용)`;
+        } else {
+            displayVal = `0석<span style="display:block; font-size:9.5px; color:#ef4444; font-weight:600; margin-top:2px;">${overCapacityCount}석 초과 수용</span>`;
+            tooltipVal = `0석 (${overCapacityCount}석 초과 수용)`;
+        }
+    } else if (rawCur === 0) {
+        if (total !== null) {
+            displayVal = `0/${total}`;
+            tooltipVal = `0/${total} (잔여 0석)`;
+        } else {
+            displayVal = `0석`;
+            tooltipVal = `0석`;
+        }
+    } else {
+        if (total !== null) {
+            displayVal = `${available}/${total}`;
+            tooltipVal = `${available}/${total}`;
+        } else {
+            displayVal = `${available}석`;
+            tooltipVal = `${available}석`;
+        }
+    }
+
+    // 잔여 0석 이하인 경우 혼잡/초과 수용
+    if (rawCur <= 0) {
+        return {
+            indicatorClass: 'bed-ind-danger',
+            indicatorText: '혼잡',
+            valueText: displayVal,
+            barClass: 'bg-danger',
+            tooltip: `${tooltipVal} (혼잡)`
+        };
+    }
+
+    // 보통: 잔여 3석 이하 또는 가용률 25% 이하
+    const isModerate = rawCur <= 3 || (total && (rawCur / total) <= 0.25);
+    if (isModerate) {
+        return {
+            indicatorClass: 'bed-ind-warning',
+            indicatorText: '보통',
+            valueText: displayVal,
+            barClass: 'bg-warning',
+            tooltip: `${tooltipVal} (보통)`
+        };
+    }
+
+    // 원활
+    return {
+        indicatorClass: 'bed-ind-normal',
+        indicatorText: '원활',
+        valueText: displayVal,
+        barClass: 'bg-normal',
+        tooltip: `${tooltipVal} (원활)`
+    };
+}
+
+function parseBedDetailInfo(fields) {
+    const parseNum = (v) => {
+        if (v === undefined || v === null || v === '') return null;
+        const n = parseInt(v, 10);
+        return isNaN(n) ? null : n;
+    };
+
+    return {
+        er: evaluateBedStatus(parseNum(fields['hvec']), parseNum(fields['hvs01']), 'count'),
+        pediatric: evaluateBedStatus(parseNum(fields['hv28']), parseNum(fields['hvs02']), 'count'),
+        delivery: evaluateBedStatus(fields['hv41'], parseNum(fields['hvs41'] || fields['hvs47']), 'delivery'),
+        negative: evaluateBedStatus(parseNum(fields['hv29']), parseNum(fields['hvs04'] || fields['hvs03']), 'count'),
+        isolation: evaluateBedStatus(parseNum(fields['hv30']), parseNum(fields['hvs05']), 'count'),
+        cohort: evaluateBedStatus(parseNum(fields['hv42'] || fields['hv40']), parseNum(fields['hvs42'] || fields['hvs40']), 'count')
+    };
+}
+
+/**
+ * ============================================================================
  * [3대 내비게이션 자동 목적지 연동부]
- * Tmap의 최신 공식 스키마 파라미터(rGoName, rGoX, rGoY)와 호환 보정
  * ============================================================================
  */
 function launchNavigationApp(provider) {
@@ -230,7 +365,6 @@ function launchNavigationApp(provider) {
             window.open(`https://map.naver.com/p/directions/-/${lat},${lng},${encName}/-/car`, '_blank');
         }
     } else if (provider === 'tmap') {
-        // [버그 수정] Tmap 최신 규격인 rGoName, rGoX(경도), rGoY(위도) 및 하위 호환 매개변수 적용
         const tmapParams = `rGoName=${encName}&rGoX=${lng}&rGoY=${lat}&goalname=${encName}&goallat=${lat}&goallng=${lng}&goalx=${lng}&goaly=${lat}`;
 
         if (os === 'android') {
@@ -253,7 +387,7 @@ function launchNavigationApp(provider) {
  */
 function startApplication() {
     if (typeof kakao === 'undefined' || !kakao.maps) {
-        document.getElementById('status-title').innerText = '❌ 카카오 지도 SDK 로드 실패';
+        document.getElementById('status-title').innerText = '카카오 지도 SDK 로드 실패';
         return;
     }
 
@@ -292,7 +426,6 @@ function initMap() {
         if (!activeCircle) return;
 
         if (currentRadiusKm >= 500) {
-            // 전국 모드에서는 렌더링 부하 방지를 위해 원을 아예 숨김
             if (activeCircle.getMap()) activeCircle.setMap(null);
             if (activeCircleLabel && activeCircleLabel.getMap()) activeCircleLabel.setMap(null);
         } else if (currentRadiusKm >= 20 && level <= 4) {
@@ -407,7 +540,7 @@ function getItemFieldMap(item) {
 }
 
 async function loadAllEmergencyData() {
-    document.getElementById('status-title').innerText = '⏳ 응급의료기관 데이터 수신 중...';
+    document.getElementById('status-title').innerText = '응급의료기관 데이터 수신 중...';
 
     try {
         const listUrl = `https://apis.data.go.kr/B552657/ErmctInfoInqireService/getEgytListInfoInqire?serviceKey=${encodeURIComponent(PUBLIC_API_KEY)}&pageNo=1&numOfRows=1000`;
@@ -440,10 +573,14 @@ async function loadAllEmergencyData() {
         for (let i = 0; i < bedItems.length; i++) {
             const fields = getItemFieldMap(bedItems[i]);
             const hpid = fields['hpid'];
-            const hvecStr = fields['hvec'];
             if (hpid) {
+                const parsedBeds = parseBedDetailInfo(fields);
+                const hvecStr = fields['hvec'];
                 const hvecNum = hvecStr !== undefined && hvecStr !== '' ? parseInt(hvecStr, 10) : null;
-                bedMap.set(hpid, isNaN(hvecNum) ? null : hvecNum);
+                bedMap.set(hpid, {
+                    hvec: isNaN(hvecNum) ? null : hvecNum,
+                    details: parsedBeds
+                });
             }
         }
 
@@ -524,6 +661,8 @@ async function loadAllEmergencyData() {
                     }
                 }
 
+                const bedData = bedMap.get(hpid);
+
                 cachedHospitals.push({
                     hpid,
                     name: rawName,
@@ -536,17 +675,18 @@ async function loadAllEmergencyData() {
                     lng: rawLng,
                     type,
                     typeLabel,
-                    hvec: bedMap.has(hpid) ? bedMap.get(hpid) : null,
+                    hvec: bedData ? bedData.hvec : null,
+                    bedDetails: bedData ? bedData.details : parseBedDetailInfo({}),
                     message: msgMap.get(hpid) || null,
                     severeData: severeMap.get(hpid) || null
                 });
             }
         }
 
-        document.getElementById('status-title').innerText = '✅ 응급의료 데이터 준비 완료';
+        document.getElementById('status-title').innerText = '응급의료 데이터 준비 완료';
     } catch (err) {
         console.error('데이터 로드 실패:', err);
-        document.getElementById('status-title').innerText = '⚠️ 데이터 수신 지연';
+        document.getElementById('status-title').innerText = '데이터 수신 지연';
     }
 }
 
@@ -588,7 +728,7 @@ function initHospitalSearchEvents() {
                 ? `${getDistanceKm(currentLatLng.getLat(), currentLatLng.getLng(), h.lat, h.lng).toFixed(1)}km`
                 : '';
 
-            const telText = h.erTel ? `🚨 직통: ${h.erTel}` : (h.mainTel ? `📞 대표: ${h.mainTel}` : '');
+            const telText = h.erTel ? `직통: ${h.erTel}` : (h.mainTel ? `대표: ${h.mainTel}` : '');
 
             html += `
                 <li class="search-result-item" data-hpid="${h.hpid}">
@@ -683,31 +823,16 @@ function selectHospitalFromSearch(h) {
             activeOverlayMap.get(preciseHospital.hpid).overlay.setPosition(preciseLatLng);
         }
 
-        let bedText = '정보 없음';
-        let bedClass = 'bed-warning';
-        if (preciseHospital.hvec !== null && preciseHospital.hvec !== undefined) {
-            if (preciseHospital.hvec > 5) {
-                bedText = `${preciseHospital.hvec}석 여유`;
-                bedClass = 'bed-normal';
-            } else if (preciseHospital.hvec > 0) {
-                bedText = `${preciseHospital.hvec}석 혼잡`;
-                bedClass = 'bed-warning';
-            } else {
-                bedText = '병상 부족';
-                bedClass = 'bed-danger';
-            }
-        }
-
         const dist = currentLatLng ? getDistanceKm(currentLatLng.getLat(), currentLatLng.getLng(), preciseHospital.lat, preciseHospital.lng) : 0;
         const targetHospitalWithDist = { ...preciseHospital, distance: dist };
 
-        openHospitalBottomSheet(targetHospitalWithDist, bedText, bedClass);
+        openHospitalBottomSheet(targetHospitalWithDist);
     });
 }
 
 function moveToCurrentLocation(isInitial) {
     if (!navigator.geolocation) {
-        document.getElementById('status-title').innerText = '❌ Geolocation 미지원';
+        document.getElementById('status-title').innerText = 'Geolocation 미지원';
         return;
     }
 
@@ -719,7 +844,7 @@ function moveToCurrentLocation(isInitial) {
 
             currentLatLng = new kakao.maps.LatLng(lat, lng);
 
-            document.getElementById('status-title').innerText = '✅ 위치 갱신 완료';
+            document.getElementById('status-title').innerText = '위치 갱신 완료';
             document.getElementById('coords').innerHTML =
                 `• 위도: ${toDMS(lat)}<br>• 경도: ${toDMS(lng)}<br>• 오차범위: 약 ±${accuracy}m`;
 
@@ -735,7 +860,7 @@ function moveToCurrentLocation(isInitial) {
             renderRadiusAndHospitals(currentLatLng, currentRadiusKm);
         },
         function () {
-            document.getElementById('status-title').innerText = '⚠️ 기본 위치(서울시청) 적용';
+            document.getElementById('status-title').innerText = '기본 위치(서울시청) 적용';
             document.getElementById('coords').innerHTML =
                 `• 위도: ${toDMS(defaultLat)}<br>• 경도: ${toDMS(defaultLng)}<br>• 위치 권한 미허용 상태`;
             currentLatLng = new kakao.maps.LatLng(defaultLat, defaultLng);
@@ -749,10 +874,9 @@ function renderRadiusAndHospitals(center, radiusKm) {
     if (activeCircle) activeCircle.setMap(null);
     if (activeCircleLabel) activeCircleLabel.setMap(null);
 
-    // [최적화] 전국 모드(600km)일 때는 초대형 원 연산 부하를 차단하고 한반도 전체 뷰로 직관적 세팅
     if (radiusKm >= 500) {
         map.setLevel(13);
-        map.setCenter(new kakao.maps.LatLng(36.3, 127.8)); // 대한민국 정중앙 기준점
+        map.setCenter(new kakao.maps.LatLng(36.3, 127.8));
         updateHospitalsInViewport();
         return;
     }
@@ -807,10 +931,7 @@ function debounceUpdateHospitalsInViewport() {
 
 /**
  * ============================================================================
- * [뷰포트 갱신: LOD(Level of Detail) 렌더링 최적화 - 깜빡임 및 렉 완벽 박멸]
- * - 광역 축척(Level >= 9)에서는 가벼운 경량 핀(dot)으로 렌더링
- * - 상세 축척(Level <= 8)에서는 상세 카드 말풍선으로 렌더링
- * - 화면 밖으로 나가면 setMap(null)로 GPU 자원 회수
+ * [뷰포트 갱신: LOD(Level of Detail) 렌더링 최적화]
  * ============================================================================
  */
 function updateHospitalsInViewport() {
@@ -821,10 +942,8 @@ function updateHospitalsInViewport() {
     const ne = bounds.getNorthEast();
     const currentLevel = map.getLevel();
 
-    // 축척 레벨에 따른 렌더링 모드 결정 (9 이상: 초경량 핀, 8 이하: 상세 말풍선)
     const renderMode = currentLevel >= 9 ? 'dot' : 'bubble';
 
-    // 가장자리 버퍼 (10%)
     const latSpan = ne.getLat() - sw.getLat();
     const lngSpan = ne.getLng() - sw.getLng();
     const bufferRatio = 0.10;
@@ -852,7 +971,6 @@ function updateHospitalsInViewport() {
         }
     }
 
-    // 전국 모드 및 광역 뷰 시 DOM 폭증 방지 (상급종합 및 여유 병상 우선 보장)
     if (visibleCandidates.length > MAX_VISIBLE_OVERLAYS) {
         visibleCandidates.sort((a, b) => {
             if (a.type === 'tertiary' && b.type !== 'tertiary') return -1;
@@ -864,14 +982,12 @@ function updateHospitalsInViewport() {
 
     const currentVisibleHpidSet = new Set(visibleCandidates.map(h => h.hpid));
 
-    // 1. 화면 밖으로 나간 오버레이는 화면에서 즉시 숨김
     for (const [hpid, item] of activeOverlayMap.entries()) {
         if (!currentVisibleHpidSet.has(hpid)) {
             item.overlay.setMap(null);
         }
     }
 
-    // 2. 화면 내 후보군 렌더링
     visibleCandidates.forEach(h => {
         if (preciseCoordCache.has(h.hpid)) {
             const cached = preciseCoordCache.get(h.hpid);
@@ -881,14 +997,12 @@ function updateHospitalsInViewport() {
 
         const existing = activeOverlayMap.get(h.hpid);
 
-        // 동일 모드의 오버레이가 이미 존재하면 좌표/표시만 동기화
         if (existing && existing.mode === renderMode) {
             if (!existing.overlay.getMap()) {
                 existing.overlay.setPosition(new kakao.maps.LatLng(h.lat, h.lng));
                 existing.overlay.setMap(map);
             }
         } else {
-            // 모드가 바뀌었거나(축척 확대/축소) 새로 진입한 경우 기존 오버레이 제거 후 새로 생성
             if (existing) {
                 existing.overlay.setMap(null);
             }
@@ -910,8 +1024,9 @@ function updateHospitalsInViewport() {
 }
 
 /**
- * [광역/전국 모드용 초경량 미니멀 핀 오버레이]
- * 복잡한 돔(DOM) 없이 1개 엘리먼트만 사용하여 수백 개가 떠도 60fps 유지
+ * ============================================================================
+ * [광역/전국 축척용 점(Dot) 오버레이]
+ * ============================================================================
  */
 function createHospitalDotOverlay(h) {
     let bedClass = 'dot-warning';
@@ -929,20 +1044,50 @@ function createHospitalDotOverlay(h) {
     wrapper.className = `hospital-mini-dot ${bedClass} ${borderClass}`;
     wrapper.title = `${h.name} (${h.typeLabel})`;
 
+    let isDotDragging = false;
+    let dotDownX = 0;
+    let dotDownY = 0;
+
+    wrapper.addEventListener('mousedown', (e) => {
+        isDotDragging = false;
+        dotDownX = e.clientX;
+        dotDownY = e.clientY;
+    });
+
+    wrapper.addEventListener('mousemove', (e) => {
+        if (Math.abs(e.clientX - dotDownX) > 6 || Math.abs(e.clientY - dotDownY) > 6) {
+            isDotDragging = true;
+        }
+    });
+
+    wrapper.addEventListener('touchstart', (e) => {
+        isDotDragging = false;
+        if (e.touches && e.touches[0]) {
+            dotDownX = e.touches[0].clientX;
+            dotDownY = e.touches[0].clientY;
+        }
+    }, { passive: true });
+
+    wrapper.addEventListener('touchmove', (e) => {
+        if (e.touches && e.touches[0]) {
+            if (Math.abs(e.touches[0].clientX - dotDownX) > 6 || Math.abs(e.touches[0].clientY - dotDownY) > 6) {
+                isDotDragging = true;
+            }
+        }
+    }, { passive: true });
+
     wrapper.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (isDotDragging) {
+            isDotDragging = false;
+            return;
+        }
+
         map.setLevel(4);
         map.panTo(new kakao.maps.LatLng(h.lat, h.lng));
 
         ensurePreciseHospitalCoordinate(h, (preciseHospital) => {
-            let bedText = '정보 없음';
-            let bClass = 'bed-warning';
-            if (preciseHospital.hvec !== null && preciseHospital.hvec !== undefined) {
-                if (preciseHospital.hvec > 5) { bedText = `${preciseHospital.hvec}석 여유`; bClass = 'bed-normal'; }
-                else if (preciseHospital.hvec > 0) { bedText = `${preciseHospital.hvec}석 혼잡`; bClass = 'bed-warning'; }
-                else { bedText = '병상 부족'; bClass = 'bed-danger'; }
-            }
-            openHospitalBottomSheet(preciseHospital, bedText, bClass);
+            openHospitalBottomSheet(preciseHospital);
         });
     });
 
@@ -956,7 +1101,10 @@ function createHospitalDotOverlay(h) {
 }
 
 /**
+ * ============================================================================
  * [근거리/상세 모드용 카드 말풍선 오버레이]
+ * '초과 수용' 텍스트 반영
+ * ============================================================================
  */
 function createHospitalBubbleOverlay(h) {
     let bedText = '정보 없음';
@@ -969,8 +1117,11 @@ function createHospitalBubbleOverlay(h) {
         } else if (h.hvec > 0) {
             bedText = `${h.hvec}석 혼잡`;
             bedClass = 'bed-warning';
+        } else if (h.hvec < 0) {
+            bedText = `0석 (${Math.abs(h.hvec)}석 초과 수용)`;
+            bedClass = 'bed-danger';
         } else {
-            bedText = '병상 부족';
+            bedText = '0석 (병상 부족)';
             bedClass = 'bed-danger';
         }
     }
@@ -979,7 +1130,8 @@ function createHospitalBubbleOverlay(h) {
     if (h.type === 'tertiary') typeBadgeClass = 'hospital-type-tertiary';
     else if (h.type === 'regional') typeBadgeClass = 'hospital-type-regional';
 
-    const displayTel = h.erTel ? `🚨 ${h.erTel}` : (h.mainTel ? `📞 ${h.mainTel}` : '번호 없음');
+    const displayTel = h.erTel ? `${h.erTel}` : (h.mainTel ? `${h.mainTel}` : '번호 없음');
+    const beds = h.bedDetails || parseBedDetailInfo({});
 
     const wrapper = document.createElement('div');
     wrapper.className = 'hospital-overlay-wrapper';
@@ -991,9 +1143,17 @@ function createHospitalBubbleOverlay(h) {
                 ${h.name}
             </div>
             <div class="hospital-info">${h.distance.toFixed(1)}km | ${displayTel}</div>
-            <div>
-                <span style="font-size:10px; color:#64748b;">응급실: </span>
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span style="font-size:10.5px; color:#64748b;">응급실:</span>
                 <span class="bed-badge ${bedClass}">${bedText}</span>
+            </div>
+            <div class="hospital-bed-bars" title="일반 | 소아 | 분만실 | 음압격리 | 일반격리 | 코호트">
+                <div class="bed-bar-segment ${beds.er.barClass}" title="응급실일반: ${beds.er.tooltip}"></div>
+                <div class="bed-bar-segment ${beds.pediatric.barClass}" title="응급실소아: ${beds.pediatric.tooltip}"></div>
+                <div class="bed-bar-segment ${beds.delivery.barClass}" title="분만실: ${beds.delivery.tooltip}"></div>
+                <div class="bed-bar-segment ${beds.negative.barClass}" title="음압격리: ${beds.negative.tooltip}"></div>
+                <div class="bed-bar-segment ${beds.isolation.barClass}" title="일반격리: ${beds.isolation.tooltip}"></div>
+                <div class="bed-bar-segment ${beds.cohort.barClass}" title="코호트격리: ${beds.cohort.tooltip}"></div>
             </div>
         </div>
         <div class="hospital-bubble-tail"></div>
@@ -1010,10 +1170,26 @@ function createHospitalBubbleOverlay(h) {
     });
 
     wrapper.addEventListener('mousemove', (e) => {
-        if (Math.abs(e.clientX - bubbleDownX) > 5 || Math.abs(e.clientY - bubbleDownY) > 5) {
+        if (Math.abs(e.clientX - bubbleDownX) > 6 || Math.abs(e.clientY - bubbleDownY) > 6) {
             isDraggingBubble = true;
         }
     });
+
+    wrapper.addEventListener('touchstart', (e) => {
+        isDraggingBubble = false;
+        if (e.touches && e.touches[0]) {
+            bubbleDownX = e.touches[0].clientX;
+            bubbleDownY = e.touches[0].clientY;
+        }
+    }, { passive: true });
+
+    wrapper.addEventListener('touchmove', (e) => {
+        if (e.touches && e.touches[0]) {
+            if (Math.abs(e.touches[0].clientX - bubbleDownX) > 6 || Math.abs(e.touches[0].clientY - bubbleDownY) > 6) {
+                isDraggingBubble = true;
+            }
+        }
+    }, { passive: true });
 
     wrapper.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1027,7 +1203,7 @@ function createHospitalBubbleOverlay(h) {
             if (existing && existing.overlay) {
                 existing.overlay.setPosition(new kakao.maps.LatLng(preciseHospital.lat, preciseHospital.lng));
             }
-            openHospitalBottomSheet(preciseHospital, bedText, bedClass);
+            openHospitalBottomSheet(preciseHospital);
         });
     });
 
@@ -1040,7 +1216,13 @@ function createHospitalBubbleOverlay(h) {
     });
 }
 
-function openHospitalBottomSheet(h, bedText, bedClass) {
+/**
+ * ============================================================================
+ * [바텀시트 오픈]
+ * 6열 가로 정렬 및 통일된 링 UI, '초과 수용' 텍스트 렌더링
+ * ============================================================================
+ */
+function openHospitalBottomSheet(h) {
     currentSelectedHospital = h;
 
     document.getElementById('sheet-hospital-name').innerText = h.name;
@@ -1067,7 +1249,8 @@ function openHospitalBottomSheet(h, bedText, bedClass) {
         }
     }
 
-    document.getElementById('sheet-distance').innerText = `내 위치로부터 ${h.distance.toFixed(1)}km`;
+    const distText = h.distance !== undefined ? `내 위치로부터 ${h.distance.toFixed(1)}km` : '';
+    document.getElementById('sheet-distance').innerText = distText;
 
     const typeEl = document.getElementById('sheet-hospital-type');
     typeEl.innerText = h.typeLabel;
@@ -1077,15 +1260,31 @@ function openHospitalBottomSheet(h, bedText, bedClass) {
     else if (h.type === 'regional') badgeClass = 'hospital-type-regional';
     typeEl.className = `hospital-type-badge ${badgeClass}`;
 
-    const badgeEl = document.getElementById('sheet-bed-badge');
-    badgeEl.className = `bed-badge ${bedClass}`;
-    badgeEl.innerText = bedText;
+    const beds = h.bedDetails || parseBedDetailInfo({});
+    const gridEl = document.getElementById('sheet-bed-grid');
+
+    const renderBedCol = (title, bed) => `
+        <div class="bed-col">
+            <span class="bed-col-title">${title}</span>
+            <div class="bed-status-indicator ${bed.indicatorClass}">${bed.indicatorText}</div>
+            <div class="bed-col-value" style="white-space:normal; line-height:1.25;">${bed.valueText}</div>
+        </div>
+    `;
+
+    gridEl.innerHTML = `
+        ${renderBedCol('응급실일반', beds.er)}
+        ${renderBedCol('응급실소아', beds.pediatric)}
+        ${renderBedCol('분만실', beds.delivery)}
+        ${renderBedCol('음압격리', beds.negative)}
+        ${renderBedCol('일반격리', beds.isolation)}
+        ${renderBedCol('코호트격리', beds.cohort)}
+    `;
 
     const erRow = document.getElementById('sheet-er-tel-row');
     const erLink = document.getElementById('sheet-er-tel-link');
     if (h.erTel) {
         erLink.href = `tel:${h.erTel}`;
-        erLink.innerText = `📞 ${h.erTel} 통화`;
+        erLink.innerText = `${h.erTel} 통화`;
         erRow.style.display = 'flex';
     } else {
         erRow.style.display = 'none';
@@ -1095,7 +1294,7 @@ function openHospitalBottomSheet(h, bedText, bedClass) {
     const mainLink = document.getElementById('sheet-main-tel-link');
     if (h.mainTel) {
         mainLink.href = `tel:${h.mainTel}`;
-        mainLink.innerText = `📞 ${h.mainTel} 통화`;
+        mainLink.innerText = `${h.mainTel} 통화`;
         mainRow.style.display = 'flex';
     } else {
         mainRow.style.display = 'none';
@@ -1115,16 +1314,16 @@ function openHospitalBottomSheet(h, bedText, bedClass) {
         let html = '';
 
         if (h.severeData.unavailable.length > 0) {
-            html += `<div style="font-size:11px; font-weight:700; color:#b91c1c; margin-bottom:4px;">🚨 수용 불가 질환 (${h.severeData.unavailable.length}건)</div>`;
+            html += `<div style="font-size:11px; font-weight:700; color:#b91c1c; margin-bottom:4px;">수용 불가 질환 (${h.severeData.unavailable.length}건)</div>`;
             html += '<div class="severe-grid" style="margin-bottom:10px;">';
             h.severeData.unavailable.forEach(name => {
-                html += `<span class="severe-tag imposbl">✖ ${name}</span>`;
+                html += `<span class="severe-tag imposbl">${name}</span>`;
             });
             html += '</div>';
         }
 
         if (h.severeData.available.length > 0) {
-            html += `<div style="font-size:11px; font-weight:700; color:#15803d; margin-bottom:4px;">✔ 수용 가능 질환 (${h.severeData.available.length}건)</div>`;
+            html += `<div style="font-size:11px; font-weight:700; color:#15803d; margin-bottom:4px;">수용 가능 질환 (${h.severeData.available.length}건)</div>`;
             html += '<div class="severe-grid">';
             h.severeData.available.forEach(name => {
                 html += `<span class="severe-tag posbl">${name}</span>`;

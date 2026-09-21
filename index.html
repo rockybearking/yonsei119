@@ -8,7 +8,7 @@
     <title>카카오맵 실시간 내 위치 & 응급의료기관 정밀 조회</title>
 
     <!-- 모바일 브라우저 캐시 방지용 버전 파라미터 -->
-    <link rel="stylesheet" href="style.css?v=3.3">
+    <link rel="stylesheet" href="style.css?v=3.4">
 
     <!-- 카카오 지도 Web SDK -->
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&libraries=services&autoload=false"></script>
@@ -18,7 +18,7 @@
 
 <!-- [좌측 상단] 실시간 GPS 수신 상태 및 정밀 좌표 안내 카드 -->
 <div id="status-card">
-    <strong id="status-title" style="color: #007aff;">📍 위치 확인 중...</strong>
+    <strong id="status-title" style="color: #007aff;">위치 확인 중...</strong>
     <div id="coords" style="color: #475569; margin-top: 5px; line-height: 1.6;">
         브라우저 상단의 위치 권한 팝업에서 [허용]을 눌러주세요.
     </div>
@@ -35,20 +35,20 @@
 
 <!-- [좌측 하단 플로팅 메뉴 스택] -->
 
-<!-- 1. 병원 분류 필터 메뉴 -->
+<!-- 1. 병원 분류 필터 메뉴 (기본값: 상급종합병원만 활성화) -->
 <div id="filter-menu-wrapper">
     <div id="filter-options" class="floating-popup-menu">
-        <div class="filter-title">🏥 응급실 분류 필터</div>
+        <div class="filter-title">응급실 분류 필터</div>
         <label class="filter-item">
             <input type="checkbox" id="filter-tertiary" checked>
             <span class="filter-label filter-label-tertiary">상급종합병원 (대학병원 등)</span>
         </label>
         <label class="filter-item">
-            <input type="checkbox" id="filter-regional" checked>
+            <input type="checkbox" id="filter-regional">
             <span class="filter-label filter-label-regional">지역의료 (의료원)</span>
         </label>
         <label class="filter-item">
-            <input type="checkbox" id="filter-general" checked>
+            <input type="checkbox" id="filter-general">
             <span class="filter-label filter-label-general">일반병원</span>
         </label>
     </div>
@@ -98,7 +98,7 @@
 <!-- 카카오 지도 렌더링 컨테이너 -->
 <div id="map"></div>
 
-<!-- 병원 상세 바텀시트 모달 -->
+<!-- 병원 상세 바텀시트 모달 (가로 확장 및 세분화 병상 지원) -->
 <div id="sheet-dim" class="sheet-dim"></div>
 <div id="bottom-sheet" class="bottom-sheet">
     <div class="sheet-drag-handle-area" id="sheet-drag-area">
@@ -129,28 +129,33 @@
     </div>
 
     <div class="sheet-body">
-        <div class="sheet-row">
-            <span class="sheet-label">응급실 가용병상</span>
-            <span id="sheet-bed-badge" class="bed-badge bed-warning">확인 중</span>
+        <!-- 세분화된 6종 응급실 병상 현황 (가로 1×6 그리드 정렬) -->
+        <div class="sheet-bed-overview">
+            <div class="sheet-bed-header-title">실시간 병상 세부 현황</div>
+            <div class="bed-detail-grid" id="sheet-bed-grid">
+                <!-- app.js에서 6종 병상 카드가 가로 정렬로 렌더링됩니다 -->
+            </div>
         </div>
 
-        <div class="sheet-row" id="sheet-er-tel-row">
-            <span class="sheet-label">🚨 응급실 직통</span>
-            <a id="sheet-er-tel-link" href="#" class="sheet-tel-btn er-tel-btn">📞 응급실 통화</a>
-        </div>
+        <div class="sheet-tel-section">
+            <div class="sheet-row" id="sheet-er-tel-row">
+                <span class="sheet-label">응급실 직통</span>
+                <a id="sheet-er-tel-link" href="#" class="sheet-tel-btn er-tel-btn">전화 연결</a>
+            </div>
 
-        <div class="sheet-row" id="sheet-main-tel-row">
-            <span class="sheet-label">🏥 대표 전화</span>
-            <a id="sheet-main-tel-link" href="#" class="sheet-tel-btn main-tel-btn">📞 대표번호 통화</a>
+            <div class="sheet-row" id="sheet-main-tel-row">
+                <span class="sheet-label">대표 전화</span>
+                <a id="sheet-main-tel-link" href="#" class="sheet-tel-btn main-tel-btn">전화 연결</a>
+            </div>
         </div>
 
         <div class="sheet-msg-section">
-            <div class="sheet-msg-title">⚠️ 실시간 응급실 진료 공지 / 특이사항</div>
+            <div class="sheet-msg-title">실시간 응급실 진료 공지 / 특이사항</div>
             <div id="sheet-msg-content" class="sheet-msg-box">등록된 실시간 공지사항이 없습니다.</div>
         </div>
 
         <div class="sheet-severe-section">
-            <div class="sheet-severe-title">🩺 실시간 중증 응급질환 수용 현황</div>
+            <div class="sheet-severe-title">실시간 중증 응급질환 수용 현황</div>
             <div id="sheet-severe-content" class="sheet-severe-box">
                 <span style="color:#64748b; font-size:12px;">확인 중...</span>
             </div>
@@ -158,6 +163,6 @@
     </div>
 </div>
 
-<script src="app.js?v=3.3"></script>
+<script src="app.js?v=3.4"></script>
 </body>
 </html>
