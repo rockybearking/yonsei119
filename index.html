@@ -8,13 +8,38 @@
     <title>카카오맵 실시간 내 위치 & 응급의료기관 정밀 조회</title>
 
     <!-- 모바일 브라우저 캐시 방지용 버전 파라미터 -->
-    <link rel="stylesheet" href="style.css?v=3.4">
+    <link rel="stylesheet" href="style.css?v=3.5">
 
     <!-- 카카오 지도 Web SDK -->
     <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&libraries=services&autoload=false"></script>
 </head>
 
 <body>
+
+<!-- [첫 진입 안내 팝업 모달] -->
+<div id="notice-modal-backdrop" class="notice-modal-backdrop">
+    <div class="notice-modal-box">
+        <div class="notice-modal-header">
+            <div class="notice-modal-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <span>응급의료 정보 이용 안내</span>
+            </div>
+            <button type="button" id="notice-close-btn" class="notice-close-btn" aria-label="닫기">&times;</button>
+        </div>
+        <div class="notice-modal-body">
+            <p class="notice-text">
+                <strong>[안내]</strong> 본 서비스의 병상 정보는 공공데이터 연계 주기에 따라 실제 병원 현장 및 중앙응급의료센터(E-Gen) 공식 현황과 시차가 발생할 수 있습니다. <strong>응급 상황 시 반드시 해당 기관에 유선 확인 후 방문하시기 바랍니다.</strong>
+            </p>
+        </div>
+        <div class="notice-modal-footer">
+            <button type="button" id="notice-confirm-btn" class="notice-confirm-btn">확인했습니다</button>
+        </div>
+    </div>
+</div>
 
 <!-- [좌측 상단] 실시간 GPS 수신 상태 및 정밀 좌표 안내 카드 -->
 <div id="status-card">
@@ -98,7 +123,7 @@
 <!-- 카카오 지도 렌더링 컨테이너 -->
 <div id="map"></div>
 
-<!-- 병원 상세 바텀시트 모달 (가로 확장 및 세분화 병상 지원) -->
+<!-- 병원 상세 바텀시트 모달 (5종 세분화 병상 지원) -->
 <div id="sheet-dim" class="sheet-dim"></div>
 <div id="bottom-sheet" class="bottom-sheet">
     <div class="sheet-drag-handle-area" id="sheet-drag-area">
@@ -129,11 +154,11 @@
     </div>
 
     <div class="sheet-body">
-        <!-- 세분화된 6종 응급실 병상 현황 (가로 1×6 그리드 정렬) -->
+        <!-- 5종 응급실 병상 현황 (가로 1×5 그리드 정렬) -->
         <div class="sheet-bed-overview">
             <div class="sheet-bed-header-title">실시간 병상 세부 현황</div>
             <div class="bed-detail-grid" id="sheet-bed-grid">
-                <!-- app.js에서 6종 병상 카드가 가로 정렬로 렌더링됩니다 -->
+                <!-- app.js에서 5종 병상 카드가 렌더링됩니다 -->
             </div>
         </div>
 
@@ -163,6 +188,6 @@
     </div>
 </div>
 
-<script src="app.js?v=3.4"></script>
+<script src="app.js?v=3.5"></script>
 </body>
 </html>

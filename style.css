@@ -37,6 +37,131 @@ html, body {
 }
 
 /* ==========================================================================
+   첫 진입 안내 팝업 모달
+   ========================================================================== */
+.notice-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    background: rgba(15, 23, 42, 0.65); /* 희미하고 차분한 검은 배경 */
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.notice-modal-backdrop.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.notice-modal-box {
+    background: #ffffff;
+    width: 100%;
+    max-width: 440px;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: noticePopIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes noticePopIn {
+    0% {
+        transform: scale(0.92) translateY(12px);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+}
+
+.notice-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.notice-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.notice-close-btn {
+    background: none;
+    border: none;
+    font-size: 26px;
+    line-height: 1;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 0 4px;
+    transition: color 0.15s ease;
+}
+
+.notice-close-btn:hover {
+    color: #334155;
+}
+
+.notice-modal-body {
+    padding: 20px;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: #334155;
+    word-break: keep-all;
+    background-color: #fafaf9;
+}
+
+.notice-text strong {
+    color: #be123c;
+}
+
+.notice-modal-footer {
+    padding: 12px 20px 16px 20px;
+    background: #ffffff;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.notice-confirm-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    background: #007aff;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.notice-confirm-btn:hover {
+    background: #0063d1;
+}
+
+.notice-confirm-btn:active {
+    transform: scale(0.98);
+}
+
+/* ==========================================================================
    좌측 상단 GPS 상태 카드
    ========================================================================== */
 #status-card {
@@ -501,7 +626,7 @@ html, body {
 }
 
 /* ==========================================================================
-   바텀시트 및 세분화 병상 6열 가로 정렬 UI
+   바텀시트 및 5종 세분화 병상 가로 정렬 UI
    ========================================================================== */
 .sheet-dim {
     position: fixed;
@@ -685,9 +810,10 @@ html, body {
     margin-bottom: 10px;
 }
 
+/* 코호트 삭제 후 5개 병상이 균등하고 깔끔하게 꽉 차도록 5열 그리드로 조정 */
 .bed-detail-grid {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
     width: 100%;
     overflow-x: auto;
@@ -699,7 +825,7 @@ html, body {
     flex-direction: column;
     align-items: center;
     text-align: center;
-    min-width: 58px;
+    min-width: 54px;
 }
 
 .bed-col-title {

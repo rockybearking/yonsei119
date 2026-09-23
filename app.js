@@ -310,6 +310,9 @@ function evaluateBedStatus(curVal, totalVal, type = 'count') {
     };
 }
 
+/**
+ * 5종 핵심 병상 파싱 (코호트 격리 병상 제외 완료)
+ */
 function parseBedDetailInfo(fields) {
     const parseNum = (v) => {
         if (v === undefined || v === null || v === '') return null;
@@ -322,8 +325,7 @@ function parseBedDetailInfo(fields) {
         pediatric: evaluateBedStatus(parseNum(fields['hv28']), parseNum(fields['hvs02']), 'count'),
         delivery: evaluateBedStatus(fields['hv41'], parseNum(fields['hvs41'] || fields['hvs47']), 'delivery'),
         negative: evaluateBedStatus(parseNum(fields['hv29']), parseNum(fields['hvs04'] || fields['hvs03']), 'count'),
-        isolation: evaluateBedStatus(parseNum(fields['hv30']), parseNum(fields['hvs05']), 'count'),
-        cohort: evaluateBedStatus(parseNum(fields['hv42'] || fields['hv40']), parseNum(fields['hvs42'] || fields['hvs40']), 'count')
+        isolation: evaluateBedStatus(parseNum(fields['hv30']), parseNum(fields['hvs05']), 'count')
     };
 }
 
@@ -386,6 +388,8 @@ function launchNavigationApp(provider) {
  * ============================================================================
  */
 function startApplication() {
+    initNoticeModal();
+
     if (typeof kakao === 'undefined' || !kakao.maps) {
         document.getElementById('status-title').innerText = '카카오 지도 SDK 로드 실패';
         return;
@@ -402,6 +406,35 @@ if (document.readyState === 'complete') {
     startApplication();
 } else {
     window.addEventListener('load', startApplication);
+}
+
+/**
+ * 첫 진입 안내 팝업창 바인딩
+ */
+function initNoticeModal() {
+    const backdrop = document.getElementById('notice-modal-backdrop');
+    const closeBtn = document.getElementById('notice-close-btn');
+    const confirmBtn = document.getElementById('notice-confirm-btn');
+
+    const closeNotice = () => {
+        if (backdrop) {
+            backdrop.classList.add('hidden');
+            setTimeout(() => {
+                backdrop.style.display = 'none';
+                if (map) map.relayout();
+            }, 250);
+        }
+    };
+
+    if (closeBtn) closeBtn.addEventListener('click', closeNotice);
+    if (confirmBtn) confirmBtn.addEventListener('click', closeNotice);
+
+    // 배경 클릭 시에도 닫히도록 지원
+    if (backdrop) {
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop) closeNotice();
+        });
+    }
 }
 
 function initMap() {
@@ -1103,7 +1136,7 @@ function createHospitalDotOverlay(h) {
 /**
  * ============================================================================
  * [근거리/상세 모드용 카드 말풍선 오버레이]
- * '초과 수용' 텍스트 반영
+ * (코호트 격리 세그먼트 제거 및 5종 상태 바 반영)
  * ============================================================================
  */
 function createHospitalBubbleOverlay(h) {
@@ -1147,13 +1180,12 @@ function createHospitalBubbleOverlay(h) {
                 <span style="font-size:10.5px; color:#64748b;">응급실:</span>
                 <span class="bed-badge ${bedClass}">${bedText}</span>
             </div>
-            <div class="hospital-bed-bars" title="일반 | 소아 | 분만실 | 음압격리 | 일반격리 | 코호트">
+            <div class="hospital-bed-bars" title="일반 | 소아 | 분만실 | 음압격리 | 일반격리">
                 <div class="bed-bar-segment ${beds.er.barClass}" title="응급실일반: ${beds.er.tooltip}"></div>
                 <div class="bed-bar-segment ${beds.pediatric.barClass}" title="응급실소아: ${beds.pediatric.tooltip}"></div>
                 <div class="bed-bar-segment ${beds.delivery.barClass}" title="분만실: ${beds.delivery.tooltip}"></div>
                 <div class="bed-bar-segment ${beds.negative.barClass}" title="음압격리: ${beds.negative.tooltip}"></div>
                 <div class="bed-bar-segment ${beds.isolation.barClass}" title="일반격리: ${beds.isolation.tooltip}"></div>
-                <div class="bed-bar-segment ${beds.cohort.barClass}" title="코호트격리: ${beds.cohort.tooltip}"></div>
             </div>
         </div>
         <div class="hospital-bubble-tail"></div>
@@ -1219,7 +1251,7 @@ function createHospitalBubbleOverlay(h) {
 /**
  * ============================================================================
  * [바텀시트 오픈]
- * 6열 가로 정렬 및 통일된 링 UI, '초과 수용' 텍스트 렌더링
+ * 5열 가로 정렬 및 코호트 격리 제외 렌더링
  * ============================================================================
  */
 function openHospitalBottomSheet(h) {
@@ -1271,13 +1303,13 @@ function openHospitalBottomSheet(h) {
         </div>
     `;
 
+    // 코호트 격리 항목 제외 (5종 컬럼 렌더링)
     gridEl.innerHTML = `
         ${renderBedCol('응급실일반', beds.er)}
         ${renderBedCol('응급실소아', beds.pediatric)}
         ${renderBedCol('분만실', beds.delivery)}
         ${renderBedCol('음압격리', beds.negative)}
         ${renderBedCol('일반격리', beds.isolation)}
-        ${renderBedCol('코호트격리', beds.cohort)}
     `;
 
     const erRow = document.getElementById('sheet-er-tel-row');
