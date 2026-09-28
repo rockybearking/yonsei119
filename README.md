@@ -161,12 +161,10 @@
 
 ### 2026 / 09 / 15
 
-<div style="text-align: center;">
-  <img src="./Assets/yonsei_119_1.jpg" alt="yonsei119_최초_개발_화면">
-  <p style="color: #888; font-size: 14px; margin-top: 8px;">
-    ▲ yonsei119 최초 개발 화면
-  </p>
-</div>
+<p align="center">
+  <img src="./Assets/yonsei_119_1.jpg" alt="yonsei119_최초_개발_화면" width="300"><br>
+  <sub>▲ yonsei119 최초 개발 화면</sub>
+</p>
 
 - 개선점
   - 응급실 분류 필터 필요
@@ -175,19 +173,13 @@
 
 ### 2026 / 09 / 18
 
-<div style="display: flex; justify-content: center; align-items: flex-end; gap: 24px;">
-  <!-- PC 화면 (정사각형) -->
-  <div style="text-align: center;">
-    <img src="./Assets/PC_range.jpg" alt="PC 화면" style="height: 380px; width: auto; border-radius: 6px;">
-    <p style="margin-top: 8px; font-size: 13px; color: #888;">▲ PC / 웹 뷰 화면</p>
-  </div>
-
-  <!-- 모바일 화면 (세로 직사각형) -->
-  <div style="text-align: center;">
-    <img src="./Assets/mobile_range.jpg" alt="모바일 화면" style="height: 380px; width: auto; border-radius: 6px;">
-    <p style="margin-top: 8px; font-size: 13px; color: #888;">▲ 모바일 반응형 뷰</p>
-  </div>
-</div>
+<p align="center">
+  <img src="./Assets/PC_range.jpg" alt="PC 화면" height="350">
+  &nbsp;&nbsp;
+  <img src="./Assets/mobile_range.jpg" alt="모바일 화면" height="350">
+  <br>
+  <sub>▲ (좌) PC / 웹 뷰 화면 &nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp; ▲ (우) 모바일 반응형 뷰</sub>
+</p>
 
 - 개선점
   - 중증질환자 수용가능 정보 조회 서비스 추가 필요
@@ -201,19 +193,13 @@
 
 ### 2026 / 09 / 28
 
-<div style="display: flex; justify-content: center; align-items: flex-end; gap: 20px;">
-  <!-- 병원 분류/필터 화면 -->
-  <div style="text-align: center;">
-    <img src="./Assets/Hospital_sort.jpg" alt="병원 분류 화면" style="height: 380px; width: auto; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
-    <p style="margin-top: 8px; font-size: 13px; color: #888;">▲ 병원 분류 필터 화면</p>
-  </div>
-
-  <!-- 반경 색상 화면 -->
-  <div style="text-align: center;">
-    <img src="./Assets/Circle_color.jpg" alt="반경 색상 화면" style="height: 380px; width: auto; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
-    <p style="margin-top: 8px; font-size: 13px; color: #888;">▲ 거리/상태별 반경 색상 화면</p>
-  </div>
-</div>
+<p align="center">
+  <img src="./Assets/Hospital_sort.jpg" alt="병원 분류 화면" height="350">
+  &nbsp;&nbsp;
+  <img src="./Assets/Circle_color.jpg" alt="반경 색상 화면" height="350">
+  <br>
+  <sub>▲ (좌) 병원 분류 필터 화면 &nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp; ▲ (우) 거리/상태별 반경 색상 화면</sub>
+</p>
 
 - 개선점
   - 중증질환자 수용가능 정보 조회 서비스 추가 필요
