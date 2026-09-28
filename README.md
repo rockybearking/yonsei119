@@ -139,6 +139,88 @@
 ## 시스템 동작 원리
 <img src="./Assets/시스템_동작_원리.jpg" alt="시스템_동작_원">
 
+## 타임라인
+### 2026 / 09 / 08
+- 최초 아이디어 구상
+  - 김관호: 위치 기반 데이터와 공공 API를 활용하여 야간 및 공휴일에 급하게 응급실을 찾기 위해 실시간으로 진료 가능 여부와 병상 상태를 확인하는 프로그램 <br><br>
+  - 이재원: 의료를 컨셉으로 가슴 X-Ray 사진의 데이터셋을 학습하여 폐렴 및 그 외의 흉부 질환을 AI가 탐지하여 히트마크를 색칠하여 병변을 찾는 프로그램 개발 <br><br>
+  - 장안나: 웹캠 같은 도구로 체형의 균형(척추나 목, 어깨의 각도)을 분석해서 불균형을 진단하는 프로그램 <br><br>
+  - 최종 아이디어 선택: 김관호 학우의 위치기반 & 공공 API 데이터를 연동한 응급실 병상 상황 개발 선택 <br><br>
+  - 팀원명 '닥터피쉬'로 결정
+
+### 2026 / 09 / 09
+- 플랫폼 컨셉 선택
+  - 앱 개발을 안드로이드 / iOS 동시 대응이 필요하며 특히 iOS 개발의 경우 macOS(MacBook) 및 Xcode가 필수이므로 온전한 네이티브 개발이 불가능할 것으로 판단
+  - 결국 광범위한 크로스 플랫폼의 호환성을 위해 web 개발로의 방향을 결정 개발 환경은 편리하고 사용이 쉬운 JetBrains의 WebStorm 환경 선택
+
+### 2026 / 09 / 10
+- 웹 개발을 위한 언어 사용 능력 초기 조사
+  - 김관호: HTML / CSS
+  - 이재원: Vanilla JS / API 호출 / Developer KEY 획득
+  - 장안나: 필요한 API 서비스 선정 / 비슷한 컨셉의 서비스 조사 (E-Gen 중앙응급의료서비스 '내 손안의 응급실')
+
+### 2026 / 09 / 15
+
+<div style="text-align: center;">
+  <img src="./Assets/yonsei_119_1.jpg" alt="yonsei119_최초_개발_화면">
+  <p style="color: #888; font-size: 14px; margin-top: 8px;">
+    ▲ yonsei119 최초 개발 화면
+  </p>
+</div>
+
+- 개선점
+  - 응급실 분류 필터 필요
+  - 내 위치를 중심으로 위치 반경 추가 개선
+  - 내 위치 강제 잡기 위한 버튼 추가 개선
+
+### 2026 / 09 / 18
+
+<div style="display: flex; justify-content: center; align-items: flex-end; gap: 24px;">
+  <!-- PC 화면 (정사각형) -->
+  <div style="text-align: center;">
+    <img src="./Assets/PC_range.jpg" alt="PC 화면" style="height: 380px; width: auto; border-radius: 6px;">
+    <p style="margin-top: 8px; font-size: 13px; color: #888;">▲ PC / 웹 뷰 화면</p>
+  </div>
+
+  <!-- 모바일 화면 (세로 직사각형) -->
+  <div style="text-align: center;">
+    <img src="./Assets/mobile_range.jpg" alt="모바일 화면" style="height: 380px; width: auto; border-radius: 6px;">
+    <p style="margin-top: 8px; font-size: 13px; color: #888;">▲ 모바일 반응형 뷰</p>
+  </div>
+</div>
+
+- 개선점
+  - 중증질환자 수용가능 정보 조회 서비스 추가 필요
+  - 응급실 및 중증질환 메시지 조회 서비스 추가 필요
+  - 작은 화면에선 병원 버블이 서로 겹쳐져 있어 서비스 이용에 불편함
+  - 거리에 따라 반경 원(circle)의 색깔 추가 필요
+  - 상급종합병원(대학병원) & 2차 병원 & 1차 병원의 분류 필수
+
+### 2026 / 09 / 21
+- 팀원 간 1차 발표 시작
+
+### 2026 / 09 / 28
+
+<div style="display: flex; justify-content: center; align-items: flex-end; gap: 20px;">
+  <!-- 병원 분류/필터 화면 -->
+  <div style="text-align: center;">
+    <img src="./Assets/Hospital_sort.jpg" alt="병원 분류 화면" style="height: 380px; width: auto; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
+    <p style="margin-top: 8px; font-size: 13px; color: #888;">▲ 병원 분류 필터 화면</p>
+  </div>
+
+  <!-- 반경 색상 화면 -->
+  <div style="text-align: center;">
+    <img src="./Assets/Circle_color.jpg" alt="반경 색상 화면" style="height: 380px; width: auto; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
+    <p style="margin-top: 8px; font-size: 13px; color: #888;">▲ 거리/상태별 반경 색상 화면</p>
+  </div>
+</div>
+
+- 개선점
+  - 중증질환자 수용가능 정보 조회 서비스 추가 필요
+  - 응급실 및 중증질환 메시지 조회 서비스 추가 필요
+  - 작은 화면에선 병원 버블이 서로 겹쳐져 있어 서비스 이용에 불편함
+  - 모바일 화면에서 즉각적인 길 안내가 필요한 대표 네비게이션 3종 버튼 추가 (네이버 / 카카오 / T맵)
+
 ## 한계점
 
 본 프로젝트는 국립중앙의료원에서 제공하는 공공데이터포털 Open API(`국립중앙의료원_전국 응급의료기관 정보 조회 서비스`)를 기반으로 병상 데이터를 수신합니다. 공식 대국민 포털인 **E-Gen(중앙응급의료센터)**과의 데이터 차이 및 연계 인프라의 기술적 한계는 다음과 같습니다.
