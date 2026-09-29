@@ -1,1463 +1,1972 @@
 /* global kakao */
+'use strict';
 
-/**
- * ============================================================================
- * [상수 정의부] 공공데이터 인증키, 기준 좌표, 한도 및 질환 매핑 테이블
- * ============================================================================
- */
+// 기존 파일에 있던 공공데이터 서비스 키입니다.
+const API_KEY = decodeURIComponent(
+    's%2FvWNiKH1YndVRu2mPOq7OXAIj%2Byk0M3JTgvN%2B8UVdSFPq8SBR7zuUdG3mxklTrj6WYIiUidSIUwgE8bz09fzQ%3D%3D'
+);
+const API_ROOT = 'https://apis.data.go.kr/B552657/ErmctInfoInqireService';
+const PAGE_SIZE = 1000;
+const MAX_MARKERS = 500;
+const SEOUL = { lat: 37.5668, lng: 126.9786 };
 
-// 국립중앙의료원 전국 응급의료 오픈 API 인증키
-const PUBLIC_API_KEY = decodeURIComponent('s%2FvWNiKH1YndVRu2mPOq7OXAIj%2Byk0M3JTgvN%2B8UVdSFPq8SBR7zuUdG3mxklTrj6WYIiUidSIUwgE8bz09fzQ%3D%3D');
+// 보건복지부 제5기 지정 명단(2024.1.1.~2026.12.31.) 47개 기관.
+// 응급의료 API의 dutyDivNam은 병원 종별이므로 지정 여부와 구분합니다.
+// 지역과 기관명 별칭을 함께 확인하여 동일 법인의 다른 분원을 구별합니다.
+const TERTIARY_2024_2026 = [
+    ['서울', ['강북삼성병원']],
+    ['서울', ['건국대학교병원']],
+    ['서울', ['경희대학교병원']],
+    ['서울', [
+        '고려대학교의과대학부속구로병원',
+        '고려대학교구로병원'
+    ]],
+    ['서울', ['삼성서울병원']],
+    ['서울', ['서울대학교병원']],
+    ['서울', ['강남세브란스병원']],
+    ['서울', [
+        '연세대학교의과대학세브란스병원',
+        '신촌세브란스병원'
+    ]],
+    ['서울', [
+        '이화여자대학교의과대학부속목동병원',
+        '이화여자대학교목동병원',
+        '이대목동병원'
+    ]],
+    ['서울', ['서울아산병원']],
+    ['서울', ['중앙대학교병원']],
+    ['서울', [
+        '고려대학교의과대학부속병원',
+        '고려대학교안암병원',
+        '고대안암병원'
+    ]],
+    ['서울', [
+        '가톨릭대학교서울성모병원',
+        '서울성모병원'
+    ]],
+    ['서울', ['한양대학교병원']],
+    ['인천', [
+        '가톨릭대학교인천성모병원',
+        '인천성모병원'
+    ]],
+    ['경기', [
+        '순천향대학교부속부천병원',
+        '순천향대학교부천병원'
+    ]],
+    ['인천', ['길병원']],
+    ['인천', [
+        '인하대학교의과대학부속병원',
+        '인하대학교병원'
+    ]],
+    ['경기', [
+        '가톨릭대학교성빈센트병원',
+        '성빈센트병원'
+    ]],
+    ['경기', [
+        '고려대학교의과대학부속안산병원',
+        '고려대학교안산병원'
+    ]],
+    ['경기', ['분당서울대학교병원']],
+    ['경기', ['아주대학교병원']],
+    ['경기', ['한림대학교성심병원']],
+    ['강원', ['강릉아산병원']],
+    ['강원', [
+        '연세대학교원주세브란스기독병원',
+        '원주세브란스기독병원'
+    ]],
+    ['충북', ['충북대학교병원']],
+    ['충남', [
+        '단국대학교의과대학부속병원',
+        '단국대학교병원'
+    ]],
+    ['대전', ['충남대학교병원']],
+    ['대전', ['건양대학교병원']],
+    ['전북', ['원광대학교병원']],
+    ['전북', ['전북대학교병원']],
+    ['광주', ['전남대학교병원']],
+    ['광주', ['조선대학교병원']],
+    ['전남', ['화순전남대학교병원']],
+    ['대구', ['경북대학교병원']],
+    ['대구', ['계명대학교동산병원']],
+    ['대구', ['대구가톨릭대학교병원']],
+    ['대구', ['영남대학교병원']],
+    ['대구', ['칠곡경북대학교병원']],
+    ['부산', ['고신대학교복음병원']],
+    ['부산', ['동아대학교병원']],
+    ['부산', ['부산대학교병원']],
+    ['경남', ['양산부산대학교병원']],
+    ['부산', [
+        '인제대학교부산백병원',
+        '부산백병원'
+    ]],
+    ['울산', ['울산대학교병원']],
+    ['경남', ['경상국립대학교병원']],
+    ['경남', ['삼성창원병원']]
+];
 
-// 위치 권한 미허용 시 기본 중심 좌표 (서울시청 기준)
-const defaultLat = 37.5668;
-const defaultLng = 126.9786;
-
-// 저사양 브라우저 렌더링 과부하 방지: 전국/광역 뷰에서는 최대 100개로 제한
-const MAX_VISIBLE_OVERLAYS = 100;
-
-// 국립중앙의료원 응급의료센터 중증 응급질환 28종 표준 질환명 매핑
-const SEVERE_DISEASE_MAP = {
-    'mkioskty1': '[재관류중재술] 심근경색',
-    'mkioskty2': '[재관류중재술] 뇌경색',
-    'mkioskty3': '[뇌출혈수술] 거미막하출혈',
-    'mkioskty4': '[뇌출혈수술] 거미막하출혈 외',
-    'mkioskty5': '[대동맥응급] 흉부',
-    'mkioskty6': '[대동맥응급] 복부',
-    'mkioskty7': '[담낭담관질환] 담낭질환',
-    'mkioskty8': '[담낭담관질환] 담도포함질환',
-    'mkioskty9': '[복부응급수술] 비외상',
-    'mkioskty10': '[장중첩/폐색] 영유아',
-    'mkioskty11': '[응급내시경] 성인 위장관',
-    'mkioskty12': '[응급내시경] 영유아 위장관',
-    'mkioskty13': '[응급내시경] 성인 기관지',
-    'mkioskty14': '[응급내시경] 영유아 기관지',
-    'mkioskty15': '[저체중출생아] 집중치료',
-    'mkioskty16': '[산부인과응급] 분만',
-    'mkioskty17': '[산부인과응급] 산과수술',
-    'mkioskty18': '[산부인과응급] 부인과수술',
-    'mkioskty19': '[중증화상] 전문치료',
-    'mkioskty20': '[사지접합] 수족지접합',
-    'mkioskty21': '[사지접합] 수족지접합 외',
-    'mkioskty22': '[응급투석] HD',
-    'mkioskty23': '[응급투석] CRRT',
-    'mkioskty24': '[정신과적응급] 폐쇄병동입원',
-    'mkioskty25': '[안과적수술] 응급',
-    'mkioskty26': '[영상의학혈관중재] 성인',
-    'mkioskty27': '[영상의학혈관중재] 영유아',
-    'mkioskty28': '응급실(Emergency gate keeper)'
+const REGION_PREFIX = {
+    서울: /^서울/,
+    인천: /^인천/,
+    경기: /^경기/,
+    강원: /^강원/,
+    충북: /^(충북|충청북도)/,
+    충남: /^(충남|충청남도)/,
+    대전: /^대전/,
+    전북: /^(전북|전라북도)/,
+    광주: /^광주/,
+    전남: /^(전남|전라남도)/,
+    대구: /^대구/,
+    경북: /^(경북|경상북도)/,
+    부산: /^부산/,
+    경남: /^(경남|경상남도)/,
+    울산: /^울산/
 };
 
-/**
- * ============================================================================
- * [전역 상태 및 영구 캐시 관리부]
- * ============================================================================
- */
-let map = null;
-let myLocationOverlay = null;
-let currentLatLng = null;
-let activeCircle = null;
-let activeCircleLabel = null;
-let currentRadiusKm = 10;
-let cachedHospitals = [];
-let activeSearchPin = null;
+// 번호 필드는 검증되지 않은 병상 이름을 붙이지 않고 코드 그대로 표시합니다.
+const KNOWN_BEDS = [
+    ['hvec', '응급실 가용병상'],
+    ['hvgc', '입원실 가용병상'],
+    ['hvoc', '수술실 가용병상'],
+    ['hvicc', '일반 중환자실 가용병상'],
+    ['hvncc', '신생아 중환자실 가용병상']
+];
 
-let kakaoPlaces = null;
-let kakaoGeocoder = null;
-
-// 정밀 건물 중심점 영구 보존 캐시
-const preciseCoordCache = new Map();
-
-// 생성된 오버레이 인스턴스 맵 (Key: hpid, Value: { overlay, mode })
-const activeOverlayMap = new Map();
-let viewportUpdateTimer = null;
-
-// 필터 기본값: 상급종합병원만 활성화
-let hospitalFilters = {
-    tertiary: true,
-    regional: false,
-    general: false
+const EQUIPMENT = {
+    hvamyn: '구급차',
+    hvangioayn: '혈관촬영기',
+    hvcrrtayn: '지속적 신대체요법(CRRT)',
+    hvctayn: 'CT',
+    hvecmoayn: 'ECMO',
+    hvhypoayn: '저체온 치료',
+    hvincuayn: '인큐베이터',
+    hvmriayn: 'MRI',
+    hvoxyayn: '고압산소 치료',
+    hvventiayn: '인공호흡기',
+    hvventisoayn: '격리 인공호흡기'
 };
 
-let currentSelectedHospital = null;
+const DISEASES = [
+    '재관류중재술 · 심근경색',
+    '재관류중재술 · 뇌경색',
+    '뇌출혈수술 · 거미막하출혈',
+    '뇌출혈수술 · 거미막하출혈 외',
+    '대동맥응급 · 흉부',
+    '대동맥응급 · 복부',
+    '담낭담관질환 · 담낭질환',
+    '담낭담관질환 · 담도포함질환',
+    '복부응급수술 · 비외상',
+    '장중첩/폐색 · 영유아',
+    '응급내시경 · 성인 위장관',
+    '응급내시경 · 영유아 위장관',
+    '응급내시경 · 성인 기관지',
+    '응급내시경 · 영유아 기관지',
+    '저체중출생아 · 집중치료',
+    '산부인과응급 · 분만',
+    '산부인과응급 · 산과수술',
+    '산부인과응급 · 부인과수술',
+    '중증화상 · 전문치료',
+    '사지접합 · 수족지접합',
+    '사지접합 · 수족지접합 외',
+    '응급투석 · HD',
+    '응급투석 · CRRT',
+    '정신과적응급 · 폐쇄병동입원',
+    '안과적수술 · 응급',
+    '영상의학혈관중재 · 성인',
+    '영상의학혈관중재 · 영유아',
+    '응급실 운영 항목'
+];
 
-const sheet = document.getElementById('bottom-sheet');
-const dim = document.getElementById('sheet-dim');
-const dragArea = document.getElementById('sheet-drag-area');
+const state = {
+    map: null,
+    circle: null,
+    origin: SEOUL,
+    locationKnown: false,
+    locationAccuracy: null,
+    locationUpdated: null,
+    lastUpdated: null,
+    hospitals: [],
+    markers: [],
+    selected: null,
+    sources: {},
+    controller: null,
+    loading: false,
+    previousFocus: null
+};
 
-/**
- * ============================================================================
- * [유틸리티 함수군]
- * ============================================================================
- */
-function getDeviceEnvironment() {
-    const ua = navigator.userAgent || navigator.vendor || window.opera;
-    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    const isAppleTablet = (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
-    const isAndroid = /android/i.test(ua);
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || isAppleTablet;
+const byId = (id) => document.getElementById(id);
 
-    return {
-        isMobileOrTablet: isAndroid || isIOS || isTouch,
-        os: isAndroid ? 'android' : (isIOS ? 'ios' : 'desktop')
-    };
+function node(tag, className, content) {
+    const item = document.createElement(tag);
+    if (className) item.className = className;
+    if (content !== undefined) item.textContent = String(content);
+    return item;
 }
 
-function toDMS(decimalCoord) {
-    const abs = Math.abs(decimalCoord);
-    const degrees = Math.floor(abs);
-    const minutesFloat = (abs - degrees) * 60;
-    const minutes = Math.floor(minutesFloat);
-    const seconds = ((minutesFloat - minutes) * 60).toFixed(1);
-    return `${degrees}도 ${minutes}분 ${seconds}초`;
+function setStatus(message) {
+    byId('status').textContent = message;
 }
 
-function getRadiusTheme(radiusKm) {
-    if (radiusKm <= 10) {
-        return { strokeColor: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.08, labelBg: '#2563eb' };
-    } else if (radiusKm <= 20) {
-        return { strokeColor: '#16a34a', fillColor: '#22c55e', fillOpacity: 0.08, labelBg: '#16a34a' };
-    } else if (radiusKm <= 40) {
-        return { strokeColor: '#d97706', fillColor: '#facc15', fillOpacity: 0.12, labelBg: '#d97706' };
-    } else {
-        return { strokeColor: '#ef4444', fillColor: '#f87171', fillOpacity: 0.08, labelBg: '#ef4444' };
+function fieldMap(item) {
+    const fields = {};
+
+    for (const child of item.children) {
+        fields[child.localName.toLowerCase()] = child.textContent.trim();
     }
+
+    return fields;
 }
 
-function getDistanceKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+function readXml(xmlText) {
+    const xml = new DOMParser().parseFromString(
+        xmlText,
+        'application/xml'
+    );
+
+    if (xml.querySelector('parsererror')) {
+        throw new Error('XML 해석 실패');
+    }
+
+    const code = xml.querySelector('resultCode')?.textContent?.trim();
+
+    if (code !== '00') {
+        const message = xml.querySelector('resultMsg')?.textContent?.trim();
+        throw new Error(message || `API 결과 코드: ${code || '없음'}`);
+    }
+
+    return xml;
 }
 
-function ensurePreciseHospitalCoordinate(h, callback) {
-    if (preciseCoordCache.has(h.hpid)) {
-        const cached = preciseCoordCache.get(h.hpid);
-        h.lat = cached.lat;
-        h.lng = cached.lng;
-        callback(h);
-        return;
-    }
+async function requestPage(endpoint, pageNo, signal) {
+    const url = new URL(`${API_ROOT}/${endpoint}`);
 
-    if (!kakaoPlaces) {
-        callback(h);
-        return;
-    }
+    url.searchParams.set('serviceKey', API_KEY);
+    url.searchParams.set('pageNo', String(pageNo));
+    url.searchParams.set('numOfRows', String(PAGE_SIZE));
 
-    let regionToken = '';
-    if (h.address) {
-        const addrParts = h.address.split(' ');
-        if (addrParts.length > 1) {
-            regionToken = addrParts[1];
-        }
-    }
+    const controller = new AbortController();
+    const abort = () => controller.abort();
 
-    const searchTargetName = h.name.replace(/^(의료법인|학교법인|사회복지법인|재단법인|사단법인)\s*/, '');
-    const searchQuery = `${regionToken} ${searchTargetName}`.trim();
+    signal?.addEventListener('abort', abort, { once: true });
 
-    kakaoPlaces.keywordSearch(searchQuery, (data, status) => {
-        if (status === kakao.maps.services.Status.OK && data && data.length > 0) {
-            const validPlace = data.find(place => {
-                const pLat = parseFloat(place.y);
-                const pLng = parseFloat(place.x);
-                const distFromRaw = getDistanceKm(h.rawLat, h.rawLng, pLat, pLng);
-                if (distFromRaw > 0.4) return false;
-
-                const category = place.category_group_code || '';
-                const categoryName = place.category_name || '';
-                return category === 'HP8' || categoryName.includes('의료') || categoryName.includes('병원');
-            });
-
-            if (validPlace) {
-                h.lat = parseFloat(validPlace.y);
-                h.lng = parseFloat(validPlace.x);
-                if (!h.address || h.address.trim() === '') {
-                    h.address = validPlace.road_address_name || validPlace.address_name || '';
-                }
-            }
-        }
-
-        preciseCoordCache.set(h.hpid, { lat: h.lat, lng: h.lng });
-        callback(h);
-    }, {
-        location: new kakao.maps.LatLng(h.rawLat, h.rawLng),
-        radius: 500
-    });
-}
-
-/**
- * ============================================================================
- * [병상 상태 판정 및 통일된 링/초과 수용 처리 함수]
- * ============================================================================
- */
-function evaluateBedStatus(curVal, totalVal, type = 'count') {
-    // 분만실: 원형 링 디자인 통일 (가능: 정상 링, 불가: 위험 링)
-    if (type === 'delivery') {
-        const strVal = String(curVal || '').trim().toUpperCase();
-        const total = totalVal !== null && totalVal !== undefined && !isNaN(totalVal) ? Math.max(0, parseInt(totalVal, 10)) : null;
-
-        if (strVal === 'Y' || parseInt(strVal, 10) > 0) {
-            return {
-                indicatorClass: 'bed-ind-normal',
-                indicatorText: '가능',
-                valueText: total ? `가능/${total}` : '가능',
-                barClass: 'bg-normal',
-                tooltip: total ? `가능/${total}` : '가능'
-            };
-        } else if (strVal === 'N' || parseInt(strVal, 10) <= 0) {
-            return {
-                indicatorClass: 'bed-ind-danger',
-                indicatorText: '불가',
-                valueText: total ? `0/${total}` : '불가',
-                barClass: 'bg-danger',
-                tooltip: total ? `0/${total} (불가)` : '불가'
-            };
-        } else {
-            return {
-                indicatorClass: 'bed-ind-none',
-                indicatorText: '-',
-                valueText: '-',
-                barClass: 'bg-muted',
-                tooltip: '정보 없음'
-            };
-        }
-    }
-
-    if (curVal === null || curVal === undefined || isNaN(curVal)) {
-        return {
-            indicatorClass: 'bed-ind-none',
-            indicatorText: '-',
-            valueText: '-',
-            barClass: 'bg-muted',
-            tooltip: '정보 없음'
-        };
-    }
-
-    const rawCur = parseInt(curVal, 10);
-    const rawTotal = totalVal !== null && totalVal !== undefined && !isNaN(totalVal) ? parseInt(totalVal, 10) : null;
-    const total = rawTotal !== null ? Math.max(0, rawTotal) : null;
-
-    // 음수 병상 예외 처리: 실제 가용 병상은 0으로 두고, 초과 인원을 '초과 수용'으로 명시
-    const isOverCapacity = rawCur < 0;
-    const overCapacityCount = isOverCapacity ? Math.abs(rawCur) : 0;
-    const available = Math.max(0, rawCur);
-
-    let displayVal = '';
-    let tooltipVal = '';
-
-    if (isOverCapacity) {
-        if (total !== null) {
-            displayVal = `0/${total}<span style="display:block; font-size:9.5px; color:#ef4444; font-weight:600; margin-top:2px;">${overCapacityCount}석 초과 수용</span>`;
-            tooltipVal = `0/${total} (${overCapacityCount}석 초과 수용)`;
-        } else {
-            displayVal = `0석<span style="display:block; font-size:9.5px; color:#ef4444; font-weight:600; margin-top:2px;">${overCapacityCount}석 초과 수용</span>`;
-            tooltipVal = `0석 (${overCapacityCount}석 초과 수용)`;
-        }
-    } else if (rawCur === 0) {
-        if (total !== null) {
-            displayVal = `0/${total}`;
-            tooltipVal = `0/${total} (잔여 0석)`;
-        } else {
-            displayVal = `0석`;
-            tooltipVal = `0석`;
-        }
-    } else {
-        if (total !== null) {
-            displayVal = `${available}/${total}`;
-            tooltipVal = `${available}/${total}`;
-        } else {
-            displayVal = `${available}석`;
-            tooltipVal = `${available}석`;
-        }
-    }
-
-    // 잔여 0석 이하인 경우 혼잡/초과 수용
-    if (rawCur <= 0) {
-        return {
-            indicatorClass: 'bed-ind-danger',
-            indicatorText: '혼잡',
-            valueText: displayVal,
-            barClass: 'bg-danger',
-            tooltip: `${tooltipVal} (혼잡)`
-        };
-    }
-
-    // 보통: 잔여 3석 이하 또는 가용률 25% 이하
-    const isModerate = rawCur <= 3 || (total && (rawCur / total) <= 0.25);
-    if (isModerate) {
-        return {
-            indicatorClass: 'bed-ind-warning',
-            indicatorText: '보통',
-            valueText: displayVal,
-            barClass: 'bg-warning',
-            tooltip: `${tooltipVal} (보통)`
-        };
-    }
-
-    // 원활
-    return {
-        indicatorClass: 'bed-ind-normal',
-        indicatorText: '원활',
-        valueText: displayVal,
-        barClass: 'bg-normal',
-        tooltip: `${tooltipVal} (원활)`
-    };
-}
-
-/**
- * 5종 핵심 병상 파싱 (코호트 격리 병상 제외 완료)
- */
-function parseBedDetailInfo(fields) {
-    const parseNum = (v) => {
-        if (v === undefined || v === null || v === '') return null;
-        const n = parseInt(v, 10);
-        return isNaN(n) ? null : n;
-    };
-
-    return {
-        er: evaluateBedStatus(parseNum(fields['hvec']), parseNum(fields['hvs01']), 'count'),
-        pediatric: evaluateBedStatus(parseNum(fields['hv28']), parseNum(fields['hvs02']), 'count'),
-        delivery: evaluateBedStatus(fields['hv41'], parseNum(fields['hvs41'] || fields['hvs47']), 'delivery'),
-        negative: evaluateBedStatus(parseNum(fields['hv29']), parseNum(fields['hvs04'] || fields['hvs03']), 'count'),
-        isolation: evaluateBedStatus(parseNum(fields['hv30']), parseNum(fields['hvs05']), 'count')
-    };
-}
-
-/**
- * ============================================================================
- * [3대 내비게이션 자동 목적지 연동부]
- * ============================================================================
- */
-function launchNavigationApp(provider) {
-    if (!currentSelectedHospital) return;
-
-    const h = currentSelectedHospital;
-    const { os } = getDeviceEnvironment();
-    const targetName = h.name;
-    const encName = encodeURIComponent(targetName);
-    const lat = h.lat;
-    const lng = h.lng;
-
-    if (provider === 'kakao') {
-        if (os === 'android') {
-            window.location.href = `intent://route?ep=${lat},${lng}&by=CAR#Intent;scheme=kakaomap;package=net.daum.android.map;end`;
-        } else if (os === 'ios') {
-            window.location.href = `kakaomap://route?ep=${lat},${lng}&by=CAR`;
-            setTimeout(() => {
-                window.location.href = `https://map.kakao.com/link/to/${encName},${lat},${lng}`;
-            }, 1500);
-        } else {
-            window.open(`https://map.kakao.com/link/to/${encName},${lat},${lng}`, '_blank');
-        }
-    } else if (provider === 'naver') {
-        if (os === 'android') {
-            window.location.href = `intent://route/car?dlat=${lat}&dlng=${lng}&dname=${encName}&appname=emergency-map#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end`;
-        } else if (os === 'ios') {
-            window.location.href = `nmap://route/car?dlat=${lat}&dlng=${lng}&dname=${encName}&appname=emergency-map`;
-            setTimeout(() => {
-                window.location.href = `https://map.naver.com/p/directions/-/${lat},${lng},${encName}/-/car`;
-            }, 1500);
-        } else {
-            window.open(`https://map.naver.com/p/directions/-/${lat},${lng},${encName}/-/car`, '_blank');
-        }
-    } else if (provider === 'tmap') {
-        const tmapParams = `rGoName=${encName}&rGoX=${lng}&rGoY=${lat}&goalname=${encName}&goallat=${lat}&goallng=${lng}&goalx=${lng}&goaly=${lat}`;
-
-        if (os === 'android') {
-            window.location.href = `intent://route?${tmapParams}#Intent;scheme=tmap;package=com.skt.tmap.ku;end`;
-        } else if (os === 'ios') {
-            window.location.href = `tmap://route?${tmapParams}`;
-            setTimeout(() => {
-                window.location.href = 'https://apps.apple.com/kr/app/tmap-%EB%82%B4%EB%B9%84%EA%B2%8C%EC%9D%B4%EC%85%98-%EC%A7%80%EB%8F%84/id431589174';
-            }, 1500);
-        } else {
-            alert('티맵(Tmap)은 모바일 앱 전용 내비게이션입니다. 스마트폰이나 태블릿에서 이용해 주세요.');
-        }
-    }
-}
-
-/**
- * ============================================================================
- * [어플리케이션 초기화]
- * ============================================================================
- */
-function startApplication() {
-    initNoticeModal();
-
-    if (typeof kakao === 'undefined' || !kakao.maps) {
-        document.getElementById('status-title').innerText = '카카오 지도 SDK 로드 실패';
-        return;
-    }
-
-    kakao.maps.load(function () {
-        initMap();
-        initBottomSheetEvents();
-        initHospitalSearchEvents();
-    });
-}
-
-if (document.readyState === 'complete') {
-    startApplication();
-} else {
-    window.addEventListener('load', startApplication);
-}
-
-/**
- * 첫 진입 안내 팝업창 바인딩
- */
-function initNoticeModal() {
-    const backdrop = document.getElementById('notice-modal-backdrop');
-    const closeBtn = document.getElementById('notice-close-btn');
-    const confirmBtn = document.getElementById('notice-confirm-btn');
-
-    const closeNotice = () => {
-        if (backdrop) {
-            backdrop.classList.add('hidden');
-            setTimeout(() => {
-                backdrop.style.display = 'none';
-                if (map) map.relayout();
-            }, 250);
-        }
-    };
-
-    if (closeBtn) closeBtn.addEventListener('click', closeNotice);
-    if (confirmBtn) confirmBtn.addEventListener('click', closeNotice);
-
-    // 배경 클릭 시에도 닫히도록 지원
-    if (backdrop) {
-        backdrop.addEventListener('click', (e) => {
-            if (e.target === backdrop) closeNotice();
-        });
-    }
-}
-
-function initMap() {
-    const mapContainer = document.getElementById('map');
-    const mapOption = {
-        center: new kakao.maps.LatLng(defaultLat, defaultLng),
-        level: 6,
-        draggable: true,
-        scroll_wheel: true
-    };
-
-    map = new kakao.maps.Map(mapContainer, mapOption);
-    kakaoPlaces = new kakao.maps.services.Places();
-    kakaoGeocoder = new kakao.maps.services.Geocoder();
-
-    window.addEventListener('resize', () => {
-        if (map) map.relayout();
-    });
-
-    kakao.maps.event.addListener(map, 'zoom_changed', function () {
-        const level = map.getLevel();
-        if (!activeCircle) return;
-
-        if (currentRadiusKm >= 500) {
-            if (activeCircle.getMap()) activeCircle.setMap(null);
-            if (activeCircleLabel && activeCircleLabel.getMap()) activeCircleLabel.setMap(null);
-        } else if (currentRadiusKm >= 20 && level <= 4) {
-            if (activeCircle.getMap()) activeCircle.setMap(null);
-            if (activeCircleLabel && activeCircleLabel.getMap()) activeCircleLabel.setMap(null);
-        } else {
-            if (!activeCircle.getMap()) activeCircle.setMap(map);
-            if (activeCircleLabel && !activeCircleLabel.getMap()) activeCircleLabel.setMap(map);
-        }
-        debounceUpdateHospitalsInViewport();
-    });
-
-    kakao.maps.event.addListener(map, 'idle', function () {
-        debounceUpdateHospitalsInViewport();
-    });
-
-    const markerContent = document.createElement('div');
-    markerContent.className = 'my-location-marker';
-    markerContent.innerHTML = '<div class="my-location-pulse"></div><div class="my-location-dot"></div>';
-
-    myLocationOverlay = new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(defaultLat, defaultLng),
-        content: markerContent,
-        xAnchor: 0.5,
-        yAnchor: 0.5,
-        zIndex: 10
-    });
-
-    const radiusMainBtn = document.getElementById('radius-main-btn');
-    const radiusOptions = document.getElementById('radius-options');
-    const filterMainBtn = document.getElementById('filter-main-btn');
-    const filterOptions = document.getElementById('filter-options');
-
-    if (radiusMainBtn && radiusOptions) {
-        radiusMainBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            filterOptions.classList.remove('open');
-            radiusOptions.classList.toggle('open');
-        });
-    }
-
-    if (filterMainBtn && filterOptions) {
-        filterMainBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            radiusOptions.classList.remove('open');
-            filterOptions.classList.toggle('open');
-        });
-    }
-
-    document.addEventListener('click', () => {
-        if (radiusOptions) radiusOptions.classList.remove('open');
-        if (filterOptions) filterOptions.classList.remove('open');
-    });
-
-    document.querySelectorAll('.radius-btn').forEach(button => {
-        button.addEventListener('click', function (e) {
-            e.stopPropagation();
-            document.querySelectorAll('.radius-btn').forEach(b => {
-                b.classList.remove('active');
-                b.style.backgroundColor = '';
-                b.style.borderColor = '';
-            });
-            this.classList.add('active');
-
-            currentRadiusKm = parseInt(this.getAttribute('data-radius'), 10);
-            const theme = getRadiusTheme(currentRadiusKm);
-            this.style.backgroundColor = theme.labelBg;
-            this.style.borderColor = theme.labelBg;
-
-            if (currentLatLng) {
-                renderRadiusAndHospitals(currentLatLng, currentRadiusKm);
-            }
-            if (radiusOptions) radiusOptions.classList.remove('open');
-        });
-    });
-
-    const filterTertiary = document.getElementById('filter-tertiary');
-    const filterRegional = document.getElementById('filter-regional');
-    const filterGeneral = document.getElementById('filter-general');
-
-    const handleFilterChange = () => {
-        hospitalFilters.tertiary = filterTertiary.checked;
-        hospitalFilters.regional = filterRegional.checked;
-        hospitalFilters.general = filterGeneral.checked;
-
-        if (currentLatLng) updateHospitalsInViewport();
-    };
-
-    filterTertiary.addEventListener('change', handleFilterChange);
-    filterRegional.addEventListener('change', handleFilterChange);
-    filterGeneral.addEventListener('change', handleFilterChange);
-
-    document.getElementById('my-loc-btn').addEventListener('click', () => {
-        moveToCurrentLocation(false);
-    });
-
-    loadAllEmergencyData().then(() => {
-        moveToCurrentLocation(true);
-    });
-}
-
-function getItemFieldMap(item) {
-    const map = {};
-    const children = item.children || item.childNodes;
-    for (let i = 0; i < children.length; i++) {
-        const child = children[i];
-        if (child.nodeType === 1) {
-            map[child.nodeName.toLowerCase()] = (child.textContent || '').trim();
-        }
-    }
-    return map;
-}
-
-async function loadAllEmergencyData() {
-    document.getElementById('status-title').innerText = '응급의료기관 데이터 수신 중...';
+    const timeout = window.setTimeout(abort, 15000);
 
     try {
-        const listUrl = `https://apis.data.go.kr/B552657/ErmctInfoInqireService/getEgytListInfoInqire?serviceKey=${encodeURIComponent(PUBLIC_API_KEY)}&pageNo=1&numOfRows=1000`;
-        const bedUrl = `https://apis.data.go.kr/B552657/ErmctInfoInqireService/getEmrrmRltmUsefulSckbdInfoInqire?serviceKey=${encodeURIComponent(PUBLIC_API_KEY)}&pageNo=1&numOfRows=1000`;
-        const msgUrl = `https://apis.data.go.kr/B552657/ErmctInfoInqireService/getEmrrmSrsillDissMsgInqire?serviceKey=${encodeURIComponent(PUBLIC_API_KEY)}&pageNo=1&numOfRows=1000`;
-        const severeUrl = `https://apis.data.go.kr/B552657/ErmctInfoInqireService/getSrsillDissAceptncPosblInfoInqire?serviceKey=${encodeURIComponent(PUBLIC_API_KEY)}&pageNo=1&numOfRows=1000`;
+        const response = await fetch(url.toString(), {
+            signal: controller.signal
+        });
 
-        const [listRes, bedRes, msgRes, severeRes] = await Promise.all([
-            fetch(listUrl),
-            fetch(bedUrl),
-            fetch(msgUrl),
-            fetch(severeUrl)
-        ]);
-
-        const [listXmlText, bedXmlText, msgXmlText, severeXmlText] = await Promise.all([
-            listRes.text(),
-            bedRes.text(),
-            msgRes.text(),
-            severeRes.text()
-        ]);
-
-        const parser = new DOMParser();
-        const listDoc = parser.parseFromString(listXmlText, 'application/xml');
-        const bedDoc = parser.parseFromString(bedXmlText, 'application/xml');
-        const msgDoc = parser.parseFromString(msgXmlText, 'application/xml');
-        const severeDoc = parser.parseFromString(severeXmlText, 'application/xml');
-
-        const bedMap = new Map();
-        const bedItems = bedDoc.getElementsByTagName('item');
-        for (let i = 0; i < bedItems.length; i++) {
-            const fields = getItemFieldMap(bedItems[i]);
-            const hpid = fields['hpid'];
-            if (hpid) {
-                const parsedBeds = parseBedDetailInfo(fields);
-                const hvecStr = fields['hvec'];
-                const hvecNum = hvecStr !== undefined && hvecStr !== '' ? parseInt(hvecStr, 10) : null;
-                bedMap.set(hpid, {
-                    hvec: isNaN(hvecNum) ? null : hvecNum,
-                    details: parsedBeds
-                });
-            }
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
         }
 
-        const msgMap = new Map();
-        const msgItems = msgDoc.getElementsByTagName('item');
-        for (let i = 0; i < msgItems.length; i++) {
-            const fields = getItemFieldMap(msgItems[i]);
-            const hpid = fields['hpid'];
-            const msg = fields['symblkmsg'];
-            if (hpid && msg) {
-                if (msgMap.has(hpid)) {
-                    msgMap.set(hpid, msgMap.get(hpid) + '<br>• ' + msg);
-                } else {
-                    msgMap.set(hpid, '• ' + msg);
-                }
-            }
+        return readXml(await response.text());
+    } catch (error) {
+        if (controller.signal.aborted && !signal?.aborted) {
+            throw new Error('API 응답 시간이 초과되었습니다.');
         }
 
-        const severeMap = new Map();
-        const severeItems = severeDoc.getElementsByTagName('item');
-        for (let i = 0; i < severeItems.length; i++) {
-            const fields = getItemFieldMap(severeItems[i]);
-            const hpid = fields['hpid'];
-            if (!hpid) continue;
-
-            const available = [];
-            const unavailable = [];
-
-            Object.keys(SEVERE_DISEASE_MAP).forEach(tag => {
-                const val = (fields[tag] || '').toUpperCase();
-                const diseaseName = SEVERE_DISEASE_MAP[tag];
-                const msgTag = `${tag}msg`;
-                const noteMsg = fields[msgTag] ? ` (${fields[msgTag]})` : '';
-
-                if (val === 'Y') {
-                    available.push(`${diseaseName}${noteMsg}`);
-                } else if (val === 'N') {
-                    unavailable.push(`${diseaseName}${noteMsg}`);
-                }
-            });
-
-            if (available.length > 0 || unavailable.length > 0) {
-                severeMap.set(hpid, { available, unavailable });
-            }
-        }
-
-        cachedHospitals = [];
-        const listItems = listDoc.getElementsByTagName('item');
-        for (let i = 0; i < listItems.length; i++) {
-            const fields = getItemFieldMap(listItems[i]);
-            const hpid = fields['hpid'];
-            const rawName = fields['dutyname'] || '응급의료기관';
-            const address = fields['dutyaddr'] || '';
-            const mainTel = fields['dutytel1'] || '';
-            const erTel = fields['dutytel3'] || '';
-
-            const rawLat = parseFloat(fields['wgs84lat']);
-            const rawLng = parseFloat(fields['wgs84lon']);
-            const dutyDivNam = fields['dutydivnam'] || '';
-            const dutyEmclsName = fields['dutyemclsname'] || '';
-
-            if (!isNaN(rawLat) && !isNaN(rawLng)) {
-                let type = 'general';
-                let typeLabel = '일반병원';
-
-                if (rawName.includes('의료원')) {
-                    type = 'regional';
-                    typeLabel = '지역의료';
-                } else {
-                    const isTertiary = (
-                        dutyDivNam.includes('상급종합') ||
-                        dutyEmclsName.includes('권역') ||
-                        /대학|대학교|의과대학|세브란스|아산병원|삼성서울|성모병원/.test(rawName)
-                    );
-                    if (isTertiary) {
-                        type = 'tertiary';
-                        typeLabel = '상급종합';
-                    }
-                }
-
-                const bedData = bedMap.get(hpid);
-
-                cachedHospitals.push({
-                    hpid,
-                    name: rawName,
-                    address,
-                    mainTel,
-                    erTel,
-                    rawLat,
-                    rawLng,
-                    lat: rawLat,
-                    lng: rawLng,
-                    type,
-                    typeLabel,
-                    hvec: bedData ? bedData.hvec : null,
-                    bedDetails: bedData ? bedData.details : parseBedDetailInfo({}),
-                    message: msgMap.get(hpid) || null,
-                    severeData: severeMap.get(hpid) || null
-                });
-            }
-        }
-
-        document.getElementById('status-title').innerText = '응급의료 데이터 준비 완료';
-    } catch (err) {
-        console.error('데이터 로드 실패:', err);
-        document.getElementById('status-title').innerText = '데이터 수신 지연';
+        throw error;
+    } finally {
+        window.clearTimeout(timeout);
+        signal?.removeEventListener('abort', abort);
     }
 }
 
-function initHospitalSearchEvents() {
-    const searchInput = document.getElementById('keyword');
-    const searchBtn = document.getElementById('search-btn');
-    const searchResultsList = document.getElementById('search-results-list');
-    const searchBox = document.getElementById('search-box');
+async function requestAll(endpoint, signal) {
+    const result = [];
+    let page = 1;
 
-    searchInput.addEventListener('input', () => {
-        const query = searchInput.value.replace(/\s+/g, '').toLowerCase();
+    while (page <= 100) {
+        const xml = await requestPage(endpoint, page, signal);
+        const items = [...xml.getElementsByTagName('item')].map(fieldMap);
+        const total = Number(
+            xml.querySelector('totalCount')?.textContent || 0
+        );
+        const rows = Number(
+            xml.querySelector('numOfRows')?.textContent || PAGE_SIZE
+        );
 
-        if (!query) {
-            searchResultsList.innerHTML = '';
-            searchResultsList.classList.remove('open');
-            return;
+        if (!items.length && total > result.length) {
+            throw new Error('일부 페이지의 결과가 비어 있습니다.');
         }
 
-        const matched = cachedHospitals.filter(h => {
-            const cleanTarget = h.name.replace(/\s+/g, '').toLowerCase();
-            return cleanTarget.includes(query);
-        });
+        result.push(...items);
 
-        if (matched.length === 0) {
-            searchResultsList.innerHTML = '<li class="search-result-empty">일치하는 병원이 없습니다.</li>';
-            searchResultsList.classList.add('open');
-            return;
+        if (result.length >= total || items.length === 0) {
+            break;
         }
 
-        const sliceMatched = matched.slice(0, 25);
-        let html = '';
-
-        sliceMatched.forEach(h => {
-            let badgeClass = 'hospital-type-general';
-            if (h.type === 'tertiary') badgeClass = 'hospital-type-tertiary';
-            else if (h.type === 'regional') badgeClass = 'hospital-type-regional';
-
-            const distText = currentLatLng
-                ? `${getDistanceKm(currentLatLng.getLat(), currentLatLng.getLng(), h.lat, h.lng).toFixed(1)}km`
-                : '';
-
-            const telText = h.erTel ? `직통: ${h.erTel}` : (h.mainTel ? `대표: ${h.mainTel}` : '');
-
-            html += `
-                <li class="search-result-item" data-hpid="${h.hpid}">
-                    <div class="search-item-title">
-                        <span class="hospital-type-badge ${badgeClass}">${h.typeLabel}</span>
-                        <span>${h.name}</span>
-                    </div>
-                    <div class="search-item-sub">
-                        <span>${distText}</span>
-                        <span>${telText}</span>
-                    </div>
-                </li>
-            `;
-        });
-
-        searchResultsList.innerHTML = html;
-        searchResultsList.classList.add('open');
-
-        searchResultsList.querySelectorAll('.search-result-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const hpid = item.getAttribute('data-hpid');
-                const target = cachedHospitals.find(h => h.hpid === hpid);
-                if (target) selectHospitalFromSearch(target);
-            });
-        });
-    });
-
-    document.addEventListener('click', (e) => {
-        if (searchBox && !searchBox.contains(e.target)) {
-            searchResultsList.classList.remove('open');
+        if (!Number.isFinite(rows) || rows < 1) {
+            throw new Error('페이지 크기가 유효하지 않습니다.');
         }
-    });
 
-    const executeSearchSubmit = () => {
-        const query = searchInput.value.replace(/\s+/g, '').toLowerCase();
-        if (!query) return;
+        page += 1;
+    }
 
-        const matched = cachedHospitals.filter(h => {
-            const cleanTarget = h.name.replace(/\s+/g, '').toLowerCase();
-            return cleanTarget.includes(query);
-        });
+    if (page > 100) {
+        throw new Error('페이지 제한을 초과했습니다.');
+    }
 
-        if (matched.length > 0) {
-            selectHospitalFromSearch(matched[0]);
+    return result;
+}
+
+function groupById(rows, multiple = false) {
+    const grouped = new Map();
+
+    for (const row of rows) {
+        if (!row.hpid) continue;
+
+        if (!multiple) {
+            grouped.set(row.hpid, row);
         } else {
-            alert('해당 이름을 포함하는 병원을 찾을 수 없습니다.');
+            if (!grouped.has(row.hpid)) {
+                grouped.set(row.hpid, []);
+            }
+
+            grouped.get(row.hpid).push(row);
         }
+    }
+
+    return grouped;
+}
+
+function normalizeName(value) {
+    return String(value || '')
+        .normalize('NFKC')
+        .replace(/[\s·()（）-]/g, '')
+        .toLowerCase();
+}
+
+function classify(fields) {
+    const name = normalizeName(fields.dutyname);
+    const address = fields.dutyaddr || '';
+    const explicitlyDesignated =
+        (fields.dutydivnam || '').includes('상급종합');
+
+    const inOfficialList = TERTIARY_2024_2026.some(
+        ([region, aliases]) =>
+            REGION_PREFIX[region].test(address) &&
+            aliases.some((alias) =>
+                name.includes(normalizeName(alias))
+            )
+    );
+
+    if (explicitlyDesignated || inOfficialList) {
+        return {
+            group: 'tertiary',
+            label: '상급종합병원'
+        };
+    }
+
+    if (name.includes('의료원')) {
+        return {
+            group: 'medical',
+            label: '의료원'
+        };
+    }
+
+    return {
+        group: 'other',
+        label: '일반·기타 응급의료기관'
+    };
+}
+
+async function loadData() {
+    if (state.loading) return;
+
+    state.loading = true;
+    byId('refresh-button').disabled = true;
+    state.controller?.abort();
+    state.controller = new AbortController();
+
+    setStatus('기관·병상·공지·중증질환 정보를 확인하고 있습니다…');
+
+    const endpoints = {
+        list: 'getEgytListInfoInqire',
+        location: 'getEgytLcinfoInqire',
+        basic: 'getEgytBassInfoInqire',
+        beds: 'getEmrrmRltmUsefulSckbdInfoInqire',
+        messages: 'getEmrrmSrsillDissMsgInqire',
+        severe: 'getSrsillDissAceptncPosblInfoInqire',
+        traumaList: 'getStrmListInfoInqire',
+        traumaLocation: 'getStrmLcinfoInqire',
+        traumaBasic: 'getStrmBassInfoInqire'
     };
 
-    searchBtn.addEventListener('click', executeSearchSubmit);
-    searchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') executeSearchSubmit();
-    });
-}
+    try {
+        const keys = Object.keys(endpoints);
+        const results = await Promise.allSettled(
+            keys.map((key) =>
+                requestAll(endpoints[key], state.controller.signal)
+            )
+        );
 
-function selectHospitalFromSearch(h) {
-    const searchInput = document.getElementById('keyword');
-    const searchResultsList = document.getElementById('search-results-list');
+        const datasets = {};
+        state.sources = {};
 
-    searchInput.value = h.name;
-    searchResultsList.classList.remove('open');
+        keys.forEach((key, index) => {
+            const result = results[index];
 
-    ensurePreciseHospitalCoordinate(h, (preciseHospital) => {
-        const preciseLatLng = new kakao.maps.LatLng(preciseHospital.lat, preciseHospital.lng);
-        map.setLevel(3);
-        map.panTo(preciseLatLng);
-
-        if (activeSearchPin) {
-            activeSearchPin.setMap(null);
-        }
-
-        const pinElement = document.createElement('div');
-        pinElement.className = 'search-target-pin';
-        pinElement.innerHTML = `
-            <svg width="36" height="44" viewBox="0 0 24 24" fill="#ef4444" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                <circle cx="12" cy="10" r="3" fill="#ffffff"></circle>
-            </svg>
-        `;
-
-        activeSearchPin = new kakao.maps.CustomOverlay({
-            position: preciseLatLng,
-            content: pinElement,
-            xAnchor: 0.5,
-            yAnchor: 1.0,
-            zIndex: 50
+            if (result.status === 'fulfilled') {
+                datasets[key] = result.value;
+                state.sources[key] = true;
+            } else {
+                datasets[key] = [];
+                state.sources[key] = false;
+                console.error(`${key} 조회 실패:`, result.reason);
+            }
         });
-        activeSearchPin.setMap(map);
 
-        if (activeOverlayMap.has(preciseHospital.hpid)) {
-            activeOverlayMap.get(preciseHospital.hpid).overlay.setPosition(preciseLatLng);
+        if (!state.sources.list) {
+            throw new Error('기관 목록을 가져오지 못했습니다.');
         }
 
-        const dist = currentLatLng ? getDistanceKm(currentLatLng.getLat(), currentLatLng.getLng(), preciseHospital.lat, preciseHospital.lng) : 0;
-        const targetHospitalWithDist = { ...preciseHospital, distance: dist };
+        const beds = groupById(datasets.beds);
+        const messages = groupById(datasets.messages, true);
+        const severe = groupById(datasets.severe);
+        const locations = groupById(datasets.location);
+        const basics = groupById(datasets.basic);
+        const traumaLocations = groupById(datasets.traumaLocation);
+        const traumaBasics = groupById(datasets.traumaBasic);
+        const traumaLists = groupById(datasets.traumaList);
+        const unique = groupById(datasets.list);
 
-        openHospitalBottomSheet(targetHospitalWithDist);
-    });
+        for (const [id, trauma] of traumaLists) {
+            if (!unique.has(id)) {
+                unique.set(id, trauma);
+            }
+        }
+
+        state.hospitals = [...unique.values()]
+            .map((fields) => {
+                const id = fields.hpid;
+                const location =
+                    locations.get(id) ||
+                    traumaLocations.get(id) ||
+                    {};
+                const basic = basics.get(id) || {};
+                const trauma =
+                    traumaBasics.get(id) ||
+                    traumaLists.get(id) ||
+                    null;
+
+                const lat = Number(
+                    fields.wgs84lat || location.wgs84lat
+                );
+                const lng = Number(
+                    fields.wgs84lon || location.wgs84lon
+                );
+
+                return {
+                    id,
+                    name:
+                        fields.dutyname ||
+                        basic.dutyname ||
+                        '기관명 미보고',
+                    address:
+                        fields.dutyaddr ||
+                        basic.dutyaddr ||
+                        '',
+                    tel:
+                        fields.dutytel1 ||
+                        basic.dutytel1 ||
+                        '',
+                    erTel:
+                        fields.dutytel3 ||
+                        beds.get(id)?.dutytel3 ||
+                        '',
+                    lat,
+                    lng,
+                    type: classify({
+                        ...basic,
+                        ...fields,
+                        dutyname:
+                            fields.dutyname ||
+                            basic.dutyname,
+                        dutyaddr:
+                            fields.dutyaddr ||
+                            basic.dutyaddr
+                    }),
+                    basic,
+                    trauma,
+                    beds: beds.get(id) || null,
+                    messages: messages.get(id) || [],
+                    severe: severe.get(id) || null
+                };
+            })
+            .filter((hospital) =>
+                Number.isFinite(hospital.lat) &&
+                Number.isFinite(hospital.lng) &&
+                hospital.lat >= 33 &&
+                hospital.lat <= 39 &&
+                hospital.lng >= 124 &&
+                hospital.lng <= 132
+            );
+
+        state.lastUpdated = new Date();
+
+        if (byId('radius').value === 'all') {
+            showNationwide();
+        }
+
+        updateMarkers();
+
+        if (state.selected) {
+            const fresh = state.hospitals.find(
+                (item) => item.id === state.selected.id
+            );
+
+            if (fresh) {
+                openHospital(fresh, false);
+            } else {
+                closeSheet();
+            }
+        }
+
+        updateSearch();
+
+        const missing = keys.filter(
+            (key) => !state.sources[key]
+        );
+        const clock = new Date().toLocaleTimeString(
+            'ko-KR',
+            {
+                timeZone: 'Asia/Seoul',
+                hour: '2-digit',
+                minute: '2-digit'
+            }
+        );
+
+        setStatus(
+            `${clock} 기준 · ${state.hospitals.length}개 기관` +
+            (
+                missing.length
+                    ? ` · 일부 항목 조회 실패: ${missing.join(', ')}`
+                    : ''
+            )
+        );
+    } catch (error) {
+        console.error('응급의료 데이터 갱신 실패:', error);
+
+        setStatus(
+            `조회 실패: ${error.message} · 이전 정보가 있다면 재확인하세요.`
+        );
+    } finally {
+        state.loading = false;
+        byId('refresh-button').disabled = false;
+    }
 }
 
-function moveToCurrentLocation(isInitial) {
+function distanceKm(a, b) {
+    const radians = (degrees) =>
+        degrees * Math.PI / 180;
+
+    const dLat = radians(b.lat - a.lat);
+    const dLng = radians(b.lng - a.lng);
+
+    const arc =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(radians(a.lat)) *
+        Math.cos(radians(b.lat)) *
+        Math.sin(dLng / 2) ** 2;
+
+    return (
+        6371 *
+        2 *
+        Math.atan2(
+            Math.sqrt(arc),
+            Math.sqrt(1 - arc)
+        )
+    );
+}
+
+function formatDms(value, positive, negative) {
+    const tenths = Math.round(Math.abs(value) * 36000);
+    const degrees = Math.floor(tenths / 36000);
+    const minutes = Math.floor(
+        (tenths % 36000) / 600
+    );
+    const seconds = (tenths % 600) / 10;
+    const direction = value >= 0 ? positive : negative;
+
+    return (
+        `${direction} ${degrees}° ` +
+        `${minutes}′ ${seconds.toFixed(1)}″`
+    );
+}
+
+function updateCoordinates() {
+    const target = byId('coordinates');
+
+    if (!state.locationKnown) {
+        target.textContent =
+            '내 위치 미확인 · 지도 기준점은 서울시청입니다.';
+        return;
+    }
+
+    const latitude = formatDms(
+        state.origin.lat,
+        '북위',
+        '남위'
+    );
+    const longitude = formatDms(
+        state.origin.lng,
+        '동경',
+        '서경'
+    );
+    const accuracy = Number.isFinite(
+        state.locationAccuracy
+    )
+        ? ` · 오차 반경 약 ${Math.round(state.locationAccuracy)}m`
+        : '';
+    const measured = state.locationUpdated
+        ? ` · 측정 ${state.locationUpdated.toLocaleTimeString(
+            'ko-KR',
+            {
+                timeZone: 'Asia/Seoul',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }
+        )}`
+        : '';
+
+    target.textContent =
+        `${latitude} · ${longitude}${accuracy}${measured}`;
+}
+
+function updateCircle() {
+    if (!state.map) return;
+
+    state.circle?.setMap(null);
+
+    const radius = byId('radius').value;
+
+    if (radius === 'all') return;
+
+    state.circle = new kakao.maps.Circle({
+        center: new kakao.maps.LatLng(
+            state.origin.lat,
+            state.origin.lng
+        ),
+        radius: Number(radius) * 1000,
+        strokeWeight: 2,
+        strokeColor: '#2873df',
+        strokeOpacity: 0.65,
+        fillColor: '#5e9cf0',
+        fillOpacity: 0.07
+    });
+
+    state.circle.setMap(state.map);
+}
+
+function updateMarkers() {
+    if (!state.map) return;
+
+    for (const marker of state.markers) {
+        marker.setMap(null);
+    }
+
+    state.markers = [];
+    updateCircle();
+
+    const radius = byId('radius').value;
+    const enabled = {
+        tertiary: byId('filter-tertiary').checked,
+        medical: byId('filter-medical').checked,
+        other: byId('filter-other').checked
+    };
+    const viewport = state.map.getBounds();
+    const nationwide = radius === 'all';
+
+    const candidates = state.hospitals
+        .filter((hospital) => {
+            if (!enabled[hospital.type.group]) {
+                return false;
+            }
+
+            if (
+                radius !== 'all' &&
+                distanceKm(state.origin, hospital) >
+                Number(radius)
+            ) {
+                return false;
+            }
+
+            return nationwide || viewport.contain(
+                new kakao.maps.LatLng(
+                    hospital.lat,
+                    hospital.lng
+                )
+            );
+        })
+        .sort((a, b) => {
+            if (
+                nationwide &&
+                a.type.group !== b.type.group
+            ) {
+                if (a.type.group === 'tertiary') {
+                    return -1;
+                }
+
+                if (b.type.group === 'tertiary') {
+                    return 1;
+                }
+            }
+
+            const center = state.map.getCenter();
+            const reference = {
+                lat: center.getLat(),
+                lng: center.getLng()
+            };
+
+            return (
+                distanceKm(reference, a) -
+                distanceKm(reference, b)
+            );
+        })
+        .slice(0, MAX_MARKERS);
+
+    for (const hospital of candidates) {
+        const marker = new kakao.maps.Marker({
+            map: state.map,
+            position: new kakao.maps.LatLng(
+                hospital.lat,
+                hospital.lng
+            ),
+            title: hospital.name
+        });
+
+        kakao.maps.event.addListener(
+            marker,
+            'click',
+            () => openHospital(hospital)
+        );
+
+        state.markers.push(marker);
+    }
+}
+
+function locate() {
     if (!navigator.geolocation) {
-        document.getElementById('status-title').innerText = 'Geolocation 미지원';
+        updateCoordinates();
         return;
     }
 
     navigator.geolocation.getCurrentPosition(
-        function (position) {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            const accuracy = Math.round(position.coords.accuracy);
+        (position) => {
+            state.origin = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+            state.locationKnown = true;
+            state.locationAccuracy =
+                position.coords.accuracy;
+            state.locationUpdated = new Date(
+                position.timestamp || Date.now()
+            );
 
-            currentLatLng = new kakao.maps.LatLng(lat, lng);
+            updateCoordinates();
 
-            document.getElementById('status-title').innerText = '위치 갱신 완료';
-            document.getElementById('coords').innerHTML =
-                `• 위도: ${toDMS(lat)}<br>• 경도: ${toDMS(lng)}<br>• 오차범위: 약 ±${accuracy}m`;
+            state.map.panTo(
+                new kakao.maps.LatLng(
+                    state.origin.lat,
+                    state.origin.lng
+                )
+            );
 
-            myLocationOverlay.setPosition(currentLatLng);
-            myLocationOverlay.setMap(map);
-
-            if (isInitial) {
-                map.setCenter(currentLatLng);
-            } else {
-                map.panTo(currentLatLng);
-            }
-
-            renderRadiusAndHospitals(currentLatLng, currentRadiusKm);
+            updateMarkers();
         },
-        function () {
-            document.getElementById('status-title').innerText = '기본 위치(서울시청) 적용';
-            document.getElementById('coords').innerHTML =
-                `• 위도: ${toDMS(defaultLat)}<br>• 경도: ${toDMS(defaultLng)}<br>• 위치 권한 미허용 상태`;
-            currentLatLng = new kakao.maps.LatLng(defaultLat, defaultLng);
-            renderRadiusAndHospitals(currentLatLng, currentRadiusKm);
+        () => {
+            state.locationKnown = false;
+            state.locationAccuracy = null;
+            state.locationUpdated = null;
+
+            updateCoordinates();
+            updateMarkers();
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 60000
+        }
     );
 }
 
-function renderRadiusAndHospitals(center, radiusKm) {
-    if (activeCircle) activeCircle.setMap(null);
-    if (activeCircleLabel) activeCircleLabel.setMap(null);
+function updateSearch() {
+    const list = byId('search-results');
+    const query = byId('keyword')
+        .value
+        .replace(/\s+/g, '')
+        .toLowerCase();
 
-    if (radiusKm >= 500) {
-        map.setLevel(13);
-        map.setCenter(new kakao.maps.LatLng(36.3, 127.8));
-        updateHospitalsInViewport();
+    list.replaceChildren();
+    list.hidden = !query;
+
+    if (!query) return;
+
+    const matches = state.hospitals
+        .filter((item) =>
+            item.name
+                .replace(/\s+/g, '')
+                .toLowerCase()
+                .includes(query)
+        )
+        .slice(0, 25);
+
+    if (!matches.length) {
+        list.append(
+            node(
+                'li',
+                'empty-state',
+                '일치하는 기관이 없습니다.'
+            )
+        );
+    }
+
+    for (const hospital of matches) {
+        const li = node('li');
+        const button = node(
+            'button',
+            'result-button'
+        );
+
+        button.type = 'button';
+        button.append(
+            node('strong', '', hospital.name),
+            node('small', '', hospital.type.label)
+        );
+
+        button.addEventListener('click', () => {
+            byId('keyword').value = hospital.name;
+            list.hidden = true;
+
+            state.map.panTo(
+                new kakao.maps.LatLng(
+                    hospital.lat,
+                    hospital.lng
+                )
+            );
+            state.map.setLevel(4);
+
+            openHospital(hospital);
+        });
+
+        li.append(button);
+        list.append(li);
+    }
+}
+
+function parseApiDate(value) {
+    if (!/^\d{14}$/.test(value || '')) {
+        return null;
+    }
+
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(4, 6));
+    const day = Number(value.slice(6, 8));
+    const hour = Number(value.slice(8, 10));
+    const minute = Number(value.slice(10, 12));
+    const second = Number(value.slice(12, 14));
+
+    const date = new Date(
+        Date.UTC(
+            year,
+            month - 1,
+            day,
+            hour - 9,
+            minute,
+            second
+        )
+    );
+
+    const display = new Intl.DateTimeFormat(
+        'ko-KR',
+        {
+            timeZone: 'Asia/Seoul',
+            month: 'numeric',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        }
+    ).format(date);
+
+    return {
+        timestamp: date.getTime(),
+        display
+    };
+}
+
+function empty(container, message) {
+    container.replaceChildren(
+        node('p', 'empty-state', message)
+    );
+}
+
+function renderMessages(hospital) {
+    const target = byId('messages');
+    target.replaceChildren();
+
+    if (!state.sources.messages) {
+        empty(
+            target,
+            '공지 조회에 실패했습니다. 병원에 확인하세요.'
+        );
+        byId('message-count').textContent = '';
         return;
     }
 
-    const radiusMeters = radiusKm * 1000;
-    const theme = getRadiusTheme(radiusKm);
+    const now = Date.now();
 
-    activeCircle = new kakao.maps.Circle({
-        center: center,
-        radius: radiusMeters,
-        strokeWeight: 2.2,
-        strokeColor: theme.strokeColor,
-        strokeOpacity: 0.8,
-        strokeStyle: 'solid',
-        fillColor: theme.fillColor,
-        fillOpacity: theme.fillOpacity
-    });
-    activeCircle.setMap(map);
+    const messages = hospital.messages
+        .filter((item) => {
+            const start = parseApiDate(
+                item.symblksttdtm
+            );
+            const end = parseApiDate(
+                item.symblkenddtm
+            );
 
-    const latOffset = radiusMeters / 111319.5;
-    const topPosition = new kakao.maps.LatLng(center.getLat() + latOffset, center.getLng());
+            return (
+                (!start || start.timestamp <= now) &&
+                (!end || end.timestamp > now) &&
+                item.symblkmsg
+            );
+        })
+        .sort((a, b) => {
+            const priority = (item) =>
+                item.symblkmsgtyp === '중증'
+                    ? 0
+                    : 1;
 
-    const labelBadge = document.createElement('div');
-    labelBadge.className = 'circle-top-label';
-    labelBadge.style.backgroundColor = theme.labelBg;
-    labelBadge.innerText = `${radiusKm}km`;
-
-    activeCircleLabel = new kakao.maps.CustomOverlay({
-        position: topPosition,
-        content: labelBadge,
-        xAnchor: 0.5,
-        yAnchor: 1.0,
-        zIndex: 5
-    });
-    activeCircleLabel.setMap(map);
-
-    const cosLat = Math.cos(center.getLat() * (Math.PI / 180));
-    const lngOffset = radiusMeters / (111319.5 * (cosLat === 0 ? 1 : cosLat));
-    const sw = new kakao.maps.LatLng(center.getLat() - latOffset, center.getLng() - lngOffset);
-    const ne = new kakao.maps.LatLng(center.getLat() + latOffset, center.getLng() + lngOffset);
-    map.setBounds(new kakao.maps.LatLngBounds(sw, ne));
-
-    updateHospitalsInViewport();
-}
-
-function debounceUpdateHospitalsInViewport() {
-    if (viewportUpdateTimer) clearTimeout(viewportUpdateTimer);
-    viewportUpdateTimer = setTimeout(() => {
-        updateHospitalsInViewport();
-    }, 80);
-}
-
-/**
- * ============================================================================
- * [뷰포트 갱신: LOD(Level of Detail) 렌더링 최적화]
- * ============================================================================
- */
-function updateHospitalsInViewport() {
-    if (!map || !currentLatLng || cachedHospitals.length === 0) return;
-
-    const bounds = map.getBounds();
-    const sw = bounds.getSouthWest();
-    const ne = bounds.getNorthEast();
-    const currentLevel = map.getLevel();
-
-    const renderMode = currentLevel >= 9 ? 'dot' : 'bubble';
-
-    const latSpan = ne.getLat() - sw.getLat();
-    const lngSpan = ne.getLng() - sw.getLng();
-    const bufferRatio = 0.10;
-
-    const bufferedSwLat = sw.getLat() - (latSpan * bufferRatio);
-    const bufferedSwLng = sw.getLng() - (lngSpan * bufferRatio);
-    const bufferedNeLat = ne.getLat() + (latSpan * bufferRatio);
-    const bufferedNeLng = ne.getLng() + (lngSpan * bufferRatio);
-
-    const centerLat = currentLatLng.getLat();
-    const centerLng = currentLatLng.getLng();
-
-    const visibleCandidates = [];
-    for (let i = 0; i < cachedHospitals.length; i++) {
-        const h = cachedHospitals[i];
-
-        if (!hospitalFilters[h.type]) continue;
-
-        const dist = getDistanceKm(centerLat, centerLng, h.lat, h.lng);
-        if (dist > currentRadiusKm) continue;
-
-        if (h.lat >= bufferedSwLat && h.lat <= bufferedNeLat &&
-            h.lng >= bufferedSwLng && h.lng <= bufferedNeLng) {
-            visibleCandidates.push({ ...h, distance: dist });
-        }
-    }
-
-    if (visibleCandidates.length > MAX_VISIBLE_OVERLAYS) {
-        visibleCandidates.sort((a, b) => {
-            if (a.type === 'tertiary' && b.type !== 'tertiary') return -1;
-            if (a.type !== 'tertiary' && b.type === 'tertiary') return 1;
-            return a.distance - b.distance;
+            return priority(a) - priority(b);
         });
-        visibleCandidates.length = MAX_VISIBLE_OVERLAYS;
+
+    byId('message-count').textContent =
+        `${messages.length}건`;
+
+    if (!messages.length) {
+        empty(target, '현재 표시할 공지가 없습니다.');
+        return;
     }
 
-    const currentVisibleHpidSet = new Set(visibleCandidates.map(h => h.hpid));
+    for (const item of messages) {
+        const level =
+            item.symblkmsgtyp === '중증'
+                ? 'critical'
+                : item.symblkmsgtyp === '응급'
+                    ? 'urgent'
+                    : 'unknown';
 
-    for (const [hpid, item] of activeOverlayMap.entries()) {
-        if (!currentVisibleHpidSet.has(hpid)) {
-            item.overlay.setMap(null);
+        const article = node(
+            'article',
+            `message-card ${level}`
+        );
+        const heading = node(
+            'div',
+            'message-heading'
+        );
+        const badge = node(
+            'span',
+            'message-badge',
+            item.symblkmsgtyp || '공지'
+        );
+        const subject =
+            item.trtprtcodmag ||
+            item.symtypcodmag ||
+            '진료 공지';
+
+        heading.append(
+            badge,
+            node('strong', '', subject)
+        );
+
+        article.append(
+            heading,
+            node(
+                'p',
+                'message-text',
+                item.symblkmsg
+            )
+        );
+
+        const end = parseApiDate(
+            item.symblkenddtm
+        );
+
+        if (end) {
+            article.append(
+                node(
+                    'small',
+                    'muted',
+                    `종료 예정 ${end.display}`
+                )
+            );
         }
+
+        target.append(article);
+    }
+}
+
+function renderSevere(hospital) {
+    const target = byId('severe');
+    target.replaceChildren();
+    byId('severe-time').textContent = '';
+
+    if (!state.sources.severe) {
+        empty(
+            target,
+            '중증질환 정보 조회에 실패했습니다.'
+        );
+        return;
     }
 
-    visibleCandidates.forEach(h => {
-        if (preciseCoordCache.has(h.hpid)) {
-            const cached = preciseCoordCache.get(h.hpid);
-            h.lat = cached.lat;
-            h.lng = cached.lng;
+    const fields = hospital.severe;
+
+    if (!fields) {
+        empty(
+            target,
+            '이 기관의 중증질환 수용 정보가 보고되지 않았습니다.'
+        );
+        return;
+    }
+
+    const keys = Object.keys(fields)
+        .filter((key) => /^mkioskty\d+$/.test(key))
+        .sort(
+            (a, b) =>
+                Number(a.slice(8)) -
+                Number(b.slice(8))
+        );
+
+    let shown = 0;
+
+    for (const key of keys) {
+        const value = fields[key].toUpperCase();
+
+        if (value !== 'Y' && value !== 'N') {
+            continue;
         }
 
-        const existing = activeOverlayMap.get(h.hpid);
+        const index = Number(key.slice(8)) - 1;
+        const row = node(
+            'div',
+            'severe-row'
+        );
+        const title = node(
+            'div',
+            'severe-name',
+            `${DISEASES[index] || key} `
+        );
 
-        if (existing && existing.mode === renderMode) {
-            if (!existing.overlay.getMap()) {
-                existing.overlay.setPosition(new kakao.maps.LatLng(h.lat, h.lng));
-                existing.overlay.setMap(map);
-            }
+        title.append(
+            node('small', 'field-code', key)
+        );
+
+        const note = fields[`${key}msg`];
+
+        if (note) {
+            title.append(
+                node(
+                    'small',
+                    'severe-note',
+                    note
+                )
+            );
+        }
+
+        row.append(
+            title,
+            node(
+                'span',
+                `state-pill ${
+                    value === 'Y' ? 'yes' : 'no'
+                }`,
+                value === 'Y'
+                    ? '수용 가능'
+                    : '수용 불가'
+            )
+        );
+
+        target.append(row);
+        shown += 1;
+    }
+
+    if (!shown) {
+        empty(
+            target,
+            '보고된 Y/N 항목이 없습니다.'
+        );
+    }
+
+    const reported = parseApiDate(
+        fields.hvidate || fields.mkioskdate
+    );
+
+    if (reported) {
+        byId('severe-time').textContent =
+            `보고 ${reported.display}`;
+    }
+}
+
+function bedValue(raw) {
+    if (raw === undefined || raw === '') {
+        return '미보고';
+    }
+
+    const value = Number(raw);
+
+    if (!Number.isFinite(value)) {
+        return raw;
+    }
+
+    if (value < 0) {
+        return (
+            `0석 · ${Math.abs(value)}석 초과 수용`
+        );
+    }
+
+    return `${value}석`;
+}
+
+function renderBeds(hospital) {
+    const important = byId('key-beds');
+    const all = byId('all-beds');
+
+    important.replaceChildren();
+    all.replaceChildren();
+    byId('bed-time').textContent = '';
+
+    if (!state.sources.beds) {
+        empty(
+            important,
+            '병상 정보 조회에 실패했습니다.'
+        );
+        empty(
+            all,
+            '세부 항목을 표시할 수 없습니다.'
+        );
+        return;
+    }
+
+    const fields = hospital.beds;
+
+    if (!fields) {
+        empty(
+            important,
+            '이 기관의 병상 정보가 보고되지 않았습니다.'
+        );
+        empty(
+            all,
+            '세부 항목이 없습니다.'
+        );
+        return;
+    }
+
+    for (const [key, label] of KNOWN_BEDS) {
+        const card = node(
+            'div',
+            'metric-card'
+        );
+
+        card.append(
+            node(
+                'span',
+                'metric-label',
+                label
+            ),
+            node(
+                'strong',
+                'metric-value',
+                bedValue(fields[key])
+            ),
+            node(
+                'small',
+                'field-code',
+                key
+            )
+        );
+
+        important.append(card);
+    }
+
+    const groups = [
+        {
+            title: '실시간 세부 항목 · hv (원본값)',
+            keys: Object.keys(fields).filter(
+                (key) => /^hv\d+$/.test(key)
+            )
+        },
+        {
+            title: '병상 관련 항목 · hvs (원본값)',
+            keys: Object.keys(fields).filter(
+                (key) => /^hvs\d+$/.test(key)
+            )
+        },
+        {
+            title: '그 밖의 병상 관련 항목 (원본값)',
+            keys: ['hvcc', 'hvccc'].filter(
+                (key) => key in fields
+            )
+        }
+    ];
+
+    for (const group of groups) {
+        if (!group.keys.length) continue;
+
+        const section = node(
+            'section',
+            'raw-group'
+        );
+        section.append(
+            node('h3', '', group.title)
+        );
+
+        const list = node(
+            'dl',
+            'raw-grid'
+        );
+
+        group.keys.sort((a, b) =>
+            a.localeCompare(
+                b,
+                undefined,
+                { numeric: true }
+            )
+        );
+
+        for (const key of group.keys) {
+            const pair = node(
+                'div',
+                'raw-pair'
+            );
+
+            pair.append(
+                node(
+                    'dt',
+                    'field-code',
+                    key
+                ),
+                node(
+                    'dd',
+                    '',
+                    fields[key]
+                )
+            );
+
+            list.append(pair);
+        }
+
+        section.append(list);
+        all.append(section);
+    }
+
+    if (!all.childElementCount) {
+        empty(
+            all,
+            '세부 항목이 없습니다.'
+        );
+    }
+
+    const reported = parseApiDate(
+        fields.hvidate
+    );
+
+    if (reported) {
+        byId('bed-time').textContent =
+            `보고 ${reported.display}`;
+    }
+}
+
+function renderEquipment(hospital) {
+    const target = byId('equipment');
+    target.replaceChildren();
+
+    if (!state.sources.beds) {
+        empty(
+            target,
+            '장비 정보 조회에 실패했습니다.'
+        );
+        return;
+    }
+
+    const fields = hospital.beds;
+
+    if (!fields) {
+        empty(
+            target,
+            '이 기관의 장비 정보가 보고되지 않았습니다.'
+        );
+        return;
+    }
+
+    const keys = Object.keys(fields).filter(
+        (key) =>
+            key in EQUIPMENT ||
+            /^hv[a-z]+ayn$/.test(key)
+    );
+
+    keys.sort();
+
+    if (!keys.length) {
+        empty(
+            target,
+            '보고된 장비 항목이 없습니다.'
+        );
+        return;
+    }
+
+    for (const key of keys) {
+        const value = fields[key].toUpperCase();
+        const item = node(
+            'div',
+            'equipment-item'
+        );
+        const name = node(
+            'span',
+            '',
+            EQUIPMENT[key] || key
+        );
+
+        name.append(
+            node(
+                'small',
+                'field-code',
+                key
+            )
+        );
+
+        const status =
+            value === 'Y'
+                ? '가능'
+                : value === 'N'
+                    ? '불가'
+                    : fields[key];
+
+        item.append(
+            name,
+            node(
+                'strong',
+                value === 'Y'
+                    ? 'yes-text'
+                    : value === 'N'
+                        ? 'no-text'
+                        : '',
+                status
+            )
+        );
+
+        target.append(item);
+    }
+}
+
+function renderBasic(hospital) {
+    const target = byId('basic-info');
+    target.replaceChildren();
+
+    const blocks = [
+        [
+            '응급의료기관 기본정보',
+            hospital.basic,
+            state.sources.basic
+        ],
+        [
+            '외상센터 기본정보',
+            hospital.trauma,
+            state.sources.traumaBasic
+        ]
+    ];
+
+    for (const [heading, fields, loaded] of blocks) {
+        const section = node(
+            'section',
+            'raw-group'
+        );
+
+        section.append(
+            node('h3', '', heading)
+        );
+
+        if (!loaded) {
+            section.append(
+                node(
+                    'p',
+                    'empty-state',
+                    '조회에 실패했습니다.'
+                )
+            );
+        } else if (
+            !fields ||
+            !Object.keys(fields).length
+        ) {
+            section.append(
+                node(
+                    'p',
+                    'empty-state',
+                    '보고된 정보가 없습니다.'
+                )
+            );
         } else {
-            if (existing) {
-                existing.overlay.setMap(null);
-            }
+            const list = node(
+                'dl',
+                'raw-grid'
+            );
 
-            const overlay = renderMode === 'dot'
-                ? createHospitalDotOverlay(h)
-                : createHospitalBubbleOverlay(h);
-
-            overlay.setMap(map);
-            activeOverlayMap.set(h.hpid, { overlay, mode: renderMode });
-
-            if (!preciseCoordCache.has(h.hpid)) {
-                ensurePreciseHospitalCoordinate(h, (preciseHospital) => {
-                    overlay.setPosition(new kakao.maps.LatLng(preciseHospital.lat, preciseHospital.lng));
-                });
-            }
-        }
-    });
-}
-
-/**
- * ============================================================================
- * [광역/전국 축척용 점(Dot) 오버레이]
- * ============================================================================
- */
-function createHospitalDotOverlay(h) {
-    let bedClass = 'dot-warning';
-    if (h.hvec !== null && h.hvec !== undefined) {
-        if (h.hvec > 5) bedClass = 'dot-normal';
-        else if (h.hvec > 0) bedClass = 'dot-warning';
-        else bedClass = 'dot-danger';
-    }
-
-    let borderClass = 'border-general';
-    if (h.type === 'tertiary') borderClass = 'border-tertiary';
-    else if (h.type === 'regional') borderClass = 'border-regional';
-
-    const wrapper = document.createElement('div');
-    wrapper.className = `hospital-mini-dot ${bedClass} ${borderClass}`;
-    wrapper.title = `${h.name} (${h.typeLabel})`;
-
-    let isDotDragging = false;
-    let dotDownX = 0;
-    let dotDownY = 0;
-
-    wrapper.addEventListener('mousedown', (e) => {
-        isDotDragging = false;
-        dotDownX = e.clientX;
-        dotDownY = e.clientY;
-    });
-
-    wrapper.addEventListener('mousemove', (e) => {
-        if (Math.abs(e.clientX - dotDownX) > 6 || Math.abs(e.clientY - dotDownY) > 6) {
-            isDotDragging = true;
-        }
-    });
-
-    wrapper.addEventListener('touchstart', (e) => {
-        isDotDragging = false;
-        if (e.touches && e.touches[0]) {
-            dotDownX = e.touches[0].clientX;
-            dotDownY = e.touches[0].clientY;
-        }
-    }, { passive: true });
-
-    wrapper.addEventListener('touchmove', (e) => {
-        if (e.touches && e.touches[0]) {
-            if (Math.abs(e.touches[0].clientX - dotDownX) > 6 || Math.abs(e.touches[0].clientY - dotDownY) > 6) {
-                isDotDragging = true;
-            }
-        }
-    }, { passive: true });
-
-    wrapper.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (isDotDragging) {
-            isDotDragging = false;
-            return;
-        }
-
-        map.setLevel(4);
-        map.panTo(new kakao.maps.LatLng(h.lat, h.lng));
-
-        ensurePreciseHospitalCoordinate(h, (preciseHospital) => {
-            openHospitalBottomSheet(preciseHospital);
-        });
-    });
-
-    return new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(h.lat, h.lng),
-        content: wrapper,
-        xAnchor: 0.5,
-        yAnchor: 0.5,
-        zIndex: h.type === 'tertiary' ? 4 : 2
-    });
-}
-
-/**
- * ============================================================================
- * [근거리/상세 모드용 카드 말풍선 오버레이]
- * (코호트 격리 세그먼트 제거 및 5종 상태 바 반영)
- * ============================================================================
- */
-function createHospitalBubbleOverlay(h) {
-    let bedText = '정보 없음';
-    let bedClass = 'bed-warning';
-
-    if (h.hvec !== null && h.hvec !== undefined) {
-        if (h.hvec > 5) {
-            bedText = `${h.hvec}석 여유`;
-            bedClass = 'bed-normal';
-        } else if (h.hvec > 0) {
-            bedText = `${h.hvec}석 혼잡`;
-            bedClass = 'bed-warning';
-        } else if (h.hvec < 0) {
-            bedText = `0석 (${Math.abs(h.hvec)}석 초과 수용)`;
-            bedClass = 'bed-danger';
-        } else {
-            bedText = '0석 (병상 부족)';
-            bedClass = 'bed-danger';
-        }
-    }
-
-    let typeBadgeClass = 'hospital-type-general';
-    if (h.type === 'tertiary') typeBadgeClass = 'hospital-type-tertiary';
-    else if (h.type === 'regional') typeBadgeClass = 'hospital-type-regional';
-
-    const displayTel = h.erTel ? `${h.erTel}` : (h.mainTel ? `${h.mainTel}` : '번호 없음');
-    const beds = h.bedDetails || parseBedDetailInfo({});
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'hospital-overlay-wrapper';
-    wrapper.title = '클릭하여 응급실 상세 정보 확인';
-    wrapper.innerHTML = `
-        <div class="hospital-bubble">
-            <div class="hospital-name">
-                <span class="hospital-type-badge ${typeBadgeClass}">${h.typeLabel}</span>
-                ${h.name}
-            </div>
-            <div class="hospital-info">${h.distance.toFixed(1)}km | ${displayTel}</div>
-            <div style="display:flex; align-items:center; justify-content:space-between;">
-                <span style="font-size:10.5px; color:#64748b;">응급실:</span>
-                <span class="bed-badge ${bedClass}">${bedText}</span>
-            </div>
-            <div class="hospital-bed-bars" title="일반 | 소아 | 분만실 | 음압격리 | 일반격리">
-                <div class="bed-bar-segment ${beds.er.barClass}" title="응급실일반: ${beds.er.tooltip}"></div>
-                <div class="bed-bar-segment ${beds.pediatric.barClass}" title="응급실소아: ${beds.pediatric.tooltip}"></div>
-                <div class="bed-bar-segment ${beds.delivery.barClass}" title="분만실: ${beds.delivery.tooltip}"></div>
-                <div class="bed-bar-segment ${beds.negative.barClass}" title="음압격리: ${beds.negative.tooltip}"></div>
-                <div class="bed-bar-segment ${beds.isolation.barClass}" title="일반격리: ${beds.isolation.tooltip}"></div>
-            </div>
-        </div>
-        <div class="hospital-bubble-tail"></div>
-    `;
-
-    let isDraggingBubble = false;
-    let bubbleDownX = 0;
-    let bubbleDownY = 0;
-
-    wrapper.addEventListener('mousedown', (e) => {
-        isDraggingBubble = false;
-        bubbleDownX = e.clientX;
-        bubbleDownY = e.clientY;
-    });
-
-    wrapper.addEventListener('mousemove', (e) => {
-        if (Math.abs(e.clientX - bubbleDownX) > 6 || Math.abs(e.clientY - bubbleDownY) > 6) {
-            isDraggingBubble = true;
-        }
-    });
-
-    wrapper.addEventListener('touchstart', (e) => {
-        isDraggingBubble = false;
-        if (e.touches && e.touches[0]) {
-            bubbleDownX = e.touches[0].clientX;
-            bubbleDownY = e.touches[0].clientY;
-        }
-    }, { passive: true });
-
-    wrapper.addEventListener('touchmove', (e) => {
-        if (e.touches && e.touches[0]) {
-            if (Math.abs(e.touches[0].clientX - bubbleDownX) > 6 || Math.abs(e.touches[0].clientY - bubbleDownY) > 6) {
-                isDraggingBubble = true;
-            }
-        }
-    }, { passive: true });
-
-    wrapper.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (isDraggingBubble) {
-            isDraggingBubble = false;
-            return;
-        }
-
-        ensurePreciseHospitalCoordinate(h, (preciseHospital) => {
-            const existing = activeOverlayMap.get(preciseHospital.hpid);
-            if (existing && existing.overlay) {
-                existing.overlay.setPosition(new kakao.maps.LatLng(preciseHospital.lat, preciseHospital.lng));
-            }
-            openHospitalBottomSheet(preciseHospital);
-        });
-    });
-
-    return new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(h.lat, h.lng),
-        content: wrapper,
-        xAnchor: 0.5,
-        yAnchor: 1.0,
-        zIndex: 6
-    });
-}
-
-/**
- * ============================================================================
- * [바텀시트 오픈]
- * 5열 가로 정렬 및 코호트 격리 제외 렌더링
- * ============================================================================
- */
-function openHospitalBottomSheet(h) {
-    currentSelectedHospital = h;
-
-    document.getElementById('sheet-hospital-name').innerText = h.name;
-
-    const addrElement = document.getElementById('sheet-address');
-    if (h.address && h.address.trim() !== '') {
-        addrElement.innerText = h.address;
-    } else {
-        addrElement.innerText = '주소 조회 중...';
-        if (kakaoGeocoder) {
-            kakaoGeocoder.coord2Address(h.lng, h.lat, (result, status) => {
-                if (status === kakao.maps.services.Status.OK && result[0]) {
-                    const fallbackAddr = result[0].road_address
-                        ? result[0].road_address.address_name
-                        : result[0].address.address_name;
-                    h.address = fallbackAddr;
-                    addrElement.innerText = fallbackAddr;
-                } else {
-                    addrElement.innerText = '주소 정보가 없습니다.';
+            for (const [key, value] of Object.entries(fields)) {
+                if (
+                    !value ||
+                    ['hpid', 'rnum', 'phpid'].includes(key)
+                ) {
+                    continue;
                 }
-            });
-        } else {
-            addrElement.innerText = '주소 정보가 없습니다.';
-        }
-    }
 
-    const distText = h.distance !== undefined ? `내 위치로부터 ${h.distance.toFixed(1)}km` : '';
-    document.getElementById('sheet-distance').innerText = distText;
+                const pair = node(
+                    'div',
+                    'raw-pair'
+                );
 
-    const typeEl = document.getElementById('sheet-hospital-type');
-    typeEl.innerText = h.typeLabel;
+                pair.append(
+                    node(
+                        'dt',
+                        'field-code',
+                        key
+                    ),
+                    node(
+                        'dd',
+                        '',
+                        value
+                    )
+                );
 
-    let badgeClass = 'hospital-type-general';
-    if (h.type === 'tertiary') badgeClass = 'hospital-type-tertiary';
-    else if (h.type === 'regional') badgeClass = 'hospital-type-regional';
-    typeEl.className = `hospital-type-badge ${badgeClass}`;
+                list.append(pair);
+            }
 
-    const beds = h.bedDetails || parseBedDetailInfo({});
-    const gridEl = document.getElementById('sheet-bed-grid');
-
-    const renderBedCol = (title, bed) => `
-        <div class="bed-col">
-            <span class="bed-col-title">${title}</span>
-            <div class="bed-status-indicator ${bed.indicatorClass}">${bed.indicatorText}</div>
-            <div class="bed-col-value" style="white-space:normal; line-height:1.25;">${bed.valueText}</div>
-        </div>
-    `;
-
-    // 코호트 격리 항목 제외 (5종 컬럼 렌더링)
-    gridEl.innerHTML = `
-        ${renderBedCol('응급실일반', beds.er)}
-        ${renderBedCol('응급실소아', beds.pediatric)}
-        ${renderBedCol('분만실', beds.delivery)}
-        ${renderBedCol('음압격리', beds.negative)}
-        ${renderBedCol('일반격리', beds.isolation)}
-    `;
-
-    const erRow = document.getElementById('sheet-er-tel-row');
-    const erLink = document.getElementById('sheet-er-tel-link');
-    if (h.erTel) {
-        erLink.href = `tel:${h.erTel}`;
-        erLink.innerText = `${h.erTel} 통화`;
-        erRow.style.display = 'flex';
-    } else {
-        erRow.style.display = 'none';
-    }
-
-    const mainRow = document.getElementById('sheet-main-tel-row');
-    const mainLink = document.getElementById('sheet-main-tel-link');
-    if (h.mainTel) {
-        mainLink.href = `tel:${h.mainTel}`;
-        mainLink.innerText = `${h.mainTel} 통화`;
-        mainRow.style.display = 'flex';
-    } else {
-        mainRow.style.display = 'none';
-    }
-
-    const msgEl = document.getElementById('sheet-msg-content');
-    if (h.message) {
-        msgEl.innerHTML = h.message;
-        msgEl.style.color = '#991b1b';
-    } else {
-        msgEl.innerHTML = '현재 등록된 실시간 제한/공지 메시지가 없습니다.';
-        msgEl.style.color = '#64748b';
-    }
-
-    const severeEl = document.getElementById('sheet-severe-content');
-    if (h.severeData && (h.severeData.available.length > 0 || h.severeData.unavailable.length > 0)) {
-        let html = '';
-
-        if (h.severeData.unavailable.length > 0) {
-            html += `<div style="font-size:11px; font-weight:700; color:#b91c1c; margin-bottom:4px;">수용 불가 질환 (${h.severeData.unavailable.length}건)</div>`;
-            html += '<div class="severe-grid" style="margin-bottom:10px;">';
-            h.severeData.unavailable.forEach(name => {
-                html += `<span class="severe-tag imposbl">${name}</span>`;
-            });
-            html += '</div>';
+            section.append(list);
         }
 
-        if (h.severeData.available.length > 0) {
-            html += `<div style="font-size:11px; font-weight:700; color:#15803d; margin-bottom:4px;">수용 가능 질환 (${h.severeData.available.length}건)</div>`;
-            html += '<div class="severe-grid">';
-            h.severeData.available.forEach(name => {
-                html += `<span class="severe-tag posbl">${name}</span>`;
-            });
-            html += '</div>';
-        }
-
-        severeEl.innerHTML = html;
-    } else {
-        severeEl.innerHTML = '<span style="color:#64748b; font-size:12px;">등록된 실시간 중증질환 수용 정보가 없습니다. (해당 기관 미보고)</span>';
-    }
-
-    sheet.style.transform = '';
-    sheet.classList.add('open');
-    dim.classList.add('active');
-}
-
-function closeBottomSheet() {
-    sheet.classList.remove('open');
-    sheet.style.transform = '';
-    dim.classList.remove('active');
-
-    if (activeSearchPin) {
-        activeSearchPin.setMap(null);
-        activeSearchPin = null;
+        target.append(section);
     }
 }
 
-function initBottomSheetEvents() {
-    document.getElementById('sheet-close-btn').addEventListener('click', closeBottomSheet);
-    dim.addEventListener('click', closeBottomSheet);
+function contactLink(text, href, className) {
+    const link = node(
+        'a',
+        className,
+        text
+    );
 
-    document.getElementById('navi-kakao').addEventListener('click', (e) => {
-        e.preventDefault();
-        launchNavigationApp('kakao');
-    });
-    document.getElementById('navi-naver').addEventListener('click', (e) => {
-        e.preventDefault();
-        launchNavigationApp('naver');
-    });
-    document.getElementById('navi-tmap').addEventListener('click', (e) => {
-        e.preventDefault();
-        launchNavigationApp('tmap');
-    });
+    link.href = href;
+    return link;
+}
 
-    let startY = 0;
-    let currentY = 0;
-    let isDragging = false;
+function isAppleTouchDevice() {
+    const userAgent = navigator.userAgent || '';
 
-    dragArea.addEventListener('touchstart', (e) => {
-        startY = e.touches[0].clientY;
-        isDragging = true;
-        sheet.style.transition = 'none';
-    }, { passive: true });
+    return (
+        /iPad|iPhone|iPod/.test(userAgent) ||
+        (
+            /Macintosh/.test(userAgent) &&
+            navigator.maxTouchPoints > 1
+        )
+    );
+}
 
-    window.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
-        currentY = e.touches[0].clientY;
-        const deltaY = currentY - startY;
-        if (deltaY > 0) sheet.style.transform = `translateY(${deltaY}px)`;
-    }, { passive: true });
+function openMobileApp(
+    scheme,
+    androidPackage,
+    fallback
+) {
+    if (/Android/i.test(navigator.userAgent)) {
+        const intent = scheme.replace(
+            /^[a-z]+:\/\//,
+            'intent://'
+        );
+        const intentScheme = scheme.split(':')[0];
 
-    window.addEventListener('touchend', () => {
-        if (!isDragging) return;
-        isDragging = false;
-        sheet.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)';
+        window.location.href =
+            `${intent}#Intent;scheme=${intentScheme};` +
+            'action=android.intent.action.VIEW;' +
+            'category=android.intent.category.BROWSABLE;' +
+            `package=${androidPackage};` +
+            `S.browser_fallback_url=${
+                encodeURIComponent(fallback)
+            };end`;
 
-        const deltaY = currentY - startY;
-        if (deltaY > 70) {
-            closeBottomSheet();
-        } else {
-            sheet.style.transform = 'translateY(0)';
+        return;
+    }
+
+    if (!isAppleTouchDevice()) {
+        window.open(
+            fallback,
+            '_blank',
+            'noopener,noreferrer'
+        );
+        return;
+    }
+
+    let departed = false;
+
+    const onLeave = () => {
+        if (
+            document.visibilityState === 'hidden'
+        ) {
+            departed = true;
         }
-        startY = 0;
-        currentY = 0;
-    });
+    };
 
-    dragArea.addEventListener('mousedown', (e) => {
-        startY = e.clientY;
-        isDragging = true;
-        sheet.style.transition = 'none';
-    });
+    document.addEventListener(
+        'visibilitychange',
+        onLeave,
+        { once: true }
+    );
+    window.addEventListener(
+        'pagehide',
+        onLeave,
+        { once: true }
+    );
 
-    window.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        currentY = e.clientY;
-        const deltaY = currentY - startY;
-        if (deltaY > 0) sheet.style.transform = `translateY(${deltaY}px)`;
-    });
+    window.location.href = scheme;
 
-    window.addEventListener('mouseup', () => {
-        if (!isDragging) return;
-        isDragging = false;
-        sheet.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)';
-
-        const deltaY = currentY - startY;
-        if (deltaY > 70) {
-            closeBottomSheet();
-        } else {
-            sheet.style.transform = 'translateY(0)';
+    window.setTimeout(() => {
+        if (
+            !departed &&
+            document.visibilityState === 'visible'
+        ) {
+            window.location.href = fallback;
         }
-        startY = 0;
-        currentY = 0;
+    }, 1700);
+}
+
+function launchNavigation(provider, hospital) {
+    const name = encodeURIComponent(
+        hospital.name
+    );
+    const lat = hospital.lat;
+    const lng = hospital.lng;
+
+    if (provider === 'kakao') {
+        window.open(
+            `https://map.kakao.com/link/to/${name},${lat},${lng}`,
+            '_blank',
+            'noopener,noreferrer'
+        );
+        return;
+    }
+
+    if (provider === 'naver') {
+        const appname = encodeURIComponent(
+            window.location.href.split('#')[0]
+        );
+        const start = state.locationKnown
+            ? (
+                `slat=${state.origin.lat}` +
+                `&slng=${state.origin.lng}` +
+                `&sname=${encodeURIComponent('내 위치')}&`
+            )
+            : '';
+
+        const route =
+            `nmap://route/car?${start}` +
+            `dlat=${lat}&dlng=${lng}` +
+            `&dname=${name}&appname=${appname}`;
+
+        const fallback =
+            `https://map.naver.com/p/search/${name}`;
+
+        openMobileApp(
+            route,
+            'com.nhn.android.nmap',
+            fallback
+        );
+        return;
+    }
+
+    if (provider === 'tmap') {
+        const route =
+            `tmap://route?goalname=${name}` +
+            `&goalx=${lng}&goaly=${lat}`;
+
+        const fallback = isAppleTouchDevice()
+            ? 'https://apps.apple.com/kr/app/id431589174'
+            : 'https://www.tmap.co.kr/tmap2/mobile/route.jsp';
+
+        openMobileApp(
+            route,
+            'com.skt.tmap.ku',
+            fallback
+        );
+    }
+}
+
+function renderContacts(hospital) {
+    const target = byId('contact-actions');
+    target.replaceChildren();
+
+    for (const [label, number] of [
+        ['응급실', hospital.erTel],
+        ['대표전화', hospital.tel]
+    ]) {
+        if (/^[0-9+()\s-]+$/.test(number)) {
+            target.append(
+                contactLink(
+                    `${label} ${number}`,
+                    `tel:${number.replace(/[^\d+]/g, '')}`,
+                    'phone-button'
+                )
+            );
+        }
+    }
+
+    for (const [provider, label] of [
+        ['kakao', '카카오맵'],
+        ['naver', '네이버 지도'],
+        ['tmap', 'T맵']
+    ]) {
+        const button = node(
+            'button',
+            `map-button ${provider}`,
+            label
+        );
+
+        button.type = 'button';
+        button.addEventListener(
+            'click',
+            () => launchNavigation(
+                provider,
+                hospital
+            )
+        );
+
+        target.append(button);
+    }
+}
+
+function openHospital(
+    hospital,
+    focus = true
+) {
+    if (focus) {
+        state.previousFocus =
+            document.activeElement;
+    }
+
+    state.selected = hospital;
+
+    byId('hospital-name').textContent =
+        hospital.name;
+
+    byId('sheet-updated').textContent =
+        state.lastUpdated
+            ? (
+                `마지막 새로고침 · ${
+                    state.lastUpdated.toLocaleString(
+                        'ko-KR',
+                        {
+                            timeZone: 'Asia/Seoul',
+                            year: 'numeric',
+                            month: 'numeric',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                        }
+                    )
+                } KST`
+            )
+            : '전체 조회 시각을 확인할 수 없습니다.';
+
+    byId('hospital-type').textContent =
+        hospital.type.label;
+
+    byId('hospital-address').textContent =
+        hospital.address || '주소 미보고';
+
+    const distance = distanceKm(
+        state.origin,
+        hospital
+    ).toFixed(1);
+
+    byId('hospital-distance').textContent =
+        `${
+            state.locationKnown
+                ? '내 위치'
+                : '서울시청'
+        }에서 직선거리 ${distance} km`;
+
+    renderContacts(hospital);
+    renderMessages(hospital);
+    renderSevere(hospital);
+    renderBeds(hospital);
+    renderEquipment(hospital);
+    renderBasic(hospital);
+
+    const failed = Object.entries(
+        state.sources
+    )
+        .filter(([, loaded]) => !loaded)
+        .map(([name]) => name);
+
+    byId('data-state').textContent =
+        failed.length
+            ? (
+                `일부 데이터 조회 실패: ${
+                    failed.join(', ')
+                }. 재조회하거나 병원에 문의하세요.`
+            )
+            : (
+                '공공데이터의 보고 시점과 현장 상황은 다를 수 있습니다.'
+            );
+
+    byId('sheet-dim').hidden = false;
+    byId('sheet').classList.add('open');
+    byId('sheet').setAttribute(
+        'aria-hidden',
+        'false'
+    );
+
+    if (focus) {
+        byId('sheet')
+            .querySelector('.sheet-scroll')
+            .scrollTop = 0;
+
+        byId('sheet-close').focus();
+    }
+}
+
+function closeSheet() {
+    byId('sheet').classList.remove('open');
+    byId('sheet').style.transform = '';
+    byId('sheet').style.transition = '';
+    byId('sheet').setAttribute(
+        'aria-hidden',
+        'true'
+    );
+    byId('sheet-dim').hidden = true;
+
+    state.selected = null;
+    state.previousFocus?.focus?.();
+}
+
+function initSheetDrag() {
+    const handle = byId(
+        'sheet-drag-handle'
+    );
+    const sheet = byId('sheet');
+
+    let startY = null;
+    let delta = 0;
+
+    handle.addEventListener(
+        'touchstart',
+        (event) => {
+            if (event.touches.length !== 1) {
+                return;
+            }
+
+            startY = event.touches[0].clientY;
+            delta = 0;
+            sheet.style.transition = 'none';
+        },
+        { passive: true }
+    );
+
+    handle.addEventListener(
+        'touchmove',
+        (event) => {
+            if (
+                startY === null ||
+                event.touches.length !== 1
+            ) {
+                return;
+            }
+
+            delta = Math.max(
+                0,
+                event.touches[0].clientY - startY
+            );
+
+            if (delta > 0) {
+                event.preventDefault();
+                sheet.style.transform =
+                    `translateY(${delta}px)`;
+            }
+        },
+        { passive: false }
+    );
+
+    const finish = () => {
+        if (startY === null) return;
+
+        startY = null;
+        sheet.style.transition = '';
+
+        if (delta > 90) {
+            closeSheet();
+        } else {
+            sheet.style.transform = '';
+        }
+
+        delta = 0;
+    };
+
+    handle.addEventListener(
+        'touchend',
+        finish,
+        { passive: true }
+    );
+    handle.addEventListener(
+        'touchcancel',
+        finish,
+        { passive: true }
+    );
+}
+
+function showNationwide() {
+    if (!state.map) return;
+
+    if (state.hospitals.length === 0) {
+        state.map.setCenter(
+            new kakao.maps.LatLng(
+                36.35,
+                127.8
+            )
+        );
+        state.map.setLevel(12);
+        return;
+    }
+
+    const bounds =
+        new kakao.maps.LatLngBounds();
+
+    for (const hospital of state.hospitals) {
+        bounds.extend(
+            new kakao.maps.LatLng(
+                hospital.lat,
+                hospital.lng
+            )
+        );
+    }
+
+    state.map.setBounds(bounds);
+}
+
+function init() {
+    if (
+        navigator.maxTouchPoints > 0 ||
+        matchMedia('(pointer: coarse)').matches ||
+        isAppleTouchDevice()
+    ) {
+        document.body.classList.add(
+            'touch-device'
+        );
+    }
+
+    initSheetDrag();
+    updateCoordinates();
+
+    byId('search-form').addEventListener(
+        'submit',
+        (event) => {
+            event.preventDefault();
+            updateSearch();
+
+            byId('search-results')
+                .querySelector('button')
+                ?.click();
+        }
+    );
+
+    byId('keyword').addEventListener(
+        'input',
+        updateSearch
+    );
+    byId('refresh-button').addEventListener(
+        'click',
+        loadData
+    );
+    byId('location-button').addEventListener(
+        'click',
+        locate
+    );
+
+    byId('radius').addEventListener(
+        'change',
+        () => {
+            if (
+                byId('radius').value === 'all'
+            ) {
+                showNationwide();
+            }
+
+            updateMarkers();
+        }
+    );
+
+    for (const id of [
+        'filter-tertiary',
+        'filter-medical',
+        'filter-other'
+    ]) {
+        byId(id).addEventListener(
+            'change',
+            updateMarkers
+        );
+    }
+
+    byId('sheet-close').addEventListener(
+        'click',
+        closeSheet
+    );
+    byId('sheet-dim').addEventListener(
+        'click',
+        closeSheet
+    );
+
+    document.addEventListener(
+        'keydown',
+        (event) => {
+            if (
+                event.key === 'Escape' &&
+                state.selected
+            ) {
+                closeSheet();
+            }
+        }
+    );
+
+    if (!window.kakao?.maps) {
+        setStatus(
+            '카카오 지도 SDK를 불러오지 못했습니다.'
+        );
+        return;
+    }
+
+    kakao.maps.load(() => {
+        state.map = new kakao.maps.Map(
+            byId('map'),
+            {
+                center: new kakao.maps.LatLng(
+                    SEOUL.lat,
+                    SEOUL.lng
+                ),
+                level: 6
+            }
+        );
+
+        kakao.maps.event.addListener(
+            state.map,
+            'idle',
+            updateMarkers
+        );
+
+        window.addEventListener(
+            'resize',
+            () => state.map.relayout()
+        );
+
+        loadData();
+        locate();
     });
 }
+
+init();

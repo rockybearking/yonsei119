@@ -1,193 +1,168 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
-
 <head>
-    <meta charset="UTF-8">
-    <!-- viewport-fit=cover: 모바일/태블릿 노치 및 Safe Area 대응 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>카카오맵 실시간 내 위치 & 응급의료기관 정밀 조회</title>
-
-    <!-- 모바일 브라우저 캐시 방지용 버전 파라미터 -->
-    <link rel="stylesheet" href="style.css?v=3.5">
-
-    <!-- 카카오 지도 Web SDK -->
-    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&libraries=services&autoload=false"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f6f8fc">
+    <title>전국 응급의료기관 실시간 정보</title>
+    <link rel="stylesheet" href="style.css">
+    <script
+            src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&amp;libraries=services&amp;autoload=false"
+            defer
+    ></script>
+    <script src="app.js" defer></script>
 </head>
-
 <body>
+<main id="map" aria-label="응급의료기관 지도"></main>
 
-<!-- [첫 진입 안내 팝업 모달] -->
-<div id="notice-modal-backdrop" class="notice-modal-backdrop">
-    <div class="notice-modal-box">
-        <div class="notice-modal-header">
-            <div class="notice-modal-title">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-                <span>응급의료 정보 이용 안내</span>
-            </div>
-            <button type="button" id="notice-close-btn" class="notice-close-btn" aria-label="닫기">&times;</button>
-        </div>
-        <div class="notice-modal-body">
-            <p class="notice-text">
-                <strong>[안내]</strong> 본 서비스의 병상 정보는 공공데이터 연계 주기에 따라 실제 병원 현장 및 중앙응급의료센터(E-Gen) 공식 현황과 시차가 발생할 수 있습니다. <strong>응급 상황 시 반드시 해당 기관에 유선 확인 후 방문하시기 바랍니다.</strong>
-            </p>
-        </div>
-        <div class="notice-modal-footer">
-            <button type="button" id="notice-confirm-btn" class="notice-confirm-btn">확인했습니다</button>
-        </div>
+<header class="top-panel">
+    <div class="brand">
+        <span class="brand-icon">✚</span>
+        <span>응급의료기관 찾기</span>
     </div>
-</div>
-
-<!-- [좌측 상단] 실시간 GPS 수신 상태 및 정밀 좌표 안내 카드 -->
-<div id="status-card">
-    <strong id="status-title" style="color: #007aff;">위치 확인 중...</strong>
-    <div id="coords" style="color: #475569; margin-top: 5px; line-height: 1.6;">
-        브라우저 상단의 위치 권한 팝업에서 [허용]을 눌러주세요.
+    <p id="status" role="status" aria-live="polite">
+        데이터를 불러오는 중입니다.
+    </p>
+    <p id="coordinates" class="coordinates" aria-live="polite">
+        위치 확인 중 · 좌표를 기다리고 있습니다.
+    </p>
+    <div class="top-actions">
+        <button id="location-button" type="button">◎ 내 위치</button>
+        <button id="refresh-button" type="button">↻ 새로고침</button>
     </div>
-</div>
+</header>
 
-<!-- [우측 하단] 띄어쓰기 무관 병원 검색창 및 자동완성 드롭다운 -->
-<div id="search-box">
-    <ul id="search-results-list" class="search-results-list"></ul>
-    <div class="search-input-wrap">
-        <input type="text" id="keyword" placeholder="병원 이름 검색 (띄어쓰기 무관)" autocomplete="off">
-        <button id="search-btn">검색</button>
-    </div>
-</div>
-
-<!-- [좌측 하단 플로팅 메뉴 스택] -->
-
-<!-- 1. 병원 분류 필터 메뉴 (기본값: 상급종합병원만 활성화) -->
-<div id="filter-menu-wrapper">
-    <div id="filter-options" class="floating-popup-menu">
-        <div class="filter-title">응급실 분류 필터</div>
-        <label class="filter-item">
-            <input type="checkbox" id="filter-tertiary" checked>
-            <span class="filter-label filter-label-tertiary">상급종합병원 (대학병원 등)</span>
+<section class="search-panel" aria-label="병원 검색과 필터">
+    <form id="search-form" autocomplete="off">
+        <label class="sr-only" for="keyword">병원 이름</label>
+        <input
+                id="keyword"
+                type="search"
+                placeholder="병원 이름 검색"
+                enterkeyhint="search"
+        >
+        <button type="submit">검색</button>
+    </form>
+    <ul
+            id="search-results"
+            class="search-results"
+            aria-label="검색 결과"
+            hidden
+    ></ul>
+    <div class="filters">
+        <label>
+            반경
+            <select id="radius" aria-label="탐색 반경">
+                <option value="5">5 km</option>
+                <option value="10" selected>10 km</option>
+                <option value="20">20 km</option>
+                <option value="50">50 km</option>
+                <option value="100">100 km</option>
+                <option value="all">전국</option>
+            </select>
         </label>
-        <label class="filter-item">
-            <input type="checkbox" id="filter-regional">
-            <span class="filter-label filter-label-regional">지역의료 (의료원)</span>
+        <label>
+            <input id="filter-tertiary" type="checkbox" checked>
+            상급종합
         </label>
-        <label class="filter-item">
-            <input type="checkbox" id="filter-general">
-            <span class="filter-label filter-label-general">일반병원</span>
+        <label>
+            <input id="filter-medical" type="checkbox" checked>
+            의료원
+        </label>
+        <label>
+            <input id="filter-other" type="checkbox" checked>
+            일반·기타
         </label>
     </div>
+</section>
 
-    <button id="filter-main-btn" class="floating-circle-btn" title="응급의료기관 분류 필터" aria-label="응급의료기관 분류 필터">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M7 4a3 3 0 0 0-3 3v3a2 2 0 0 1-2 2 2 2 0 0 1 2 2v3a3 3 0 0 0 3 3"></path>
-            <path d="M17 4a3 3 0 0 1 3 3v3a2 2 0 0 0 2 2 2 2 0 0 0-2 2v3a3 3 0 0 1-3 3"></path>
-        </svg>
-    </button>
-</div>
-
-<!-- 2. 탐색 반경 선택 플로팅 메뉴 -->
-<div id="radius-menu-wrapper">
-    <div id="radius-options" class="floating-popup-menu radius-grid">
-        <button class="radius-btn" data-radius="5">5km</button>
-        <button class="radius-btn active" data-radius="10">10km</button>
-        <button class="radius-btn" data-radius="15">15km</button>
-        <button class="radius-btn" data-radius="20">20km</button>
-        <button class="radius-btn" data-radius="30">30km</button>
-        <button class="radius-btn" data-radius="40">40km</button>
-        <button class="radius-btn" data-radius="50">50km</button>
-        <button class="radius-btn" data-radius="100">100km</button>
-        <button class="radius-btn nationwide-btn" data-radius="600">전국</button>
+<div id="sheet-dim" class="sheet-dim" hidden></div>
+<section
+        id="sheet"
+        class="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="hospital-name"
+        aria-hidden="true"
+>
+    <div
+            id="sheet-drag-handle"
+            class="sheet-drag-handle"
+            aria-hidden="true"
+    >
+        <span></span>
     </div>
-
-    <button id="radius-main-btn" class="floating-circle-btn" title="탐색 반경 변경" aria-label="탐색 반경 변경">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1e293b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <circle cx="12" cy="12" r="6"></circle>
-            <circle cx="12" cy="12" r="2"></circle>
-        </svg>
-    </button>
-</div>
-
-<!-- 3. 현재 GPS 위치로 지도 중심 재이동 버튼 -->
-<button id="my-loc-btn" class="floating-circle-btn" title="내 위치로 이동" aria-label="내 위치로 이동">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e293b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="7"></circle>
-        <line x1="12" y1="1" x2="12" y2="5"></line>
-        <line x1="12" y1="19" x2="12" y2="23"></line>
-        <line x1="1" y1="12" x2="5" y2="12"></line>
-        <line x1="19" y1="12" x2="23" y2="12"></line>
-    </svg>
-</button>
-
-<!-- 카카오 지도 렌더링 컨테이너 -->
-<div id="map"></div>
-
-<!-- 병원 상세 바텀시트 모달 (5종 세분화 병상 지원) -->
-<div id="sheet-dim" class="sheet-dim"></div>
-<div id="bottom-sheet" class="bottom-sheet">
-    <div class="sheet-drag-handle-area" id="sheet-drag-area">
-        <div class="sheet-drag-bar"></div>
-    </div>
-
     <div class="sheet-header">
-        <div class="sheet-title-wrap">
-            <div class="sheet-badge-wrap">
-                <span id="sheet-hospital-type" class="hospital-type-badge">상급종합</span>
-            </div>
-            <h2 id="sheet-hospital-name" class="sheet-hospital-name">병원명</h2>
-
-            <div class="sheet-address-row">
-                <div class="sheet-address-col">
-                    <div id="sheet-address" class="sheet-address">주소 정보 확인 중...</div>
-                    <span id="sheet-distance" class="sheet-distance">0.0km</span>
-                </div>
-                <!-- 3대 내비게이션 바로가기 버튼 -->
-                <div class="sheet-navi-group">
-                    <button type="button" id="navi-kakao" class="navi-btn navi-kakao" title="카카오맵 길안내">카카오</button>
-                    <button type="button" id="navi-naver" class="navi-btn navi-naver" title="네이버지도 길안내">네이버</button>
-                    <button type="button" id="navi-tmap" class="navi-btn navi-tmap" title="티맵 길안내">티맵</button>
-                </div>
-            </div>
+        <div>
+            <p id="sheet-updated" class="sheet-updated"></p>
+            <span id="hospital-type" class="type-badge"></span>
+            <h1 id="hospital-name"></h1>
+            <p id="hospital-address" class="muted"></p>
+            <p id="hospital-distance" class="muted"></p>
         </div>
-        <button id="sheet-close-btn" class="sheet-close-btn" aria-label="닫기">&times;</button>
+        <button
+                id="sheet-close"
+                class="close-button"
+                type="button"
+                aria-label="상세 정보 닫기"
+        >×</button>
     </div>
 
-    <div class="sheet-body">
-        <!-- 5종 응급실 병상 현황 (가로 1×5 그리드 정렬) -->
-        <div class="sheet-bed-overview">
-            <div class="sheet-bed-header-title">실시간 병상 세부 현황</div>
-            <div class="bed-detail-grid" id="sheet-bed-grid">
-                <!-- app.js에서 5종 병상 카드가 렌더링됩니다 -->
-            </div>
-        </div>
+    <div class="sheet-scroll">
+        <p class="safety-note">
+            정보에는 갱신 시차가 있습니다. 이송·방문 전에 병원에 수용 가능 여부를
+            전화로 확인하세요.
+        </p>
+        <div id="contact-actions" class="contact-actions"></div>
 
-        <div class="sheet-tel-section">
-            <div class="sheet-row" id="sheet-er-tel-row">
-                <span class="sheet-label">응급실 직통</span>
-                <a id="sheet-er-tel-link" href="#" class="sheet-tel-btn er-tel-btn">전화 연결</a>
+        <section class="detail-section">
+            <div class="section-heading">
+                <h2>진료 공지</h2>
+                <span id="message-count"></span>
             </div>
+            <div id="messages" class="message-list"></div>
+        </section>
 
-            <div class="sheet-row" id="sheet-main-tel-row">
-                <span class="sheet-label">대표 전화</span>
-                <a id="sheet-main-tel-link" href="#" class="sheet-tel-btn main-tel-btn">전화 연결</a>
+        <section class="detail-section">
+            <div class="section-heading">
+                <h2>중증 응급질환 수용 현황</h2>
+                <span id="severe-time"></span>
             </div>
-        </div>
+            <div id="severe" class="severe-list"></div>
+        </section>
 
-        <div class="sheet-msg-section">
-            <div class="sheet-msg-title">실시간 응급실 진료 공지 / 특이사항</div>
-            <div id="sheet-msg-content" class="sheet-msg-box">등록된 실시간 공지사항이 없습니다.</div>
-        </div>
-
-        <div class="sheet-severe-section">
-            <div class="sheet-severe-title">실시간 중증 응급질환 수용 현황</div>
-            <div id="sheet-severe-content" class="sheet-severe-box">
-                <span style="color:#64748b; font-size:12px;">확인 중...</span>
+        <section class="detail-section">
+            <div class="section-heading">
+                <h2>실시간 병상·수술실</h2>
+                <span id="bed-time"></span>
             </div>
-        </div>
+            <p class="section-help">
+                대표 가용 수의 음수는 초과 수용으로 표기합니다. 세부 코드는 뜻을
+                임의로 추정하지 않고 원본값을 보여줍니다.
+            </p>
+            <div id="key-beds" class="metric-grid"></div>
+            <details class="raw-details">
+                <summary>세부 병상·중환자실·시술 항목 전체 보기</summary>
+                <div id="all-beds" class="raw-content"></div>
+            </details>
+        </section>
+
+        <section class="detail-section">
+            <div class="section-heading">
+                <h2>가용 장비</h2>
+            </div>
+            <div id="equipment" class="equipment-grid"></div>
+        </section>
+
+        <section class="detail-section">
+            <div class="section-heading">
+                <h2>기관·외상센터 기본정보</h2>
+            </div>
+            <div id="basic-info" class="basic-info"></div>
+        </section>
+
+        <p id="data-state" class="data-state"></p>
     </div>
-</div>
-
-<script src="app.js?v=3.5"></script>
+</section>
 </body>
 </html>
