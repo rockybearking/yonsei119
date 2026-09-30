@@ -19,113 +19,46 @@ const SEOUL = {
     lng: 126.9786
 };
 
-/*
- * 기존 코드의 보건복지부 제5기 지정 명단을 유지합니다.
- * 적용 기간: 2024.1.1.~2026.12.31.
- * 지역과 기관명을 함께 비교합니다.
- */
+/* 기존 기관 분류 목록 */
 const TERTIARY_2024_2026 = [
     ['서울', ['강북삼성병원']],
     ['서울', ['건국대학교병원']],
     ['서울', ['경희대학교병원']],
-    [
-        '서울',
-        [
-            '고려대학교의과대학부속구로병원',
-            '고려대학교구로병원'
-        ]
-    ],
+    ['서울', ['고려대학교의과대학부속구로병원', '고려대학교구로병원']],
     ['서울', ['삼성서울병원']],
     ['서울', ['서울대학교병원']],
     ['서울', ['강남세브란스병원']],
-    [
-        '서울',
-        [
-            '연세대학교의과대학세브란스병원',
-            '신촌세브란스병원'
-        ]
-    ],
-    [
-        '서울',
-        [
-            '이화여자대학교의과대학부속목동병원',
-            '이화여자대학교목동병원',
-            '이대목동병원'
-        ]
-    ],
+    ['서울', ['연세대학교의과대학세브란스병원', '신촌세브란스병원']],
+    ['서울', [
+        '이화여자대학교의과대학부속목동병원',
+        '이화여자대학교목동병원',
+        '이대목동병원'
+    ]],
     ['서울', ['서울아산병원']],
     ['서울', ['중앙대학교병원']],
-    [
-        '서울',
-        [
-            '고려대학교의과대학부속병원',
-            '고려대학교안암병원',
-            '고대안암병원'
-        ]
-    ],
-    [
-        '서울',
-        [
-            '가톨릭대학교서울성모병원',
-            '서울성모병원'
-        ]
-    ],
+    ['서울', [
+        '고려대학교의과대학부속병원',
+        '고려대학교안암병원',
+        '고대안암병원'
+    ]],
+    ['서울', ['가톨릭대학교서울성모병원', '서울성모병원']],
     ['서울', ['한양대학교병원']],
-    [
-        '인천',
-        [
-            '가톨릭대학교인천성모병원',
-            '인천성모병원'
-        ]
-    ],
-    [
-        '경기',
-        [
-            '순천향대학교부속부천병원',
-            '순천향대학교부천병원'
-        ]
-    ],
+    ['인천', ['가톨릭대학교인천성모병원', '인천성모병원']],
+    ['경기', ['순천향대학교부속부천병원', '순천향대학교부천병원']],
     ['인천', ['길병원']],
-    [
-        '인천',
-        [
-            '인하대학교의과대학부속병원',
-            '인하대학교병원'
-        ]
-    ],
-    [
-        '경기',
-        [
-            '가톨릭대학교성빈센트병원',
-            '성빈센트병원'
-        ]
-    ],
-    [
-        '경기',
-        [
-            '고려대학교의과대학부속안산병원',
-            '고려대학교안산병원'
-        ]
-    ],
+    ['인천', ['인하대학교의과대학부속병원', '인하대학교병원']],
+    ['경기', ['가톨릭대학교성빈센트병원', '성빈센트병원']],
+    ['경기', ['고려대학교의과대학부속안산병원', '고려대학교안산병원']],
     ['경기', ['분당서울대학교병원']],
     ['경기', ['아주대학교병원']],
     ['경기', ['한림대학교성심병원']],
     ['강원', ['강릉아산병원']],
-    [
-        '강원',
-        [
-            '연세대학교원주세브란스기독병원',
-            '원주세브란스기독병원'
-        ]
-    ],
+    ['강원', [
+        '연세대학교원주세브란스기독병원',
+        '원주세브란스기독병원'
+    ]],
     ['충북', ['충북대학교병원']],
-    [
-        '충남',
-        [
-            '단국대학교의과대학부속병원',
-            '단국대학교병원'
-        ]
-    ],
+    ['충남', ['단국대학교의과대학부속병원', '단국대학교병원']],
     ['대전', ['충남대학교병원']],
     ['대전', ['건양대학교병원']],
     ['전북', ['원광대학교병원']],
@@ -142,13 +75,7 @@ const TERTIARY_2024_2026 = [
     ['부산', ['동아대학교병원']],
     ['부산', ['부산대학교병원']],
     ['경남', ['양산부산대학교병원']],
-    [
-        '부산',
-        [
-            '인제대학교부산백병원',
-            '부산백병원'
-        ]
-    ],
+    ['부산', ['인제대학교부산백병원', '부산백병원']],
     ['울산', ['울산대학교병원']],
     ['경남', ['경상국립대학교병원']],
     ['경남', ['삼성창원병원']]
@@ -186,10 +113,6 @@ const EQUIPMENT = {
     hvventisoayn: '소아 인공호흡기'
 };
 
-/*
- * 첨부 공식 OpenAPI 활용 가이드의 응답 메시지 명세.
- * hv/hvs 번호는 서로 같은 의미가 아닙니다.
- */
 const HV_LABELS = {
     hv1: '예비항목2',
     hv2: '[중환자실] 내과',
@@ -340,12 +263,7 @@ const DISEASES = [
     '응급실(Emergency gate keeper)'
 ];
 
-/*
- * [실시간 필드, 기준 필드, 표시 이름, 값 형식]
- *
- * hv 번호와 hvs 번호를 기계적으로 맞추지 않습니다.
- * 분만실의 Y/N은 숫자 1/0으로 변환하지 않습니다.
- */
+/* 실시간 필드와 기준 필드의 기존 매핑 */
 const BED_GROUPS = [
     {
         title: '응급실·격리',
@@ -449,27 +367,23 @@ const state = {
     hasFitted: false
 };
 
-const byId = (id) => document.getElementById(id);
+const byId = id => document.getElementById(id);
 
 /* 공통 값 처리 */
 
 function isMissing(value) {
-    return (
-        value == null ||
+    return value == null ||
         /^(?:\s*|null|undefined|none|n\/?a|nan|[-−–—]+)$/i.test(
             String(value).trim()
-        )
-    );
+        );
 }
 
 function displayValue(value) {
-    return isMissing(value)
-        ? '미정보'
-        : String(value).trim();
+    return isMissing(value) ? '미정보' : String(value).trim();
 }
 
 function firstReported(...values) {
-    return values.find((value) => !isMissing(value));
+    return values.find(value => !isMissing(value));
 }
 
 function fieldLabel(key) {
@@ -492,23 +406,14 @@ function availability(raw, yes = '가능', no = '불가') {
         : String(raw).trim().toUpperCase();
 
     if (value === 'Y') {
-        return {
-            text: yes,
-            className: 'yes'
-        };
+        return { text: yes, className: 'yes' };
     }
 
     if (value === 'N') {
-        return {
-            text: no,
-            className: 'no'
-        };
+        return { text: no, className: 'no' };
     }
 
-    return {
-        text: '미정보',
-        className: 'unknown'
-    };
+    return { text: '미정보', className: 'unknown' };
 }
 
 function integerValue(raw) {
@@ -523,10 +428,7 @@ function integerValue(raw) {
     }
 
     const value = Number(text);
-
-    return Number.isSafeInteger(value)
-        ? value
-        : null;
+    return Number.isSafeInteger(value) ? value : null;
 }
 
 function node(tag, className, content) {
@@ -545,12 +447,117 @@ function node(tag, className, content) {
 
 function setStatus(message) {
     byId('status').textContent = message;
+    byId('status').hidden = !message;
 }
 
 function empty(container, message) {
-    container.replaceChildren(
-        node('p', 'empty-state', message)
+    container.replaceChildren(node('p', 'empty-state', message));
+}
+
+/* 상단 정보 */
+
+function updateSummary() {
+    const time = byId('updated-time');
+
+    time.textContent = state.lastUpdated
+        ? state.lastUpdated.toLocaleTimeString('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        })
+        : '확인 중';
+
+    if (state.lastUpdated) {
+        time.dateTime = state.lastUpdated.toISOString();
+    }
+
+    byId('institution-count').textContent = state.lastUpdated
+        ? `${state.hospitals.length.toLocaleString('ko-KR')}개 기관`
+        : '기관 목록 확인 중';
+}
+
+/* 독립 반경 설정 */
+
+function updateRadiusUI() {
+    const value = byId('radius').value;
+    const label = value === 'all' ? '전국' : `${value} km`;
+
+    byId('radius-value').textContent = label;
+
+    byId('radius-button').setAttribute(
+        'aria-label',
+        `탐색 반경 설정, 현재 ${label}`
     );
+
+    byId('radius-button').title = `탐색 반경: ${label}`;
+
+    byId('radius-help').textContent = value === 'all'
+        ? '전국 기관을 표시합니다. 선택하면 바로 적용됩니다.'
+        : `${state.locationKnown ? '내 위치' : '서울시청'} 기준 · 선택하면 바로 적용됩니다.`;
+}
+
+function closeRadius(restoreFocus = false) {
+    byId('radius-popover').hidden = true;
+    byId('radius-button').setAttribute('aria-expanded', 'false');
+
+    if (restoreFocus) {
+        byId('radius-button').focus();
+    }
+}
+
+function initRadius() {
+    const button = byId('radius-button');
+    const panel = byId('radius-popover');
+
+    button.addEventListener('click', () => {
+        if (!panel.hidden) {
+            closeRadius(true);
+            return;
+        }
+
+        byId('search-results').hidden = true;
+        panel.hidden = false;
+        button.setAttribute('aria-expanded', 'true');
+        byId('radius').focus();
+    });
+
+    byId('radius-close').addEventListener(
+        'click',
+        () => closeRadius(true)
+    );
+
+    byId('radius').addEventListener('change', () => {
+        updateRadiusUI();
+        fitRadius();
+        updateMarkers();
+    });
+
+    document.addEventListener('pointerdown', event => {
+        if (!panel.hidden && !event.target.closest('.radius-tool')) {
+            closeRadius();
+        }
+
+        if (!event.target.closest('#search-panel')) {
+            byId('search-results').hidden = true;
+        }
+    });
+
+    document.addEventListener('focusin', event => {
+        if (!panel.hidden && !event.target.closest('.radius-tool')) {
+            closeRadius();
+        }
+    });
+
+    panel.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeRadius(true);
+        }
+    });
+
+    updateRadiusUI();
 }
 
 /* API 통신 */
@@ -559,8 +566,7 @@ function fieldMap(item) {
     const fields = {};
 
     for (const child of item.children) {
-        fields[child.localName.toLowerCase()] =
-            child.textContent.trim();
+        fields[child.localName.toLowerCase()] = child.textContent.trim();
     }
 
     return fields;
@@ -576,10 +582,7 @@ function readXml(xmlText) {
         throw new Error('XML 해석 실패');
     }
 
-    const code = xml
-        .querySelector('resultCode')
-        ?.textContent
-        ?.trim();
+    const code = xml.querySelector('resultCode')?.textContent?.trim();
 
     if (code !== '00') {
         const message = xml
@@ -587,9 +590,7 @@ function readXml(xmlText) {
             ?.textContent
             ?.trim();
 
-        throw new Error(
-            message || `API 결과 코드: ${code || '없음'}`
-        );
+        throw new Error(message || `API 결과 코드: ${code || '없음'}`);
     }
 
     return xml;
@@ -605,11 +606,7 @@ async function requestPage(endpoint, pageNo, signal) {
     const controller = new AbortController();
     const abort = () => controller.abort();
 
-    signal?.addEventListener(
-        'abort',
-        abort,
-        { once: true }
-    );
+    signal?.addEventListener('abort', abort, { once: true });
 
     if (signal?.aborted) {
         abort();
@@ -629,13 +626,8 @@ async function requestPage(endpoint, pageNo, signal) {
 
         return readXml(await response.text());
     } catch (error) {
-        if (
-            controller.signal.aborted &&
-            !signal?.aborted
-        ) {
-            throw new Error(
-                'API 응답 시간이 초과되었습니다.'
-            );
+        if (controller.signal.aborted && !signal?.aborted) {
+            throw new Error('API 응답 시간이 초과되었습니다.');
         }
 
         throw error;
@@ -650,53 +642,36 @@ async function requestAll(endpoint, signal) {
     let page = 1;
 
     while (page <= 100) {
-        const xml = await requestPage(
-            endpoint,
-            page,
-            signal
-        );
-
-        const items = [
-            ...xml.getElementsByTagName('item')
-        ].map(fieldMap);
+        const xml = await requestPage(endpoint, page, signal);
+        const items = [...xml.getElementsByTagName('item')].map(fieldMap);
 
         const total = Number(
             xml.querySelector('totalCount')?.textContent || 0
         );
 
         const rows = Number(
-            xml.querySelector('numOfRows')?.textContent ||
-            PAGE_SIZE
+            xml.querySelector('numOfRows')?.textContent || PAGE_SIZE
         );
 
         if (!items.length && total > result.length) {
-            throw new Error(
-                '일부 페이지의 결과가 비어 있습니다.'
-            );
+            throw new Error('일부 페이지의 결과가 비어 있습니다.');
         }
 
         result.push(...items);
 
-        if (
-            result.length >= total ||
-            items.length === 0
-        ) {
+        if (result.length >= total || items.length === 0) {
             break;
         }
 
         if (!Number.isFinite(rows) || rows < 1) {
-            throw new Error(
-                '페이지 크기가 유효하지 않습니다.'
-            );
+            throw new Error('페이지 크기가 유효하지 않습니다.');
         }
 
         page += 1;
     }
 
     if (page > 100) {
-        throw new Error(
-            '페이지 제한을 초과했습니다.'
-        );
+        throw new Error('페이지 제한을 초과했습니다.');
     }
 
     return result;
@@ -737,16 +712,13 @@ function classify(fields) {
     const name = normalizeName(fields.dutyname);
     const address = fields.dutyaddr || '';
 
-    const explicitlyDesignated = (
-        fields.dutydivnam || ''
-    ).includes('상급종합');
+    const explicitlyDesignated =
+        (fields.dutydivnam || '').includes('상급종합');
 
     const inOfficialList = TERTIARY_2024_2026.some(
         ([region, aliases]) =>
             REGION_PREFIX[region].test(address) &&
-            aliases.some((alias) =>
-                name.includes(normalizeName(alias))
-            )
+            aliases.some(alias => name.includes(normalizeName(alias)))
     );
 
     if (explicitlyDesignated || inOfficialList) {
@@ -770,9 +742,7 @@ function classify(fields) {
 }
 
 function isRegional(fields) {
-    return /권역응급의료센터/.test(
-        fields.dutyemclsname || ''
-    );
+    return /권역응급의료센터/.test(fields.dutyemclsname || '');
 }
 
 /* 데이터 갱신 */
@@ -794,18 +764,13 @@ async function fetchData() {
 
     byId('refresh-button').disabled = true;
     document.body.classList.add('is-loading');
-
     byId('developer-spinner').hidden = false;
-
-    byId('developer-status').textContent =
-        '실시간 정보 새로 수신 중...';
+    byId('developer-status').textContent = '실시간 정보 새로 수신 중...';
 
     state.controller?.abort();
     state.controller = new AbortController();
 
-    setStatus(
-        '기관·병상·공지·중증질환 정보를 확인하고 있습니다…'
-    );
+    setStatus('기관·병상·공지·중증질환 정보를 확인하고 있습니다…');
 
     const endpoints = {
         list: 'getEgytListInfoInqire',
@@ -823,11 +788,8 @@ async function fetchData() {
         const keys = Object.keys(endpoints);
 
         const results = await Promise.allSettled(
-            keys.map((key) =>
-                requestAll(
-                    endpoints[key],
-                    state.controller.signal
-                )
+            keys.map(key =>
+                requestAll(endpoints[key], state.controller.signal)
             )
         );
 
@@ -843,18 +805,12 @@ async function fetchData() {
             } else {
                 datasets[key] = [];
                 sources[key] = false;
-
-                console.error(
-                    `${key} 조회 실패:`,
-                    result.reason
-                );
+                console.error(`${key} 조회 실패:`, result.reason);
             }
         });
 
         if (!sources.list) {
-            throw new Error(
-                '기관 목록을 가져오지 못했습니다.'
-            );
+            throw new Error('기관 목록을 가져오지 못했습니다.');
         }
 
         state.sources = sources;
@@ -864,19 +820,9 @@ async function fetchData() {
         const severe = groupById(datasets.severe);
         const locations = groupById(datasets.location);
         const basics = groupById(datasets.basic);
-
-        const traumaLocations = groupById(
-            datasets.traumaLocation
-        );
-
-        const traumaBasics = groupById(
-            datasets.traumaBasic
-        );
-
-        const traumaLists = groupById(
-            datasets.traumaList
-        );
-
+        const traumaLocations = groupById(datasets.traumaLocation);
+        const traumaBasics = groupById(datasets.traumaBasic);
+        const traumaLists = groupById(datasets.traumaList);
         const unique = groupById(datasets.list);
 
         for (const [id, trauma] of traumaLists) {
@@ -886,7 +832,7 @@ async function fetchData() {
         }
 
         state.hospitals = [...unique.values()]
-            .map((fields) => {
+            .map(fields => {
                 const id = fields.hpid;
 
                 const location =
@@ -902,44 +848,26 @@ async function fetchData() {
                     null;
 
                 const lat = Number(
-                    firstReported(
-                        fields.wgs84lat,
-                        location.wgs84lat
-                    )
+                    firstReported(fields.wgs84lat, location.wgs84lat)
                 );
 
                 const lng = Number(
-                    firstReported(
-                        fields.wgs84lon,
-                        location.wgs84lon
-                    )
+                    firstReported(fields.wgs84lon, location.wgs84lon)
                 );
 
                 return {
                     id,
                     name: displayValue(
-                        firstReported(
-                            fields.dutyname,
-                            basic.dutyname
-                        )
+                        firstReported(fields.dutyname, basic.dutyname)
                     ),
                     address: displayValue(
-                        firstReported(
-                            fields.dutyaddr,
-                            basic.dutyaddr
-                        )
+                        firstReported(fields.dutyaddr, basic.dutyaddr)
                     ),
                     tel: displayValue(
-                        firstReported(
-                            fields.dutytel1,
-                            basic.dutytel1
-                        )
+                        firstReported(fields.dutytel1, basic.dutytel1)
                     ),
                     erTel: displayValue(
-                        firstReported(
-                            fields.dutytel3,
-                            beds.get(id)?.dutytel3
-                        )
+                        firstReported(fields.dutytel3, beds.get(id)?.dutytel3)
                     ),
                     lat,
                     lng,
@@ -950,12 +878,8 @@ async function fetchData() {
                     type: classify({
                         ...basic,
                         ...fields,
-                        dutyname:
-                            fields.dutyname ||
-                            basic.dutyname,
-                        dutyaddr:
-                            fields.dutyaddr ||
-                            basic.dutyaddr
+                        dutyname: fields.dutyname || basic.dutyname,
+                        dutyaddr: fields.dutyaddr || basic.dutyaddr
                     }),
                     basic,
                     trauma,
@@ -964,7 +888,7 @@ async function fetchData() {
                     severe: severe.get(id) || null
                 };
             })
-            .filter((hospital) =>
+            .filter(hospital =>
                 Number.isFinite(hospital.lat) &&
                 Number.isFinite(hospital.lng) &&
                 hospital.lat >= 33 &&
@@ -984,7 +908,7 @@ async function fetchData() {
 
         if (state.selected) {
             const fresh = state.hospitals.find(
-                (item) => item.id === state.selected.id
+                item => item.id === state.selected.id
             );
 
             if (fresh) {
@@ -996,37 +920,21 @@ async function fetchData() {
 
         updateSearch();
 
-        const missing = keys.filter(
-            (key) => !state.sources[key]
-        );
+        const missing = keys.filter(key => !state.sources[key]);
 
-        byId('developer-status').textContent =
-            missing.length
-                ? `조회 완료 · 일부 항목 실패: ${missing.join(', ')}`
-                : '전체 데이터 갱신을 완료했습니다.';
+        byId('developer-status').textContent = missing.length
+            ? `조회 완료 · 일부 항목 실패: ${missing.join(', ')}`
+            : '전체 데이터 갱신을 완료했습니다.';
 
-        const clock = new Date().toLocaleTimeString(
-            'ko-KR',
-            {
-                timeZone: 'Asia/Seoul',
-                hour: '2-digit',
-                minute: '2-digit'
-            }
-        );
+        updateSummary();
 
         setStatus(
-            `${clock} 기준 · ${state.hospitals.length}개 기관` +
-            (
-                missing.length
-                    ? ` · 일부 항목 조회 실패: ${missing.join(', ')}`
-                    : ''
-            )
+            missing.length
+                ? '일부 정보를 불러오지 못했습니다. 상세 정보에서 확인해 주세요.'
+                : ''
         );
     } catch (error) {
-        console.error(
-            '응급의료 데이터 갱신 실패:',
-            error
-        );
+        console.error('응급의료 데이터 갱신 실패:', error);
 
         setStatus(
             `조회 실패: ${error.message} · ` +
@@ -1037,7 +945,6 @@ async function fetchData() {
             `갱신 실패: ${error.message}`;
     } finally {
         state.loading = false;
-
         byId('refresh-button').disabled = false;
         document.body.classList.remove('is-loading');
         byId('developer-spinner').hidden = true;
@@ -1047,9 +954,7 @@ async function fetchData() {
 /* 거리와 위치 */
 
 function distanceKm(a, b) {
-    const radians = (degrees) =>
-        (degrees * Math.PI) / 180;
-
+    const radians = degrees => degrees * Math.PI / 180;
     const dLat = radians(b.lat - a.lat);
     const dLng = radians(b.lng - a.lng);
 
@@ -1066,24 +971,18 @@ function distanceKm(a, b) {
 }
 
 function formatDms(value, positive, negative) {
-    const tenths = Math.round(
-        Math.abs(value) * 36000
-    );
-
+    const tenths = Math.round(Math.abs(value) * 36000);
     const degrees = Math.floor(tenths / 36000);
     const minutes = Math.floor((tenths % 36000) / 600);
     const seconds = (tenths % 600) / 10;
+    const direction = value >= 0 ? positive : negative;
 
-    const direction =
-        value >= 0 ? positive : negative;
-
-    return (
-        `${direction} ${degrees}° ` +
-        `${minutes}′ ${seconds.toFixed(1)}″`
-    );
+    return `${direction} ${degrees}° ${minutes}′ ${seconds.toFixed(1)}″`;
 }
 
 function updateCoordinates() {
+    updateRadiusUI();
+
     const target = byId('coordinates');
     target.replaceChildren();
 
@@ -1092,29 +991,12 @@ function updateCoordinates() {
             node('span', '', '내 위치 미확인'),
             node('small', '', '지도 기준점: 서울시청')
         );
-
         return;
     }
 
     target.append(
-        node(
-            'span',
-            '',
-            formatDms(
-                state.origin.lat,
-                '북위',
-                '남위'
-            )
-        ),
-        node(
-            'span',
-            '',
-            formatDms(
-                state.origin.lng,
-                '동경',
-                '서경'
-            )
-        )
+        node('span', '', formatDms(state.origin.lat, '북위', '남위')),
+        node('span', '', formatDms(state.origin.lng, '동경', '서경'))
     );
 
     if (Number.isFinite(state.locationAccuracy)) {
@@ -1122,28 +1004,23 @@ function updateCoordinates() {
             node(
                 'small',
                 '',
-                `오차 반경 약 ${
-                    Math.round(state.locationAccuracy)
-                }m`
+                `오차 반경 약 ${Math.round(state.locationAccuracy)}m`
             )
         );
     }
 
     if (state.locationUpdated) {
-        const measured =
-            state.locationUpdated.toLocaleTimeString(
-                'ko-KR',
-                {
-                    timeZone: 'Asia/Seoul',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit'
-                }
-            );
-
-        target.append(
-            node('small', '', `측정 ${measured}`)
+        const measured = state.locationUpdated.toLocaleTimeString(
+            'ko-KR',
+            {
+                timeZone: 'Asia/Seoul',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }
         );
+
+        target.append(node('small', '', `측정 ${measured}`));
     }
 }
 
@@ -1153,7 +1030,6 @@ function updateCircle() {
     }
 
     state.circle?.setMap(null);
-
     const radius = byId('radius').value;
 
     if (radius === 'all') {
@@ -1184,21 +1060,10 @@ function updateLocationMarker() {
         return;
     }
 
-    const marker = node(
-        'div',
-        'location-marker'
-    );
-
+    const marker = node('div', 'location-marker');
     marker.setAttribute('role', 'img');
-
-    marker.setAttribute(
-        'aria-label',
-        '내 현재 위치'
-    );
-
-    marker.append(
-        node('span', 'location-dot')
-    );
+    marker.setAttribute('aria-label', '내 현재 위치');
+    marker.append(node('span', 'location-dot'));
 
     state.locationMarker = new kakao.maps.CustomOverlay({
         position: new kakao.maps.LatLng(
@@ -1220,10 +1085,7 @@ function locate() {
     }
 
     if (!navigator.geolocation) {
-        setStatus(
-            '이 브라우저에서 위치 기능을 사용할 수 없습니다.'
-        );
-
+        setStatus('이 브라우저에서 위치 기능을 사용할 수 없습니다.');
         return;
     }
 
@@ -1236,16 +1098,14 @@ function locate() {
     };
 
     navigator.geolocation.getCurrentPosition(
-        (position) => {
+        position => {
             state.origin = {
                 lat: position.coords.latitude,
                 lng: position.coords.longitude
             };
 
             state.locationKnown = true;
-            state.locationAccuracy =
-                position.coords.accuracy;
-
+            state.locationAccuracy = position.coords.accuracy;
             state.locationUpdated = new Date(
                 position.timestamp || Date.now()
             );
@@ -1266,7 +1126,7 @@ function locate() {
             updateMarkers();
             finish();
         },
-        (error) => {
+        error => {
             const reason = error.code === 1
                 ? '위치 권한이 허용되지 않았습니다.'
                 : '현재 위치를 확인하지 못했습니다.';
@@ -1295,9 +1155,7 @@ function locate() {
 /* 병원 지도 카드 */
 
 function visualGroup(hospital) {
-    return hospital.regional
-        ? 'regional'
-        : hospital.type.group;
+    return hospital.regional ? 'regional' : hospital.type.group;
 }
 
 function hospitalLabel(hospital) {
@@ -1309,10 +1167,7 @@ function hospitalLabel(hospital) {
 function matchesFilters(hospital, enabled) {
     return Boolean(
         enabled[hospital.type.group] ||
-        (
-            hospital.regional &&
-            enabled.regional
-        )
+        (hospital.regional && enabled.regional)
     );
 }
 
@@ -1320,7 +1175,7 @@ function groupCards(points) {
     const groups = [];
 
     for (const point of points) {
-        const near = groups.find((group) =>
+        const near = groups.find(group =>
             Math.abs(group.x - point.x) < CARD_WIDTH + 10 &&
             Math.abs(group.y - point.y) < CARD_HEIGHT + 14
         );
@@ -1344,7 +1199,7 @@ function bindHospitalCard(card, open) {
 
     card.draggable = false;
 
-    card.addEventListener('pointerdown', (event) => {
+    card.addEventListener('pointerdown', event => {
         if (event.button !== 0) {
             return;
         }
@@ -1357,7 +1212,7 @@ function bindHospitalCard(card, open) {
         const startY = event.clientY;
         const pointerId = event.pointerId;
 
-        const track = (next) => {
+        const track = next => {
             if (next.pointerId !== pointerId) {
                 return;
             }
@@ -1372,7 +1227,7 @@ function bindHospitalCard(card, open) {
             }
         };
 
-        const finish = (next) => {
+        const finish = next => {
             track(next);
 
             if (next.pointerId !== pointerId) {
@@ -1392,31 +1247,12 @@ function bindHospitalCard(card, open) {
             signal: tracker.signal
         };
 
-        window.addEventListener(
-            'pointermove',
-            track,
-            options
-        );
-
-        window.addEventListener(
-            'pointerup',
-            finish,
-            options
-        );
-
-        window.addEventListener(
-            'pointercancel',
-            finish,
-            options
-        );
-
-        /*
-         * 지도 SDK까지 이벤트를 전달합니다.
-         * pointer capture를 가져오지 않습니다.
-         */
+        window.addEventListener('pointermove', track, options);
+        window.addEventListener('pointerup', finish, options);
+        window.addEventListener('pointercancel', finish, options);
     });
 
-    card.addEventListener('click', (event) => {
+    card.addEventListener('click', event => {
         if (event.detail !== 0 && moved) {
             event.preventDefault();
             return;
@@ -1441,14 +1277,8 @@ function updateMarkers() {
     const radius = byId('radius').value;
     const enabled = {};
 
-    for (const group of [
-        'regional',
-        'tertiary',
-        'medical',
-        'other'
-    ]) {
-        enabled[group] =
-            byId(`filter-${group}`).checked;
+    for (const group of ['regional', 'tertiary', 'medical', 'other']) {
+        enabled[group] = byId(`filter-${group}`).checked;
     }
 
     const viewport = state.map.getBounds();
@@ -1462,41 +1292,31 @@ function updateMarkers() {
     };
 
     const candidates = state.hospitals
-        .filter((hospital) => {
+        .filter(hospital => {
             if (!matchesFilters(hospital, enabled)) {
                 return false;
             }
 
             if (
                 radius !== 'all' &&
-                distanceKm(state.origin, hospital) >
-                Number(radius)
+                distanceKm(state.origin, hospital) > Number(radius)
             ) {
                 return false;
             }
 
             return viewport.contain(
-                new kakao.maps.LatLng(
-                    hospital.lat,
-                    hospital.lng
-                )
+                new kakao.maps.LatLng(hospital.lat, hospital.lng)
             );
         })
         .sort((a, b) =>
-            rank[visualGroup(a)] -
-            rank[visualGroup(b)] ||
-            distanceKm(state.origin, a) -
-            distanceKm(state.origin, b)
+            rank[visualGroup(a)] - rank[visualGroup(b)] ||
+            distanceKm(state.origin, a) - distanceKm(state.origin, b)
         );
 
-    const points = candidates.map((hospital) => {
-        const point =
-            projection.containerPointFromCoords(
-                new kakao.maps.LatLng(
-                    hospital.lat,
-                    hospital.lng
-                )
-            );
+    const points = candidates.map(hospital => {
+        const point = projection.containerPointFromCoords(
+            new kakao.maps.LatLng(hospital.lat, hospital.lng)
+        );
 
         return {
             x: point.x,
@@ -1519,9 +1339,7 @@ function updateMarkers() {
         card.type = 'button';
 
         card.title = multiple
-            ? group.items
-                .map((item) => item.name)
-                .join(' · ')
+            ? group.items.map(item => item.name).join(' · ')
             : `${hospital.name} · ${hospitalLabel(hospital)}`;
 
         card.setAttribute(
@@ -1548,9 +1366,7 @@ function updateMarkers() {
                 '',
                 multiple
                     ? '목록에서 병원 선택 ›'
-                    : `${shortType} · 응급실 ${
-                        bedValue(hospital.beds?.hvec)
-                    }`
+                    : `${shortType} · 응급실 ${bedValue(hospital.beds?.hvec)}`
             )
         );
 
@@ -1603,11 +1419,7 @@ function openCluster(items) {
         button.append(
             node('strong', '', hospital.name),
             node('small', '', hospitalLabel(hospital)),
-            node(
-                'small',
-                '',
-                `응급실 ${bedValue(hospital.beds?.hvec)}`
-            )
+            node('small', '', `응급실 ${bedValue(hospital.beds?.hvec)}`)
         );
 
         button.addEventListener('click', () => {
@@ -1624,8 +1436,9 @@ function openCluster(items) {
 /* 검색 */
 
 function updateSearch() {
-    const list = byId('search-results');
+    closeRadius();
 
+    const list = byId('search-results');
     const query = byId('keyword')
         .value
         .replace(/\s+/g, '')
@@ -1635,14 +1448,15 @@ function updateSearch() {
 
     list.hidden =
         !query ||
-        byId('search-content').hidden;
+        byId('search-content').hidden ||
+        state.selected !== null;
 
     if (!query) {
         return;
     }
 
     const matches = state.hospitals
-        .filter((item) =>
+        .filter(item =>
             item.name
                 .replace(/\s+/g, '')
                 .toLowerCase()
@@ -1652,11 +1466,7 @@ function updateSearch() {
 
     if (!matches.length) {
         list.append(
-            node(
-                'li',
-                'empty-state',
-                '일치하는 기관이 없습니다.'
-            )
+            node('li', 'empty-state', '일치하는 기관이 없습니다.')
         );
     }
 
@@ -1676,10 +1486,7 @@ function updateSearch() {
             list.hidden = true;
 
             state.map.panTo(
-                new kakao.maps.LatLng(
-                    hospital.lat,
-                    hospital.lng
-                )
+                new kakao.maps.LatLng(hospital.lat, hospital.lng)
             );
 
             state.map.setLevel(4);
@@ -1706,26 +1513,16 @@ function parseApiDate(value) {
     const second = Number(value.slice(12, 14));
 
     const date = new Date(
-        Date.UTC(
-            year,
-            month - 1,
-            day,
-            hour - 9,
-            minute,
-            second
-        )
+        Date.UTC(year, month - 1, day, hour - 9, minute, second)
     );
 
-    const display = new Intl.DateTimeFormat(
-        'ko-KR',
-        {
-            timeZone: 'Asia/Seoul',
-            month: 'numeric',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        }
-    ).format(date);
+    const display = new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(date);
 
     return {
         timestamp: date.getTime(),
@@ -1744,7 +1541,6 @@ function renderMessages(hospital) {
             target,
             '미정보 · 공지 조회에 실패했습니다. 병원에 확인하세요.'
         );
-
         byId('message-count').textContent = '';
         return;
     }
@@ -1752,14 +1548,9 @@ function renderMessages(hospital) {
     const now = Date.now();
 
     const messages = hospital.messages
-        .filter((item) => {
-            const start = parseApiDate(
-                item.symblksttdtm
-            );
-
-            const end = parseApiDate(
-                item.symblkenddtm
-            );
+        .filter(item => {
+            const start = parseApiDate(item.symblksttdtm);
+            const end = parseApiDate(item.symblkenddtm);
 
             return (
                 (!start || start.timestamp <= now) &&
@@ -1767,21 +1558,16 @@ function renderMessages(hospital) {
             );
         })
         .sort((a, b) => {
-            const priority = (item) =>
+            const priority = item =>
                 item.symblkmsgtyp === '중증' ? 0 : 1;
 
             return priority(a) - priority(b);
         });
 
-    byId('message-count').textContent =
-        `${messages.length}건`;
+    byId('message-count').textContent = `${messages.length}건`;
 
     if (!messages.length) {
-        empty(
-            target,
-            '현재 표시할 공지가 없습니다.'
-        );
-
+        empty(target, '현재 표시할 공지가 없습니다.');
         return;
     }
 
@@ -1792,15 +1578,8 @@ function renderMessages(hospital) {
                 ? 'urgent'
                 : 'unknown';
 
-        const article = node(
-            'article',
-            `message-card ${level}`
-        );
-
-        const heading = node(
-            'div',
-            'message-heading'
-        );
+        const article = node('article', `message-card ${level}`);
+        const heading = node('div', 'message-heading');
 
         const badge = node(
             'span',
@@ -1809,37 +1588,21 @@ function renderMessages(hospital) {
         );
 
         const subject = displayValue(
-            firstReported(
-                item.trtprtcodmag,
-                item.symtypcodmag
-            )
+            firstReported(item.trtprtcodmag, item.symtypcodmag)
         );
 
-        heading.append(
-            badge,
-            node('strong', '', subject)
-        );
+        heading.append(badge, node('strong', '', subject));
 
         article.append(
             heading,
-            node(
-                'p',
-                'message-text',
-                displayValue(item.symblkmsg)
-            )
+            node('p', 'message-text', displayValue(item.symblkmsg))
         );
 
-        const end = parseApiDate(
-            item.symblkenddtm
-        );
+        const end = parseApiDate(item.symblkenddtm);
 
         if (end) {
             article.append(
-                node(
-                    'small',
-                    'muted',
-                    `종료 예정 ${end.display}`
-                )
+                node('small', 'muted', `종료 예정 ${end.display}`)
             );
         }
 
@@ -1847,21 +1610,16 @@ function renderMessages(hospital) {
     }
 }
 
-/* 중증질환 수용 여부 */
+/* 중증질환 */
 
 function renderSevere(hospital) {
     const target = byId('severe');
     target.replaceChildren();
 
-    byId('severe-time').textContent =
-        '보고 시각 미정보';
+    byId('severe-time').textContent = '보고 시각 미정보';
 
     if (!state.sources.severe) {
-        empty(
-            target,
-            '미정보 · 중증질환 정보 조회에 실패했습니다.'
-        );
-
+        empty(target, '미정보 · 중증질환 정보 조회에 실패했습니다.');
         return;
     }
 
@@ -1869,17 +1627,10 @@ function renderSevere(hospital) {
 
     const keys = [
         ...new Set([
-            ...DISEASES.map(
-                (_, i) => `mkioskty${i + 1}`
-            ),
-            ...Object.keys(fields).filter(
-                (key) => /^mkioskty\d+$/.test(key)
-            )
+            ...DISEASES.map((_, i) => `mkioskty${i + 1}`),
+            ...Object.keys(fields).filter(key => /^mkioskty\d+$/.test(key))
         ])
-    ].sort((a, b) =>
-        Number(a.slice(8)) -
-        Number(b.slice(8))
-    );
+    ].sort((a, b) => Number(a.slice(8)) - Number(b.slice(8)));
 
     for (const key of keys) {
         const status = availability(
@@ -1888,38 +1639,27 @@ function renderSevere(hospital) {
             '수용 불가'
         );
 
-        const row = node(
-            'div',
-            'severe-row'
-        );
+        const row = node('div', 'severe-row');
 
         const title = node(
             'div',
             'severe-name',
-            DISEASES[Number(key.slice(8)) - 1] ||
-            '항목 설명 미정보'
+            DISEASES[Number(key.slice(8)) - 1] || '항목 설명 미정보'
         );
 
-        title.append(
-            node('small', 'field-code', key)
-        );
+        title.append(node('small', 'field-code', key));
 
         if (`${key}msg` in fields) {
             title.append(
                 node(
                     'small',
                     'severe-note',
-                    `참고: ${
-                        displayValue(fields[`${key}msg`])
-                    }`
+                    `참고: ${displayValue(fields[`${key}msg`])}`
                 )
             );
         }
 
-        if (
-            status.className === 'unknown' &&
-            !isMissing(fields[key])
-        ) {
+        if (status.className === 'unknown' && !isMissing(fields[key])) {
             title.append(
                 node(
                     'small',
@@ -1931,30 +1671,22 @@ function renderSevere(hospital) {
 
         row.append(
             title,
-            node(
-                'span',
-                `state-pill ${status.className}`,
-                status.text
-            )
+            node('span', `state-pill ${status.className}`, status.text)
         );
 
         target.append(row);
     }
 
     const reported = parseApiDate(
-        firstReported(
-            fields.hvidate,
-            fields.mkioskdate
-        )
+        firstReported(fields.hvidate, fields.mkioskdate)
     );
 
     if (reported) {
-        byId('severe-time').textContent =
-            `보고 ${reported.display}`;
+        byId('severe-time').textContent = `보고 ${reported.display}`;
     }
 }
 
-/* 지도 버블의 병상 값: 음수 원본값을 유지합니다. */
+/* 지도 카드의 병상 원본값 */
 
 function bedValue(raw) {
     if (isMissing(raw)) {
@@ -1978,22 +1710,13 @@ function bedValue(raw) {
         : `${value}석`;
 }
 
-/* 실시간 병상 메뉴 전용 표시 모델 */
+/* 상세창 병상 표시 */
 
 function bedPresentation(fields, definition) {
-    const [
-        currentKey,
-        baselineKey,
-        label,
-        kind
-    ] = definition;
-
+    const [currentKey, baselineKey, label, kind] = definition;
     const raw = fields[currentKey];
     const current = integerValue(raw);
-
-    const reference = integerValue(
-        fields[baselineKey]
-    );
+    const reference = integerValue(fields[baselineKey]);
 
     const baseline =
         reference !== null && reference >= 0
@@ -2005,10 +1728,7 @@ function bedPresentation(fields, definition) {
         currentKey,
         baselineKey,
         currentText: '미정보',
-        baselineText:
-            baseline === null
-                ? '미정보'
-                : String(baseline),
+        baselineText: baseline === null ? '미정보' : String(baseline),
         tone: 'unknown',
         ringText: '미정보',
         fraction: null,
@@ -2016,20 +1736,11 @@ function bedPresentation(fields, definition) {
     };
 
     if (current !== null) {
-        /*
-         * 음수 숫자의 초과 수용 표시는
-         * 이 메뉴에만 적용합니다.
-         */
         if (current < 0) {
-            result.currentText =
-                `초과 ${Math.abs(current)}`;
-
+            result.currentText = `초과 ${Math.abs(current)}`;
             result.tone = 'over';
             result.ringText = '초과';
-
-            result.note =
-                `초과 수용 · 원본 ${current}`;
-
+            result.note = `초과 수용 · 원본 ${current}`;
             return result;
         }
 
@@ -2043,18 +1754,11 @@ function bedPresentation(fields, definition) {
             current <= baseline
         ) {
             result.fraction = current / baseline;
-
-            result.ringText =
-                `${Math.round(result.fraction * 100)}%`;
-        } else if (
-            baseline !== null &&
-            current > baseline
-        ) {
-            result.note =
-                '가용 수가 기준 수 초과 · 비율 미산정';
+            result.ringText = `${Math.round(result.fraction * 100)}%`;
+        } else if (baseline !== null && current > baseline) {
+            result.note = '가용 수가 기준 수 초과 · 비율 미산정';
         } else if (baseline === 0) {
-            result.note =
-                '기준 수 0 · 비율 미산정';
+            result.note = '기준 수 0 · 비율 미산정';
         }
 
         return result;
@@ -2075,76 +1779,29 @@ function bedPresentation(fields, definition) {
 }
 
 function createBedCard(fields, definition) {
-    const item = bedPresentation(
-        fields,
-        definition
-    );
+    const item = bedPresentation(fields, definition);
+    const card = node('article', `bed-card tone-${item.tone}`);
+    const ring = node('div', 'bed-ring', item.ringText);
+    const info = node('div', 'bed-info');
+    const values = node('p', 'bed-values');
 
-    const card = node(
-        'article',
-        `bed-card tone-${item.tone}`
-    );
-
-    const ring = node(
-        'div',
-        'bed-ring',
-        item.ringText
-    );
-
-    const info = node(
-        'div',
-        'bed-info'
-    );
-
-    const values = node(
-        'p',
-        'bed-values'
-    );
-
-    ring.setAttribute(
-        'aria-hidden',
-        'true'
-    );
+    ring.setAttribute('aria-hidden', 'true');
 
     if (item.fraction !== null) {
         ring.classList.add('has-ratio');
-
-        ring.style.setProperty(
-            '--ratio',
-            String(item.fraction)
-        );
+        ring.style.setProperty('--ratio', String(item.fraction));
     }
 
     values.append(
-        node(
-            'strong',
-            '',
-            item.currentText
-        ),
-        node(
-            'span',
-            'bed-divider',
-            '/'
-        ),
-        node(
-            'span',
-            'bed-reference',
-            item.baselineText
-        )
+        node('strong', '', item.currentText),
+        node('span', 'bed-divider', '/'),
+        node('span', 'bed-reference', item.baselineText)
     );
 
     info.append(
-        node(
-            'h3',
-            '',
-            item.label
-        ),
+        node('h3', '', item.label),
         values,
-        node(
-            'p',
-            'bed-caption',
-            item.note
-        )
+        node('p', 'bed-caption', item.note)
     );
 
     const codes = item.baselineKey
@@ -2174,23 +1831,13 @@ function renderBeds(hospital) {
 
     main.replaceChildren();
     additional.replaceChildren();
-
-    byId('bed-time').textContent =
-        '보고 시각 미정보';
+    byId('bed-time').textContent = '보고 시각 미정보';
 
     renderRawBeds(hospital);
 
     if (!state.sources.beds) {
-        empty(
-            main,
-            '미정보 · 병상 정보 조회에 실패했습니다.'
-        );
-
-        empty(
-            additional,
-            '미정보 · 병상 정보 조회에 실패했습니다.'
-        );
-
+        empty(main, '미정보 · 병상 정보 조회에 실패했습니다.');
+        empty(additional, '미정보 · 병상 정보 조회에 실패했습니다.');
         return;
     }
 
@@ -2202,23 +1849,14 @@ function renderBeds(hospital) {
             : node('div', 'bed-dashboard');
 
         for (const definition of group.items) {
-            grid.append(
-                createBedCard(fields, definition)
-            );
+            grid.append(createBedCard(fields, definition));
         }
 
         if (index > 0) {
-            const section = node(
-                'section',
-                'bed-group'
-            );
+            const section = node('section', 'bed-group');
 
             section.append(
-                node(
-                    'h3',
-                    'bed-group-title',
-                    group.title
-                ),
+                node('h3', 'bed-group-title', group.title),
                 grid
             );
 
@@ -2226,39 +1864,28 @@ function renderBeds(hospital) {
         }
     });
 
-    const reported = parseApiDate(
-        fields.hvidate
-    );
+    const reported = parseApiDate(fields.hvidate);
 
     if (reported) {
-        byId('bed-time').textContent =
-            `보고 ${reported.display}`;
+        byId('bed-time').textContent = `보고 ${reported.display}`;
     }
 }
 
-/* 개발자 모드 원본 병상 값 */
+/* 병상 원본값 */
 
 function renderRawBeds(hospital) {
     const all = byId('all-beds');
     all.replaceChildren();
 
     if (!state.sources.beds) {
-        empty(
-            all,
-            '미정보 · 세부 항목을 표시할 수 없습니다.'
-        );
-
+        empty(all, '미정보 · 세부 항목을 표시할 수 없습니다.');
         return;
     }
 
     const fields = hospital.beds;
 
     if (!fields) {
-        empty(
-            all,
-            '미정보 · 세부 항목이 없습니다.'
-        );
-
+        empty(all, '미정보 · 세부 항목이 없습니다.');
         return;
     }
 
@@ -2268,9 +1895,7 @@ function renderRawBeds(hospital) {
             keys: [
                 ...new Set([
                     ...Object.keys(HV_LABELS),
-                    ...Object.keys(fields).filter(
-                        (key) => /^hv\d+$/.test(key)
-                    )
+                    ...Object.keys(fields).filter(key => /^hv\d+$/.test(key))
                 ])
             ]
         },
@@ -2279,19 +1904,13 @@ function renderRawBeds(hospital) {
             keys: [
                 ...new Set([
                     ...Object.keys(HVS_LABELS),
-                    ...Object.keys(fields).filter(
-                        (key) => /^hvs\d+$/.test(key)
-                    )
+                    ...Object.keys(fields).filter(key => /^hvs\d+$/.test(key))
                 ])
             ]
         },
         {
             title: '그 밖의 병상 관련 항목 (원본값)',
-            keys: [
-                'hvcc',
-                'hvccc',
-                'hvdnm'
-            ]
+            keys: ['hvcc', 'hvccc', 'hvdnm']
         }
     ];
 
@@ -2300,45 +1919,21 @@ function renderRawBeds(hospital) {
             continue;
         }
 
-        const section = node(
-            'section',
-            'raw-group'
-        );
+        const section = node('section', 'raw-group');
+        section.append(node('h3', '', group.title));
 
-        section.append(
-            node('h3', '', group.title)
-        );
-
-        const list = node(
-            'dl',
-            'raw-grid'
-        );
+        const list = node('dl', 'raw-grid');
 
         group.keys.sort((a, b) =>
-            a.localeCompare(
-                b,
-                undefined,
-                { numeric: true }
-            )
+            a.localeCompare(b, undefined, { numeric: true })
         );
 
         for (const key of group.keys) {
-            const pair = node(
-                'div',
-                'raw-pair'
-            );
+            const pair = node('div', 'raw-pair');
 
             pair.append(
-                node(
-                    'dt',
-                    'field-code',
-                    fieldLabel(key)
-                ),
-                node(
-                    'dd',
-                    '',
-                    displayValue(fields[key])
-                )
+                node('dt', 'field-code', fieldLabel(key)),
+                node('dd', '', displayValue(fields[key]))
             );
 
             list.append(pair);
@@ -2349,10 +1944,7 @@ function renderRawBeds(hospital) {
     }
 
     if (!all.childElementCount) {
-        empty(
-            all,
-            '미정보 · 세부 항목이 없습니다.'
-        );
+        empty(all, '미정보 · 세부 항목이 없습니다.');
     }
 }
 
@@ -2363,11 +1955,7 @@ function renderEquipment(hospital) {
     target.replaceChildren();
 
     if (!state.sources.beds) {
-        empty(
-            target,
-            '미정보 · 장비 정보 조회에 실패했습니다.'
-        );
-
+        empty(target, '미정보 · 장비 정보 조회에 실패했습니다.');
         return;
     }
 
@@ -2376,17 +1964,12 @@ function renderEquipment(hospital) {
     const keys = [
         ...new Set([
             ...Object.keys(EQUIPMENT),
-            ...Object.keys(fields).filter(
-                (key) => /^hv[a-z]+ayn$/.test(key)
-            )
+            ...Object.keys(fields).filter(key => /^hv[a-z]+ayn$/.test(key))
         ])
     ].sort();
 
     for (const key of keys) {
-        const item = node(
-            'div',
-            'equipment-item'
-        );
+        const item = node('div', 'equipment-item');
 
         const name = node(
             'span',
@@ -2394,40 +1977,24 @@ function renderEquipment(hospital) {
             EQUIPMENT[key] || '항목 설명 미정보'
         );
 
-        name.append(
-            node('small', 'field-code', key)
-        );
+        name.append(node('small', 'field-code', key));
 
-        const status = availability(
-            fields[key]
-        );
-
-        const baselineKey =
-            EQUIPMENT_BASELINES[key];
+        const status = availability(fields[key]);
+        const baselineKey = EQUIPMENT_BASELINES[key];
 
         if (baselineKey) {
-            const baseline = integerValue(
-                fields[baselineKey]
-            );
+            const baseline = integerValue(fields[baselineKey]);
 
-            const count =
-                baseline !== null && baseline >= 0
-                    ? String(baseline)
-                    : '미정보';
+            const count = baseline !== null && baseline >= 0
+                ? String(baseline)
+                : '미정보';
 
             name.append(
-                node(
-                    'small',
-                    'equipment-reference',
-                    `기준 수 ${count}`
-                )
+                node('small', 'equipment-reference', `기준 수 ${count}`)
             );
         }
 
-        if (
-            status.className === 'unknown' &&
-            !isMissing(fields[key])
-        ) {
+        if (status.className === 'unknown' && !isMissing(fields[key])) {
             name.append(
                 node(
                     'small',
@@ -2439,94 +2006,49 @@ function renderEquipment(hospital) {
 
         item.append(
             name,
-            node(
-                'strong',
-                `${status.className}-text`,
-                status.text
-            )
+            node('strong', `${status.className}-text`, status.text)
         );
 
         target.append(item);
     }
 }
 
-/* 기관 기본정보 원본 */
+/* 기본정보 */
 
 function renderBasic(hospital) {
     const target = byId('basic-info');
     target.replaceChildren();
 
     const blocks = [
-        [
-            '응급의료기관 기본정보',
-            hospital.basic,
-            state.sources.basic
-        ],
-        [
-            '외상센터 기본정보',
-            hospital.trauma,
-            state.sources.traumaBasic
-        ]
+        ['응급의료기관 기본정보', hospital.basic, state.sources.basic],
+        ['외상센터 기본정보', hospital.trauma, state.sources.traumaBasic]
     ];
 
     for (const [heading, fields, loaded] of blocks) {
-        const section = node(
-            'details',
-            'raw-details'
-        );
-
-        section.append(
-            node('summary', '', heading)
-        );
+        const section = node('details', 'raw-details');
+        section.append(node('summary', '', heading));
 
         if (!loaded) {
             section.append(
-                node(
-                    'p',
-                    'empty-state',
-                    '미정보 · 조회에 실패했습니다.'
-                )
+                node('p', 'empty-state', '미정보 · 조회에 실패했습니다.')
             );
-        } else if (
-            !fields ||
-            !Object.keys(fields).length
-        ) {
+        } else if (!fields || !Object.keys(fields).length) {
             section.append(
-                node(
-                    'p',
-                    'empty-state',
-                    '미정보 · 보고된 정보가 없습니다.'
-                )
+                node('p', 'empty-state', '미정보 · 보고된 정보가 없습니다.')
             );
         } else {
-            const list = node(
-                'dl',
-                'raw-grid'
-            );
+            const list = node('dl', 'raw-grid');
 
             for (const [key, value] of Object.entries(fields)) {
-                if (
-                    ['hpid', 'rnum', 'phpid'].includes(key)
-                ) {
+                if (['hpid', 'rnum', 'phpid'].includes(key)) {
                     continue;
                 }
 
-                const pair = node(
-                    'div',
-                    'raw-pair'
-                );
+                const pair = node('div', 'raw-pair');
 
                 pair.append(
-                    node(
-                        'dt',
-                        'field-code',
-                        fieldLabel(key)
-                    ),
-                    node(
-                        'dd',
-                        '',
-                        displayValue(value)
-                    )
+                    node('dt', 'field-code', fieldLabel(key)),
+                    node('dd', '', displayValue(value))
                 );
 
                 list.append(pair);
@@ -2539,15 +2061,10 @@ function renderBasic(hospital) {
     }
 }
 
-/* 전화·외부 지도 */
+/* 전화와 외부 지도 */
 
 function contactLink(text, href, className) {
-    const link = node(
-        'a',
-        className,
-        text
-    );
-
+    const link = node('a', className, text);
     link.href = href;
     return link;
 }
@@ -2566,31 +2083,20 @@ function isAppleTouchDevice() {
 
 function openMobileApp(scheme, androidPackage, fallback) {
     if (/Android/i.test(navigator.userAgent)) {
-        const intent = scheme.replace(
-            /^[a-z]+:\/\//,
-            'intent://'
-        );
-
+        const intent = scheme.replace(/^[a-z]+:\/\//, 'intent://');
         const protocol = scheme.split(':')[0];
 
         window.location.href =
             `${intent}#Intent;scheme=${protocol};` +
             'action=android.intent.action.VIEW;' +
             `package=${androidPackage};` +
-            `S.browser_fallback_url=${
-                encodeURIComponent(fallback)
-            };end`;
+            `S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
 
         return;
     }
 
     if (!isAppleTouchDevice()) {
-        window.open(
-            fallback,
-            '_blank',
-            'noopener,noreferrer'
-        );
-
+        window.open(fallback, '_blank', 'noopener,noreferrer');
         return;
     }
 
@@ -2599,16 +2105,8 @@ function openMobileApp(scheme, androidPackage, fallback) {
 
     const cleanup = () => {
         window.clearTimeout(timer);
-
-        document.removeEventListener(
-            'visibilitychange',
-            onVisibility
-        );
-
-        window.removeEventListener(
-            'pagehide',
-            cleanup
-        );
+        document.removeEventListener('visibilitychange', onVisibility);
+        window.removeEventListener('pagehide', cleanup);
     };
 
     const onVisibility = () => {
@@ -2617,15 +2115,8 @@ function openMobileApp(scheme, androidPackage, fallback) {
         }
     };
 
-    document.addEventListener(
-        'visibilitychange',
-        onVisibility
-    );
-
-    window.addEventListener(
-        'pagehide',
-        cleanup
-    );
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', cleanup);
 
     timer = window.setTimeout(() => {
         cleanup();
@@ -2656,30 +2147,20 @@ function navigationLink(provider, hospital) {
             : '';
 
         return {
-            scheme:
-                `kakaomap://route?${start}` +
-                `ep=${lat},${lng}&by=car`,
+            scheme: `kakaomap://route?${start}ep=${lat},${lng}&by=car`,
             package: 'net.daum.android.map',
-            fallback:
-                'https://map.kakao.com/link/to/' +
-                `${name},${lat},${lng}`
+            fallback: `https://map.kakao.com/link/to/${name},${lat},${lng}`
         };
     }
 
     if (provider === 'naver') {
-        const appname = encodeURIComponent(
-            window.location.origin
-        );
-
+        const appname = encodeURIComponent(window.location.origin);
         let fallback;
 
         if (mobile) {
             fallback = isAppleTouchDevice()
                 ? 'https://apps.apple.com/kr/app/id311867728'
-                : (
-                    'https://play.google.com/store/apps/' +
-                    'details?id=com.nhn.android.nmap'
-                );
+                : 'https://play.google.com/store/apps/details?id=com.nhn.android.nmap';
         } else {
             fallback =
                 'https://map.naver.com/p/directions/-/' +
@@ -2699,35 +2180,18 @@ function navigationLink(provider, hospital) {
 
     return {
         scheme: isAppleTouchDevice()
-            ? (
-                `tmap://route?rGoName=${name}` +
-                `&rGoX=${lng}&rGoY=${lat}`
-            )
-            : (
-                `tmap://route?goalname=${name}` +
-                `&goalx=${lng}&goaly=${lat}`
-            ),
+            ? `tmap://route?rGoName=${name}&rGoX=${lng}&rGoY=${lat}`
+            : `tmap://route?goalname=${name}&goalx=${lng}&goaly=${lat}`,
         package: 'com.skt.tmap.ku',
         fallback: isAppleTouchDevice()
             ? 'https://apps.apple.com/kr/app/id431589174'
-            : (
-                'https://play.google.com/store/apps/' +
-                'details?id=com.skt.tmap.ku'
-            )
+            : 'https://play.google.com/store/apps/details?id=com.skt.tmap.ku'
     };
 }
 
 function launchNavigation(provider, hospital) {
-    const link = navigationLink(
-        provider,
-        hospital
-    );
-
-    openMobileApp(
-        link.scheme,
-        link.package,
-        link.fallback
-    );
+    const link = navigationLink(provider, hospital);
+    openMobileApp(link.scheme, link.package, link.fallback);
 }
 
 function renderContacts(hospital) {
@@ -2735,23 +2199,14 @@ function renderContacts(hospital) {
     const phones = node('div', 'phone-actions');
     const maps = node('div', 'navigation-actions');
 
-    phones.setAttribute(
-        'aria-label',
-        '병원 전화'
-    );
-
-    maps.setAttribute(
-        'aria-label',
-        '지도 길찾기'
-    );
+    phones.setAttribute('aria-label', '병원 전화');
+    maps.setAttribute('aria-label', '지도 길찾기');
 
     for (const [label, raw] of [
         ['응급실', hospital.erTel],
         ['대표전화', hospital.tel]
     ]) {
-        const number = isMissing(raw)
-            ? ''
-            : String(raw).trim();
+        const number = isMissing(raw) ? '' : String(raw).trim();
 
         if (
             /^[0-9+()\s-]+$/.test(number) &&
@@ -2766,11 +2221,7 @@ function renderContacts(hospital) {
             );
         } else {
             phones.append(
-                node(
-                    'span',
-                    'phone-missing',
-                    `${label} 미정보`
-                )
+                node('span', 'phone-missing', `${label} 미정보`)
             );
         }
     }
@@ -2789,24 +2240,21 @@ function renderContacts(hospital) {
         button.type = 'button';
 
         button.addEventListener('click', () => {
-            launchNavigation(
-                provider,
-                hospital
-            );
+            launchNavigation(provider, hospital);
         });
 
         maps.append(button);
     }
 
-    target.replaceChildren(
-        phones,
-        maps
-    );
+    target.replaceChildren(phones, maps);
 }
 
-/* 상세 카드 열기·닫기 */
+/* 상세창 */
 
 function openHospital(hospital, focus = true) {
+    closeRadius();
+    byId('search-results').hidden = true;
+
     if (focus) {
         state.previousFocus = document.activeElement;
     }
@@ -2816,23 +2264,18 @@ function openHospital(hospital, focus = true) {
     }
 
     state.selected = hospital;
-
-    byId('hospital-name').textContent =
-        hospital.name;
+    byId('hospital-name').textContent = hospital.name;
 
     if (state.lastUpdated) {
-        const updated = state.lastUpdated.toLocaleString(
-            'ko-KR',
-            {
-                timeZone: 'Asia/Seoul',
-                year: 'numeric',
-                month: 'numeric',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            }
-        );
+        const updated = state.lastUpdated.toLocaleString('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
 
         byId('sheet-updated').textContent =
             `마지막 새로고침 · ${updated} KST`;
@@ -2841,20 +2284,13 @@ function openHospital(hospital, focus = true) {
             '전체 조회 시각을 확인할 수 없습니다.';
     }
 
-    byId('hospital-type').textContent =
-        hospitalLabel(hospital);
+    byId('hospital-type').textContent = hospitalLabel(hospital);
 
     byId('hospital-address').textContent =
         `주소 ${displayValue(hospital.address)}`;
 
-    const distance = distanceKm(
-        state.origin,
-        hospital
-    ).toFixed(1);
-
-    const originName = state.locationKnown
-        ? '내 위치'
-        : '서울시청';
+    const distance = distanceKm(state.origin, hospital).toFixed(1);
+    const originName = state.locationKnown ? '내 위치' : '서울시청';
 
     byId('hospital-distance').textContent =
         `${originName}에서 직선거리 ${distance} km`;
@@ -2871,26 +2307,30 @@ function openHospital(hospital, focus = true) {
         .map(([name]) => name);
 
     byId('data-state').textContent = failed.length
-        ? (
-            `일부 데이터 조회 실패: ${failed.join(', ')}. ` +
-            '재조회하거나 병원에 문의하세요.'
-        )
+        ? `일부 데이터 조회 실패: ${failed.join(', ')}. ` +
+        '재조회하거나 병원에 문의하세요.'
         : '공공데이터의 보고 시점과 현장 상황은 다를 수 있습니다.';
 
+    byId('sheet').inert = false;
+    setBackgroundInert(true);
     byId('sheet-dim').hidden = false;
     byId('sheet').classList.add('open');
-
-    byId('sheet').setAttribute(
-        'aria-hidden',
-        'false'
-    );
+    byId('sheet').setAttribute('aria-hidden', 'false');
 
     if (focus) {
-        byId('sheet')
-            .querySelector('.sheet-scroll')
-            .scrollTop = 0;
-
+        byId('sheet').querySelector('.sheet-scroll').scrollTop = 0;
         byId('sheet-close').focus();
+    }
+}
+
+function setBackgroundInert(value) {
+    for (const selector of [
+        '#map',
+        '#top-panel',
+        '.map-actions',
+        '#search-panel'
+    ]) {
+        document.querySelector(selector).inert = value;
     }
 }
 
@@ -2898,16 +2338,23 @@ function closeSheet() {
     byId('sheet').classList.remove('open');
     byId('sheet').style.transform = '';
     byId('sheet').style.transition = '';
-
-    byId('sheet').setAttribute(
-        'aria-hidden',
-        'true'
-    );
-
+    byId('sheet').setAttribute('aria-hidden', 'true');
     byId('sheet-dim').hidden = true;
 
     state.selected = null;
-    state.previousFocus?.focus?.();
+    byId('sheet').inert = true;
+    setBackgroundInert(false);
+
+    const previous = state.previousFocus;
+
+    if (
+        previous?.isConnected &&
+        !previous.closest('[hidden], dialog:not([open])')
+    ) {
+        previous.focus();
+    } else {
+        byId('keyword').focus();
+    }
 }
 
 function initSheetDrag() {
@@ -2919,7 +2366,7 @@ function initSheetDrag() {
 
     handle.addEventListener(
         'touchstart',
-        (event) => {
+        event => {
             if (event.touches.length !== 1) {
                 return;
             }
@@ -2933,24 +2380,16 @@ function initSheetDrag() {
 
     handle.addEventListener(
         'touchmove',
-        (event) => {
-            if (
-                startY === null ||
-                event.touches.length !== 1
-            ) {
+        event => {
+            if (startY === null || event.touches.length !== 1) {
                 return;
             }
 
-            delta = Math.max(
-                0,
-                event.touches[0].clientY - startY
-            );
+            delta = Math.max(0, event.touches[0].clientY - startY);
 
             if (delta > 0) {
                 event.preventDefault();
-
-                sheet.style.transform =
-                    `translateY(${delta}px)`;
+                sheet.style.transform = `translateY(${delta}px)`;
             }
         },
         { passive: false }
@@ -2973,25 +2412,14 @@ function initSheetDrag() {
         delta = 0;
     };
 
-    handle.addEventListener(
-        'touchend',
-        finish,
-        { passive: true }
-    );
-
-    handle.addEventListener(
-        'touchcancel',
-        finish,
-        { passive: true }
-    );
+    handle.addEventListener('touchend', finish, { passive: true });
+    handle.addEventListener('touchcancel', finish, { passive: true });
 }
 
 /* 지도 범위 */
 
 function fitBounds(bounds) {
-    const height =
-        byId('map').clientHeight ||
-        window.innerHeight;
+    const height = byId('map').clientHeight || window.innerHeight;
 
     const top = Math.min(
         document.querySelector('.top-panel').offsetHeight + 24,
@@ -3003,26 +2431,18 @@ function fitBounds(bounds) {
         height * 0.25
     );
 
-    state.map.setBounds(
-        bounds,
-        top,
-        32,
-        bottom,
-        32
-    );
+    state.map.setBounds(bounds, top, 32, bottom, 32);
 }
 
 function radiusExtent(origin, radiusKm) {
     const angle = radiusKm / 6371;
-    const latDelta = (angle * 180) / Math.PI;
+    const latDelta = angle * 180 / Math.PI;
 
     const lngDelta =
-        (
-            Math.asin(
-                Math.sin(angle) /
-                Math.cos((origin.lat * Math.PI) / 180)
-            ) * 180
-        ) / Math.PI;
+        Math.asin(
+            Math.sin(angle) /
+            Math.cos(origin.lat * Math.PI / 180)
+        ) * 180 / Math.PI;
 
     return {
         south: origin.lat - latDelta,
@@ -3041,21 +2461,13 @@ function fitRadius() {
 
     if (byId('radius').value === 'all') {
         if (!state.hospitals.length) {
-            bounds.extend(
-                new kakao.maps.LatLng(33.1, 124.5)
-            );
-
-            bounds.extend(
-                new kakao.maps.LatLng(38.7, 131.9)
-            );
+            bounds.extend(new kakao.maps.LatLng(33.1, 124.5));
+            bounds.extend(new kakao.maps.LatLng(38.7, 131.9));
         }
 
         for (const hospital of state.hospitals) {
             bounds.extend(
-                new kakao.maps.LatLng(
-                    hospital.lat,
-                    hospital.lng
-                )
+                new kakao.maps.LatLng(hospital.lat, hospital.lng)
             );
         }
     } else {
@@ -3064,19 +2476,8 @@ function fitRadius() {
             Number(byId('radius').value)
         );
 
-        bounds.extend(
-            new kakao.maps.LatLng(
-                box.south,
-                box.west
-            )
-        );
-
-        bounds.extend(
-            new kakao.maps.LatLng(
-                box.north,
-                box.east
-            )
-        );
+        bounds.extend(new kakao.maps.LatLng(box.south, box.west));
+        bounds.extend(new kakao.maps.LatLng(box.north, box.east));
     }
 
     fitBounds(bounds);
@@ -3104,10 +2505,7 @@ function openNotice() {
 function initNotice() {
     const dialog = byId('notice-dialog');
 
-    for (const id of [
-        'notice-close',
-        'notice-confirm'
-    ]) {
+    for (const id of ['notice-close', 'notice-confirm']) {
         byId(id).addEventListener('click', () => {
             dialog.close();
         });
@@ -3129,10 +2527,7 @@ function initNotice() {
         dialog.close();
     });
 
-    byId('notice-open').addEventListener(
-        'click',
-        openNotice
-    );
+    byId('notice-open').addEventListener('click', openNotice);
 
     if (!noticeHidden()) {
         openNotice();
@@ -3143,8 +2538,7 @@ function initNotice() {
 
 function initPanels() {
     const updateHeight = () => {
-        const height =
-            byId('search-panel').offsetHeight;
+        const height = byId('search-panel').offsetHeight;
 
         document.documentElement.style.setProperty(
             '--search-panel-height',
@@ -3153,7 +2547,7 @@ function initPanels() {
     };
 
     const panels = [
-        ['top', '응급의료기관'],
+        ['top', '지도 정보'],
         ['search', '검색']
     ];
 
@@ -3167,24 +2561,16 @@ function initPanels() {
                 button.getAttribute('aria-expanded') === 'true';
 
             content.hidden = collapsed;
+            panel.classList.toggle('is-collapsed', collapsed);
 
-            panel.classList.toggle(
-                'is-collapsed',
-                collapsed
-            );
-
-            button.setAttribute(
-                'aria-expanded',
-                String(!collapsed)
-            );
+            button.setAttribute('aria-expanded', String(!collapsed));
 
             button.setAttribute(
                 'aria-label',
                 `${label} ${collapsed ? '펼치기' : '접기'}`
             );
 
-            button.textContent =
-                collapsed ? '펼치기' : '접기';
+            button.textContent = collapsed ? '펼치기' : '접기';
 
             if (prefix === 'search') {
                 document.body.classList.toggle(
@@ -3204,16 +2590,10 @@ function initPanels() {
     }
 
     if ('ResizeObserver' in window) {
-        new ResizeObserver(updateHeight).observe(
-            byId('search-panel')
-        );
+        new ResizeObserver(updateHeight).observe(byId('search-panel'));
     }
 
-    window.addEventListener(
-        'resize',
-        updateHeight
-    );
-
+    window.addEventListener('resize', updateHeight);
     updateHeight();
 }
 
@@ -3221,6 +2601,8 @@ function initPanels() {
 
 function init() {
     initPanels();
+    initRadius();
+    updateSummary();
 
     if (
         navigator.maxTouchPoints > 0 ||
@@ -3234,10 +2616,7 @@ function init() {
     initNotice();
 
     byId('developer-mode').addEventListener('toggle', () => {
-        if (
-            byId('developer-mode').open &&
-            state.selected
-        ) {
+        if (byId('developer-mode').open && state.selected) {
             loadData();
         }
     });
@@ -3251,10 +2630,7 @@ function init() {
 
         for (const hospital of state.clusterItems) {
             bounds.extend(
-                new kakao.maps.LatLng(
-                    hospital.lat,
-                    hospital.lng
-                )
+                new kakao.maps.LatLng(hospital.lat, hospital.lng)
             );
         }
 
@@ -3264,34 +2640,15 @@ function init() {
 
     updateCoordinates();
 
-    byId('search-form').addEventListener('submit', (event) => {
+    byId('search-form').addEventListener('submit', event => {
         event.preventDefault();
         updateSearch();
-
-        byId('search-results')
-            .querySelector('button')
-            ?.click();
+        byId('search-results').querySelector('button')?.click();
     });
 
-    byId('keyword').addEventListener(
-        'input',
-        updateSearch
-    );
-
-    byId('refresh-button').addEventListener(
-        'click',
-        loadData
-    );
-
-    byId('location-button').addEventListener(
-        'click',
-        locate
-    );
-
-    byId('radius').addEventListener('change', () => {
-        fitRadius();
-        updateMarkers();
-    });
+    byId('keyword').addEventListener('input', updateSearch);
+    byId('refresh-button').addEventListener('click', loadData);
+    byId('location-button').addEventListener('click', locate);
 
     for (const id of [
         'filter-regional',
@@ -3299,52 +2656,77 @@ function init() {
         'filter-medical',
         'filter-other'
     ]) {
-        byId(id).addEventListener(
-            'change',
-            updateMarkers
-        );
+        byId(id).addEventListener('change', updateMarkers);
     }
 
-    byId('sheet-close').addEventListener(
-        'click',
-        closeSheet
-    );
+    byId('sheet-close').addEventListener('click', closeSheet);
+    byId('sheet-dim').addEventListener('click', closeSheet);
 
-    byId('sheet-dim').addEventListener(
-        'click',
-        closeSheet
-    );
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            if (document.querySelector('dialog[open]')) {
+                return;
+            }
 
-    document.addEventListener('keydown', (event) => {
+            if (!byId('radius-popover').hidden) {
+                closeRadius(true);
+                return;
+            }
+
+            if (!byId('search-results').hidden) {
+                byId('search-results').hidden = true;
+                byId('keyword').focus();
+                return;
+            }
+
+            if (state.selected) {
+                closeSheet();
+            }
+        }
+
         if (
-            event.key === 'Escape' &&
-            state.selected
+            event.key === 'Tab' &&
+            state.selected &&
+            !document.querySelector('dialog[open]')
         ) {
-            closeSheet();
+            const items = [
+                ...byId('sheet').querySelectorAll(
+                    'button:not(:disabled), a[href], input, select, summary, [tabindex="0"]'
+                )
+            ].filter(item =>
+                item.getClientRects().length &&
+                getComputedStyle(item).visibility !== 'hidden'
+            );
+
+            const first = items[0];
+            const last = items.at(-1);
+
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+            } else if (
+                !event.shiftKey &&
+                document.activeElement === last
+            ) {
+                event.preventDefault();
+                first?.focus();
+            }
         }
     });
 
     byId('location-button').disabled = true;
+    byId('refresh-button').disabled = true;
 
     if (!window.kakao?.maps) {
-        setStatus(
-            '카카오 지도 SDK를 불러오지 못했습니다.'
-        );
-
+        setStatus('카카오 지도 SDK를 불러오지 못했습니다.');
         return;
     }
 
     kakao.maps.load(() => {
-        state.map = new kakao.maps.Map(
-            byId('map'),
-            {
-                center: new kakao.maps.LatLng(
-                    SEOUL.lat,
-                    SEOUL.lng
-                ),
-                level: 6
-            }
-        );
+        state.map = new kakao.maps.Map(byId('map'), {
+            center: new kakao.maps.LatLng(SEOUL.lat, SEOUL.lng),
+            level: 6
+        });
 
         kakao.maps.event.addListener(
             state.map,
@@ -3357,6 +2739,7 @@ function init() {
         });
 
         byId('location-button').disabled = false;
+        byId('refresh-button').disabled = false;
 
         loadData();
         locate();

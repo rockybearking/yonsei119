@@ -2,57 +2,41 @@
 <html lang="ko">
 <head>
     <meta charset="utf-8">
-
     <meta
             name="viewport"
             content="width=device-width, initial-scale=1, viewport-fit=cover"
     >
-
     <meta name="theme-color" content="#f6f8fc">
 
     <title>전국 응급의료기관 실시간 정보</title>
 
+    <link rel="preconnect" href="https://hangeul.pstatic.net" crossorigin>
+    <link
+            rel="stylesheet"
+            href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css"
+    >
     <link rel="stylesheet" href="style.css">
 
     <script
             src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&amp;libraries=services&amp;autoload=false"
             defer
     ></script>
-
     <script src="app.js" defer></script>
 </head>
 
 <body>
 <main id="map" aria-label="응급의료기관 지도"></main>
 
-<header id="top-panel" class="top-panel">
-    <div class="brand">
-        <span class="brand-icon" aria-hidden="true">✚</span>
-        <span>응급의료기관</span>
-    </div>
-
-    <div id="top-content">
-        <p id="status" role="status" aria-live="polite">
-            데이터를 불러오는 중입니다.
-        </p>
-
-        <p
-                id="coordinates"
-                class="coordinates"
-                aria-live="polite"
-        >
-            위치 확인 중입니다.
-        </p>
-    </div>
-
-    <div class="top-tools">
-        <button
-                id="notice-open"
-                class="text-button"
-                type="button"
-        >
-            이용 안내
-        </button>
+<header id="top-panel" class="top-panel" aria-label="지도 정보">
+    <div class="panel-heading top-heading">
+        <div class="top-summary" aria-live="polite" aria-atomic="true">
+            <p class="updated-line">
+                갱신 시간 <time id="updated-time">확인 중</time>
+            </p>
+            <p id="institution-count" class="institution-count">
+                기관 목록 확인 중
+            </p>
+        </div>
 
         <button
                 id="top-toggle"
@@ -60,25 +44,88 @@
                 type="button"
                 aria-expanded="true"
                 aria-controls="top-content"
-                aria-label="응급의료기관 접기"
+                aria-label="지도 정보 접기"
         >
             접기
         </button>
     </div>
+
+    <div id="top-content">
+        <p id="status" role="status" aria-live="polite">
+            데이터를 불러오는 중입니다.
+        </p>
+
+        <p id="coordinates" class="coordinates" aria-live="polite">
+            위치 확인 중입니다.
+        </p>
+
+        <div class="top-tools">
+            <button id="notice-open" class="text-button" type="button">
+                이용 안내
+            </button>
+        </div>
+    </div>
 </header>
 
 <nav class="map-actions" aria-label="지도 조작">
+    <div class="radius-tool">
+        <button
+                id="radius-button"
+                class="map-action radius-button"
+                type="button"
+                aria-expanded="false"
+                aria-controls="radius-popover"
+                aria-label="탐색 반경 설정, 현재 10 km"
+                title="탐색 반경 설정"
+        >
+            <span class="radius-button-label">반경</span>
+            <span id="radius-value">10 km</span>
+        </button>
+
+        <section
+                id="radius-popover"
+                class="radius-popover"
+                aria-labelledby="radius-title"
+                hidden
+        >
+            <div class="panel-heading">
+                <h2 id="radius-title">탐색 반경</h2>
+
+                <button
+                        id="radius-close"
+                        class="panel-toggle"
+                        type="button"
+                        aria-label="반경 설정 닫기"
+                >
+                    닫기
+                </button>
+            </div>
+
+            <label class="sr-only" for="radius">탐색 반경 선택</label>
+
+            <select id="radius" aria-describedby="radius-help">
+                <option value="5">5 km</option>
+                <option value="10" selected>10 km</option>
+                <option value="20">20 km</option>
+                <option value="50">50 km</option>
+                <option value="100">100 km</option>
+                <option value="all">전국</option>
+            </select>
+
+            <p id="radius-help">
+                서울시청 기준 · 선택하면 바로 적용됩니다.
+            </p>
+        </section>
+    </div>
+
     <button
             id="location-button"
+            class="map-action"
             type="button"
             title="내 위치로 이동"
             aria-label="내 위치 확인 및 반경 맞추기"
     >
-        <svg
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                focusable="false"
-        >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="7"></circle>
             <circle cx="12" cy="12" r="2.5"></circle>
             <path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3"></path>
@@ -87,6 +134,7 @@
 
     <button
             id="refresh-button"
+            class="map-action"
             type="button"
             title="전체 데이터 새로고침"
             aria-label="전체 데이터 새로고침"
@@ -125,28 +173,14 @@
 
     <div id="search-content">
         <div class="search-row">
-            <label class="radius-control" for="radius">
-                반경
-
-                <select id="radius" aria-label="탐색 반경">
-                    <option value="5">5 km</option>
-                    <option value="10" selected>10 km</option>
-                    <option value="20">20 km</option>
-                    <option value="50">50 km</option>
-                    <option value="100">100 km</option>
-                    <option value="all">전국</option>
-                </select>
-            </label>
-
             <form id="search-form" autocomplete="off">
-                <label class="sr-only" for="keyword">
-                    병원 이름
-                </label>
+                <label class="sr-only" for="keyword">병원 이름</label>
 
                 <input
                         id="keyword"
                         type="search"
                         placeholder="병원 이름 검색"
+                        aria-controls="search-results"
                         enterkeyhint="search"
                 >
 
@@ -163,47 +197,27 @@
 
         <div class="filters">
             <label class="regional">
-                <input
-                        id="filter-regional"
-                        type="checkbox"
-                        checked
-                >
+                <input id="filter-regional" type="checkbox" checked>
                 권역응급
             </label>
 
             <label class="tertiary">
-                <input
-                        id="filter-tertiary"
-                        type="checkbox"
-                        checked
-                >
+                <input id="filter-tertiary" type="checkbox" checked>
                 상급종합
             </label>
 
             <label class="medical">
-                <input
-                        id="filter-medical"
-                        type="checkbox"
-                        checked
-                >
+                <input id="filter-medical" type="checkbox" checked>
                 의료원
             </label>
 
             <label class="other">
-                <input
-                        id="filter-other"
-                        type="checkbox"
-                        checked
-                >
+                <input id="filter-other" type="checkbox" checked>
                 일반·기타
             </label>
         </div>
 
-        <p
-                id="map-count"
-                class="map-count"
-                role="status"
-        ></p>
+        <p id="map-count" class="map-count" role="status"></p>
     </div>
 </section>
 
@@ -216,6 +230,7 @@
         aria-modal="true"
         aria-labelledby="hospital-name"
         aria-hidden="true"
+        inert
 >
     <div
             id="sheet-drag-handle"
@@ -247,8 +262,7 @@
     <div class="sheet-scroll">
         <p class="safety-note">
             정보에는 갱신 시차가 있습니다.
-            이송·방문 전에 병원에 수용 가능 여부를
-            전화로 확인하세요.
+            이송·방문 전에 병원에 수용 가능 여부를 전화로 확인하세요.
         </p>
 
         <div id="contact-actions" class="contact-actions"></div>
@@ -269,10 +283,7 @@
             <div id="key-beds" class="bed-dashboard"></div>
 
             <details class="bed-more">
-                <summary>
-                    중환자실·입원실·추가 격리 항목
-                </summary>
-
+                <summary>중환자실·입원실·추가 격리 항목</summary>
                 <div id="additional-beds"></div>
             </details>
         </section>
@@ -282,7 +293,6 @@
                 <h2>진료 공지</h2>
                 <span id="message-count"></span>
             </div>
-
             <div id="messages" class="message-list"></div>
         </section>
 
@@ -291,7 +301,6 @@
                 <h2>중증 응급질환 수용 현황</h2>
                 <span id="severe-time"></span>
             </div>
-
             <div id="severe" class="severe-list"></div>
         </section>
 
@@ -299,7 +308,6 @@
             <div class="section-heading">
                 <h2>가용 장비</h2>
             </div>
-
             <div id="equipment" class="equipment-grid"></div>
         </section>
 
@@ -308,34 +316,24 @@
         <details id="developer-mode" class="developer-mode">
             <summary>
                 개발자모드
-                <small>
-                    펼치면 전체 정보를 다시 조회합니다
-                </small>
+                <small>펼치면 전체 정보를 다시 조회합니다</small>
             </summary>
 
             <div class="developer-content">
-                <p
-                        class="developer-status"
-                        role="status"
-                        aria-live="polite"
-                >
-                        <span
-                                id="developer-spinner"
-                                class="spinner"
-                                aria-hidden="true"
-                                hidden
-                        ></span>
-
+                <p class="developer-status" role="status" aria-live="polite">
+            <span
+                    id="developer-spinner"
+                    class="spinner"
+                    aria-hidden="true"
+                    hidden
+            ></span>
                     <span id="developer-status">
-                            API 원본 필드와 상세 정보를 확인할 수 있습니다.
-                        </span>
+              API 원본 필드와 상세 정보를 확인할 수 있습니다.
+            </span>
                 </p>
 
                 <details class="raw-details">
-                    <summary>
-                        세부 병상·중환자실·시술 항목 전체 보기
-                    </summary>
-
+                    <summary>세부 병상·중환자실·시술 항목 전체 보기</summary>
                     <div id="all-beds" class="raw-content"></div>
                 </details>
 
@@ -353,7 +351,6 @@
     <div class="dialog-heading">
         <div>
             <h2 id="cluster-title">주변 병원</h2>
-
             <p class="muted">
                 병원 이름을 누르면 상세 정보를 확인합니다.
             </p>
