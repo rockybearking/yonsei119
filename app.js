@@ -20,6 +20,7 @@ const SEOUL = {
 };
 
 /* 기존 기관 분류 목록 */
+
 const TERTIARY_2024_2026 = [
     ['서울', ['강북삼성병원']],
     ['서울', ['건국대학교병원']],
@@ -82,21 +83,21 @@ const TERTIARY_2024_2026 = [
 ];
 
 const REGION_PREFIX = {
-    서울: /^서울/,
-    인천: /^인천/,
-    경기: /^경기/,
-    강원: /^강원/,
-    충북: /^(충북|충청북도)/,
-    충남: /^(충남|충청남도)/,
-    대전: /^대전/,
-    전북: /^(전북|전라북도)/,
-    광주: /^광주/,
-    전남: /^(전남|전라남도)/,
-    대구: /^대구/,
-    경북: /^(경북|경상북도)/,
-    부산: /^부산/,
-    경남: /^(경남|경상남도)/,
-    울산: /^울산/
+    '서울': /^서울/,
+    '인천': /^인천/,
+    '경기': /^경기/,
+    '강원': /^강원/,
+    '충북': /^(충북|충청북도)/,
+    '충남': /^(충남|충청남도)/,
+    '대전': /^대전/,
+    '전북': /^(전북|전라북도)/,
+    '광주': /^광주/,
+    '전남': /^(전남|전라남도)/,
+    '대구': /^대구/,
+    '경북': /^(경북|경상북도)/,
+    '부산': /^부산/,
+    '경남': /^(경남|경상남도)/,
+    '울산': /^울산/
 };
 
 const EQUIPMENT = {
@@ -264,6 +265,7 @@ const DISEASES = [
 ];
 
 /* 실시간 필드와 기준 필드의 기존 매핑 */
+
 const BED_GROUPS = [
     {
         title: '응급실·격리',
@@ -431,7 +433,7 @@ function integerValue(raw) {
     return Number.isSafeInteger(value) ? value : null;
 }
 
-function node(tag, className, content) {
+function node(tag, className = '', content = undefined) {
     const item = document.createElement(tag);
 
     if (className) {
@@ -562,8 +564,12 @@ function initRadius() {
 
 /* API 통신 */
 
+/**
+ * @param {Element} item
+ * @returns {Record<string, string>}
+ */
 function fieldMap(item) {
-    const fields = {};
+    const fields = Object.create(null);
 
     for (const child of item.children) {
         fields[child.localName.toLowerCase()] = child.textContent.trim();
@@ -578,15 +584,18 @@ function readXml(xmlText) {
         'application/xml'
     );
 
-    if (xml.querySelector('parsererror')) {
+    if (xml.getElementsByTagName('parsererror').length) {
         throw new Error('XML 해석 실패');
     }
 
-    const code = xml.querySelector('resultCode')?.textContent?.trim();
+    const code = xml
+        .getElementsByTagName('resultCode')[0]
+        ?.textContent
+        ?.trim();
 
     if (code !== '00') {
         const message = xml
-            .querySelector('resultMsg')
+            .getElementsByTagName('resultMsg')[0]
             ?.textContent
             ?.trim();
 
@@ -646,11 +655,11 @@ async function requestAll(endpoint, signal) {
         const items = [...xml.getElementsByTagName('item')].map(fieldMap);
 
         const total = Number(
-            xml.querySelector('totalCount')?.textContent || 0
+            xml.getElementsByTagName('totalCount')[0]?.textContent || 0
         );
 
         const rows = Number(
-            xml.querySelector('numOfRows')?.textContent || PAGE_SIZE
+            xml.getElementsByTagName('numOfRows')[0]?.textContent || PAGE_SIZE
         );
 
         if (!items.length && total > result.length) {
@@ -770,7 +779,7 @@ async function fetchData() {
     state.controller?.abort();
     state.controller = new AbortController();
 
-    setStatus('기관·병상·공지·중증질환 정보를 확인하고 있습니다…');
+    setStatus('정보 확인 중…');
 
     const endpoints = {
         list: 'getEgytListInfoInqire',
@@ -2349,11 +2358,13 @@ function closeSheet() {
 
     if (
         previous?.isConnected &&
-        !previous.closest('[hidden], dialog:not([open])')
+        !previous.closest('[hidden], [inert], dialog:not([open])') &&
+        previous !== byId('keyword') &&
+        previous.getClientRects().length > 0
     ) {
         previous.focus();
     } else {
-        byId('keyword').focus();
+        byId('search-toggle').focus({ preventScroll: true });
     }
 }
 
@@ -2597,9 +2608,68 @@ function initPanels() {
     updateHeight();
 }
 
+/* 검색 입력 포커스 정리 */
+
+function blurKeyword() {
+    const keyword = byId('keyword');
+
+    if (document.activeElement === keyword) {
+        keyword.blur();
+    }
+}
+
+function initSearchFocus() {
+    const keyword = byId('keyword');
+    let multiTouch = false;
+
+    const options = {
+        capture: true,
+        passive: true
+    };
+
+    document.addEventListener('pointerdown', event => {
+        if (
+            event.target !== keyword ||
+            (event.pointerType === 'touch' && !event.isPrimary)
+        ) {
+            blurKeyword();
+        }
+    }, options);
+
+    document.addEventListener('touchstart', event => {
+        multiTouch = event.touches.length > 1;
+
+        if (multiTouch || event.target !== keyword) {
+            blurKeyword();
+        }
+    }, options);
+
+    const updateTouches = event => {
+        multiTouch = event.touches.length > 1;
+    };
+
+    document.addEventListener('touchend', updateTouches, options);
+    document.addEventListener('touchcancel', updateTouches, options);
+
+    keyword.addEventListener('focus', () => {
+        if (multiTouch) {
+            keyword.blur();
+        }
+    });
+
+    document.addEventListener('wheel', event => {
+        if (event.ctrlKey || event.target !== keyword) {
+            blurKeyword();
+        }
+    }, options);
+
+    byId('search-form').addEventListener('submit', blurKeyword);
+}
+
 /* 시작 */
 
 function init() {
+    initSearchFocus();
     initPanels();
     initRadius();
     updateSummary();
@@ -2717,7 +2787,7 @@ function init() {
     byId('location-button').disabled = true;
     byId('refresh-button').disabled = true;
 
-    if (!window.kakao?.maps) {
+    if (typeof kakao === 'undefined' || !kakao.maps) {
         setStatus('카카오 지도 SDK를 불러오지 못했습니다.');
         return;
     }
@@ -2731,8 +2801,16 @@ function init() {
         kakao.maps.event.addListener(
             state.map,
             'idle',
-            updateMarkers
+            () => updateMarkers()
         );
+
+        for (const eventName of ['dragstart', 'zoom_start']) {
+            kakao.maps.event.addListener(
+                state.map,
+                eventName,
+                blurKeyword
+            );
+        }
 
         window.addEventListener('resize', () => {
             state.map.relayout();

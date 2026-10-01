@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="utf-8">
@@ -52,7 +52,7 @@
 
     <div id="top-content">
         <p id="status" role="status" aria-live="polite">
-            데이터를 불러오는 중입니다.
+            정보 확인 중…
         </p>
 
         <p id="coordinates" class="coordinates" aria-live="polite">
@@ -67,90 +67,6 @@
     </div>
 </header>
 
-<nav class="map-actions" aria-label="지도 조작">
-    <div class="radius-tool">
-        <button
-                id="radius-button"
-                class="map-action radius-button"
-                type="button"
-                aria-expanded="false"
-                aria-controls="radius-popover"
-                aria-label="탐색 반경 설정, 현재 10 km"
-                title="탐색 반경 설정"
-        >
-            <span class="radius-button-label">반경</span>
-            <span id="radius-value">10 km</span>
-        </button>
-
-        <section
-                id="radius-popover"
-                class="radius-popover"
-                aria-labelledby="radius-title"
-                hidden
-        >
-            <div class="panel-heading">
-                <h2 id="radius-title">탐색 반경</h2>
-
-                <button
-                        id="radius-close"
-                        class="panel-toggle"
-                        type="button"
-                        aria-label="반경 설정 닫기"
-                >
-                    닫기
-                </button>
-            </div>
-
-            <label class="sr-only" for="radius">탐색 반경 선택</label>
-
-            <select id="radius" aria-describedby="radius-help">
-                <option value="5">5 km</option>
-                <option value="10" selected>10 km</option>
-                <option value="20">20 km</option>
-                <option value="50">50 km</option>
-                <option value="100">100 km</option>
-                <option value="all">전국</option>
-            </select>
-
-            <p id="radius-help">
-                서울시청 기준 · 선택하면 바로 적용됩니다.
-            </p>
-        </section>
-    </div>
-
-    <button
-            id="location-button"
-            class="map-action"
-            type="button"
-            title="내 위치로 이동"
-            aria-label="내 위치 확인 및 반경 맞추기"
-    >
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <circle cx="12" cy="12" r="7"></circle>
-            <circle cx="12" cy="12" r="2.5"></circle>
-            <path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3"></path>
-        </svg>
-    </button>
-
-    <button
-            id="refresh-button"
-            class="map-action"
-            type="button"
-            title="전체 데이터 새로고침"
-            aria-label="전체 데이터 새로고침"
-    >
-        <svg
-                class="refresh-icon"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                focusable="false"
-        >
-            <path d="M19 10a7.2 7.2 0 1 0 .1 4"></path>
-            <path d="M19 4v6h-6"></path>
-        </svg>
-    </button>
-</nav>
-
 <section
         id="search-panel"
         class="search-panel"
@@ -158,6 +74,96 @@
 >
     <div class="panel-heading">
         <span class="search-heading">검색</span>
+
+        <nav class="map-actions" aria-label="지도 조작">
+            <div class="radius-tool">
+                <button
+                        id="radius-button"
+                        class="map-action radius-button"
+                        type="button"
+                        aria-expanded="false"
+                        aria-controls="radius-popover"
+                        aria-label="탐색 반경 설정, 현재 10 km"
+                        title="탐색 반경 설정"
+                >
+                    <span class="radius-button-label">반경</span>
+                    <span id="radius-value">10 km</span>
+                </button>
+
+                <section
+                        id="radius-popover"
+                        class="radius-popover"
+                        aria-labelledby="radius-title"
+                        hidden
+                >
+                    <div class="panel-heading">
+                        <h2 id="radius-title">탐색 반경</h2>
+
+                        <button
+                                id="radius-close"
+                                class="panel-toggle"
+                                type="button"
+                                aria-label="반경 설정 닫기"
+                        >
+                            닫기
+                        </button>
+                    </div>
+
+                    <label class="sr-only" for="radius">
+                        탐색 반경 선택
+                    </label>
+
+                    <select id="radius" aria-describedby="radius-help">
+                        <option value="5">5 km</option>
+                        <option value="10" selected>10 km</option>
+                        <option value="20">20 km</option>
+                        <option value="50">50 km</option>
+                        <option value="100">100 km</option>
+                        <option value="all">전국</option>
+                    </select>
+
+                    <p id="radius-help">
+                        서울시청 기준 · 선택하면 바로 적용됩니다.
+                    </p>
+                </section>
+            </div>
+
+            <button
+                    id="location-button"
+                    class="map-action"
+                    type="button"
+                    title="내 위치로 이동"
+                    aria-label="내 위치 확인 및 반경 맞추기"
+            >
+                <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                >
+                    <circle cx="12" cy="12" r="7"></circle>
+                    <circle cx="12" cy="12" r="2.5"></circle>
+                    <path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3"></path>
+                </svg>
+            </button>
+
+            <button
+                    id="refresh-button"
+                    class="map-action"
+                    type="button"
+                    title="전체 데이터 새로고침"
+                    aria-label="전체 데이터 새로고침"
+            >
+                <svg
+                        class="refresh-icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                >
+                    <path d="M19 10a7.2 7.2 0 1 0 .1 4"></path>
+                    <path d="M19 4v6h-6"></path>
+                </svg>
+            </button>
+        </nav>
 
         <button
                 id="search-toggle"
@@ -244,7 +250,7 @@
         <div>
             <p id="sheet-updated" class="sheet-updated"></p>
             <span id="hospital-type" class="type-badge"></span>
-            <h1 id="hospital-name"></h1>
+            <h1 id="hospital-name">병원 상세 정보</h1>
             <p id="hospital-address" class="muted"></p>
             <p id="hospital-distance" class="muted"></p>
         </div>
@@ -321,15 +327,15 @@
 
             <div class="developer-content">
                 <p class="developer-status" role="status" aria-live="polite">
-            <span
-                    id="developer-spinner"
-                    class="spinner"
-                    aria-hidden="true"
-                    hidden
-            ></span>
+                    <span
+                            id="developer-spinner"
+                            class="spinner"
+                            aria-hidden="true"
+                            hidden
+                    ></span>
                     <span id="developer-status">
-              API 원본 필드와 상세 정보를 확인할 수 있습니다.
-            </span>
+                        API 원본 필드와 상세 정보를 확인할 수 있습니다.
+                    </span>
                 </p>
 
                 <details class="raw-details">
