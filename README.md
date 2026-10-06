@@ -124,13 +124,13 @@
 
 ### 2026.09.10
 - **기술 스택 분장 및 역할 배분**
-  - 김관호: HTML5/CSS3 레이아웃 설계, API 비동기 수신 모듈 설계,
+  - 김관호: HTML5/CSS3 레이아웃 설계, API 비동기 수신 모듈 설계
   - 이재원: 공공데이터 및 카카오 SDK 인증 키 발급, 바닐라 자바스크립트 기반 지도 인터랙션 구현
   - 장안나: 타깃 API 명세서 분석, E-Gen 벤치마킹, UI 컴포넌트 스타일링
 
 ### 2026.09.15
 <p align="center">
-  <img src="./Assets/yonsei_119_1.jpg" width="320" alt="yonsei119 최초 개발 프로토타입" />
+  <img src="./Assets/yonsei_119_1.jpg" width="260" alt="yonsei119 최초 개발 프로토타입" />
   <br>
   <sub>▲ 최초 프로토타입 뷰포트 연동 화면</sub>
 </p>
@@ -142,9 +142,9 @@
 
 ### 2026.09.18
 <p align="center">
-  <img src="./Assets/PC_range.jpg" width="48%" alt="PC 화면" />
+  <img src="./Assets/PC_range.jpg" width="60%" alt="PC 화면" />
   &nbsp;
-  <img src="./Assets/mobile_range.jpg" width="48%" alt="모바일 화면" />
+  <img src="./Assets/mobile_range.jpg" width="280" alt="모바일 화면" />
   <br>
   <sub>▲ (좌) PC / 웹 뷰 화면 &nbsp;|&nbsp; ▲ (우) 모바일 반응형 뷰</sub>
 </p>
@@ -159,9 +159,9 @@
 
 ### 2026.09.28
 <p align="center">
-  <img src="./Assets/Hospital_sort.jpg" width="48%" alt="병원 분류 화면" />
+  <img src="./Assets/Hospital_sort.jpg" width="30%" alt="병원 분류 화면" />
   &nbsp;
-  <img src="./Assets/Circle_color.jpg" width="48%" alt="반경 색상 화면" />
+  <img src="./Assets/Circle_color.jpg" width="235" alt="반경 색상 화면" />
   <br>
   <sub>▲ (좌) 병원 분류 필터 화면 &nbsp;|&nbsp; ▲ (우) 거리/상태별 반경 색상 화면</sub>
 </p>
@@ -169,6 +169,40 @@
 - **추가 고도화 사항**
   - 밀집 구역 마커 오버랩 방지를 위한 시각적 계층화 완료
   - 응급 이동 편의성을 위한 주요 3사 내비게이션(카카오내비, 네이버지도, TMAP) 딥링크 바로가기 액션 연동
+
+### 2026.10.01
+- **GitHub Repository 명칭 변경**
+  - 프로젝트의 정체성과 서비스 목적을 직관적으로 드러내기 위해 저장소 이름 변경 합의 및 적용 (`Gpt-proj` → `yonsei119`)
+
+### 2026.10.02
+<p align="center">
+  <img src="./Assets/Indemnity_message.jpg" width="50%" alt="면책 조항 PC 화면" />
+  &nbsp;
+  <img src="./Assets/Indemnity_message_mobile.jpg" width="290" alt="면책 조항 모바일 화면" />
+  <br>
+  <sub>▲ (좌) 면책 조항 모달 PC 뷰 &nbsp;|&nbsp; ▲ (우) 면책 조항 모달 모바일 반응형 뷰</sub>
+</p>
+
+- **면책 조항 및 법적 고지 UI 추가**
+  - 공공데이터 연계 시차에 따른 현장 혼선 방지 및 서비스 신뢰도/법적 안정성 확보를 위한 안내 팝업 구현
+  > **[이용 안내 및 법적 고지]**  
+  > 본 서비스에서 제공하는 병상 및 진료 현황은 공공데이터 연계 주기에 따라 실제 병원 현장 및 중앙응급의료센터(E-Gen) 공식 현황과 시차가 발생할 수 있습니다. 응급 상황 시 반드시 서비스 내 전화 연결 버튼을 통해 해당 의료기관의 수용 가능 여부를 유선 확인 후 이동하시기 바랍니다.
+
+### 2026.10.06
+<p align="center">
+  <img src="./Assets/Regional_Trauma_Center.jpg" width="280" alt="권역외상센터 연동 화면" />
+  <br>
+  <sub>▲ 권역외상센터 전용 뷰 및 세부 정보 연동 화면</sub>
+</p>
+
+- **권역외상센터(Regional Trauma Center) 데이터 및 UI 연동**
+  - 다발성 중증 외상 환자의 신속한 이송 및 골든타임 확보를 위해 일반 응급의료기관과 구분되는 권역외상센터 전용 필터 및 식별 마커 추가
+  - 전문 치료 자원(외상소생실, 전용 중환자실 등) 보유 기관 중심의 직관적 우선 탐색 체계 마련
+- **도출된 개선점**
+  - 주요 3사 내비게이션(카카오맵, 네이버지도, T맵) 지원 방식 및 연동 안정성 추가 개선
+  - 실시간 세부 자원(일반 병상 / 수술실 / 중환자실 / 입원실 / 추가 격리실) 가용 정보 파이프라인 추가 개선
+  - <span style="color: red;">보고시각 추가 필요</span> (값의 객관화 및 데이터 최신성 검증을 위해 필수)
+  - API 호출/수신 데이터의 무결성 검증 및 디버깅을 위한 '개발자 모드' 추가 필요
 
 ---
 
