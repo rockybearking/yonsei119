@@ -402,20 +402,27 @@ function fieldLabel(key) {
     return key;
 }
 
-function availability(raw, yes = '가능', no = '불가') {
-    const value = isMissing(raw)
-        ? ''
-        : String(raw).trim().toUpperCase();
+function availability(raw, yes = '가능', no = '불가능') {
+    if (isMissing(raw)) {
+        return { text: '-', className: 'unknown' };
+    }
 
-    if (value === 'Y') {
+    const text = String(raw).trim();
+    const upper = text.toUpperCase();
+
+    if (upper === 'Y' || text === '가능' || text.startsWith('가능')) {
         return { text: yes, className: 'yes' };
     }
 
-    if (value === 'N') {
+    if (upper === 'N' || text === '불가' || text === '불가능' || text.includes('불가') || text.includes('불가능')) {
         return { text: no, className: 'no' };
     }
 
-    return { text: '미정보', className: 'unknown' };
+    if (text === '정보미제공' || text === '미정보' || text === '-') {
+        return { text: '-', className: 'unknown' };
+    }
+
+    return { text: text, className: 'unknown' };
 }
 
 function integerValue(raw) {
@@ -445,6 +452,36 @@ function node(tag, className = '', content = undefined) {
     }
 
     return item;
+}
+
+function createMarqueeEl(tag, className = '', text = '', title = undefined) {
+    const el = node(tag, className);
+    if (title) el.title = title;
+    const inner = node('span', 'marquee-inner', text);
+    el.append(inner);
+    return el;
+}
+
+function updateMarquees() {
+    requestAnimationFrame(() => {
+        const containers = document.querySelectorAll('.egen-cell-param, .severe-remark-box');
+        for (const container of containers) {
+            const inner = container.querySelector('.marquee-inner');
+            if (!inner) continue;
+
+            const overflow = inner.scrollWidth - container.clientWidth;
+            if (overflow > 2) {
+                container.classList.add('is-marquee');
+                inner.style.setProperty('--ticker-diff', `${Math.ceil(overflow + 14)}px`);
+                const duration = Math.max(5, Math.min(22, (overflow / 25) + 3.5));
+                inner.style.setProperty('--ticker-duration', `${duration.toFixed(1)}s`);
+            } else {
+                container.classList.remove('is-marquee');
+                inner.style.removeProperty('--ticker-diff');
+                inner.style.removeProperty('--ticker-duration');
+            }
+        }
+    });
 }
 
 function setStatus(message) {
@@ -1556,7 +1593,7 @@ function renderMessages(hospital) {
 
     const now = Date.now();
 
-    const messages = hospital.messages
+    const messages = (hospital.messages || [])
         .filter(item => {
             const start = parseApiDate(item.symblksttdtm);
             const end = parseApiDate(item.symblkenddtm);
@@ -1567,10 +1604,25 @@ function renderMessages(hospital) {
             );
         })
         .sort((a, b) => {
-            const priority = item =>
-                item.symblkmsgtyp === '중증' ? 0 : 1;
+            // 1. 중증 우선순위 (중증은 반드시 맨 위에 Priority로 표시)
+            const isCritA = a.symblkmsgtyp === '중증' ? 0 : 1;
+            const isCritB = b.symblkmsgtyp === '중증' ? 0 : 1;
+            if (isCritA !== isCritB) {
+                return isCritA - isCritB;
+            }
 
-            return priority(a) - priority(b);
+            // 2. 진료과(trtPrtCodMag) 기준 오름차순(가나다순) 정렬
+            const deptA = String(a.trtprtcodmag || a.symtypcodmag || '').trim();
+            const deptB = String(b.trtprtcodmag || b.symtypcodmag || '').trim();
+            const deptCompare = deptA.localeCompare(deptB, 'ko', { numeric: true });
+            if (deptCompare !== 0) {
+                return deptCompare;
+            }
+
+            // 3. 진료과가 동일할 경우 공지 메시지 내용 오름차순 보조 정렬
+            const msgA = String(a.symblkmsg || '').trim();
+            const msgB = String(b.symblkmsg || '').trim();
+            return msgA.localeCompare(msgB, 'ko');
         });
 
     byId('message-count').textContent = `${messages.length}건`;
@@ -1585,44 +1637,340 @@ function renderMessages(hospital) {
             ? 'critical'
             : item.symblkmsgtyp === '응급'
                 ? 'urgent'
-                : 'unknown';
+                : 'normal';
 
         const article = node('article', `message-card ${level}`);
         const heading = node('div', 'message-heading');
 
+        // 5. 진료과: trtPrtCodMag 우선 및 명확한 표기
+        const deptName = String(item.trtprtcodmag || '').trim() ||
+            String(item.symtypcodmag || '').trim() ||
+            '진료과 미지정';
+
         const badge = node(
             'span',
             'message-badge',
-            displayValue(item.symblkmsgtyp)
+            item.symblkmsgtyp ? `[${item.symblkmsgtyp}]` : '[공지]'
         );
 
-        const subject = displayValue(
-            firstReported(item.trtprtcodmag, item.symtypcodmag)
-        );
+        const deptTitle = node('strong', 'message-dept', deptName);
 
-        heading.append(badge, node('strong', '', subject));
+        heading.append(badge, deptTitle);
 
+        // 세부 증상 유형이 진료과와 다르고 '응급실'이 아니면 보조 배지로 표기
+        if (item.symtypcodmag && item.symtypcodmag !== deptName && item.symtypcodmag !== '응급실') {
+            heading.append(node('span', 'message-subtag', item.symtypcodmag));
+        }
+
+        // 진료과 아래에 메시지 표기 (<symBlkMsg>)
         article.append(
             heading,
             node('p', 'message-text', displayValue(item.symblkmsg))
         );
 
         const end = parseApiDate(item.symblkenddtm);
+        const start = parseApiDate(item.symblksttdtm);
 
+        const meta = node('div', 'message-meta');
         if (end) {
-            article.append(
-                node('small', 'muted', `종료 예정 ${end.display}`)
-            );
+            meta.append(node('small', 'muted', `종료 예정 ${end.display}`));
+        } else if (start) {
+            meta.append(node('small', 'muted', `등록 ${start.display}`));
+        }
+
+        if (meta.childElementCount > 0) {
+            article.append(meta);
         }
 
         target.append(article);
     }
 }
 
-/* 중증질환 */
+/* 중증응급질환 (사진 2 컨셉 정의) */
+
+const SEVERE_DISEASE_GROUPS = [
+    {
+        title: '뇌출혈수술',
+        items: [
+            { label: '거미막하출혈', key: 'mkioskty3' },
+            { label: '거미막하출혈 외', key: 'mkioskty4' }
+        ]
+    },
+    {
+        title: '대동맥응급',
+        items: [
+            { label: '흉부', key: 'mkioskty5' },
+            { label: '복부', key: 'mkioskty6' }
+        ]
+    },
+    {
+        title: '담낭담관질환',
+        items: [
+            { label: '담낭질환', key: 'mkioskty7' },
+            { label: '담도포함질환', key: 'mkioskty8' }
+        ]
+    },
+    {
+        title: '복부응급수술',
+        items: [
+            { label: '비외상', key: 'mkioskty9' }
+        ]
+    },
+    {
+        title: '사지접합',
+        items: [
+            { label: '수족지접합', key: 'mkioskty20' },
+            { label: '수족지접합 외', key: 'mkioskty21' }
+        ]
+    },
+    {
+        title: '산부인과응급',
+        items: [
+            { label: '분만', key: 'mkioskty16' },
+            { label: '산과수술', key: 'mkioskty17' },
+            { label: '부인과수술', key: 'mkioskty18' }
+        ]
+    },
+    {
+        title: '안과적수술',
+        items: [
+            { label: '응급', key: 'mkioskty25' }
+        ]
+    },
+    {
+        title: '영상의학혈관중재',
+        items: [
+            { label: '성인', key: 'mkioskty26' },
+            { label: '영유아', key: 'mkioskty27' }
+        ]
+    },
+    {
+        title: '응급내시경',
+        items: [
+            { label: '성인 위장관', key: 'mkioskty11' },
+            { label: '영유아 위장관', key: 'mkioskty12' },
+            { label: '성인 기관지', key: 'mkioskty13' },
+            { label: '영유아 기관지', key: 'mkioskty14' }
+        ]
+    },
+    {
+        title: '응급투석',
+        items: [
+            { label: 'HD', key: 'mkioskty22' },
+            { label: 'CRRT', key: 'mkioskty23' }
+        ]
+    },
+    {
+        title: '장중첩/폐색',
+        items: [
+            { label: '영유아', key: 'mkioskty10' }
+        ]
+    },
+    {
+        title: '재관류중재술',
+        items: [
+            { label: '심근경색', key: 'mkioskty1' },
+            { label: '뇌경색', key: 'mkioskty2' }
+        ]
+    },
+    {
+        title: '저체중출생아',
+        items: [
+            { label: '집중치료', key: 'mkioskty15' }
+        ]
+    },
+    {
+        title: '정신과적응급',
+        items: [
+            { label: '폐쇄병동입원', key: 'mkioskty24' }
+        ]
+    },
+    {
+        title: '중증화상',
+        items: [
+            { label: '전문치료', key: 'mkioskty19' }
+        ]
+    }
+];
+
+const SPECIFIC_BLOCK_TARGETS = {
+    // 재관류중재술: 심근경색
+    mkioskty1: {
+        codes: ['Y0010'],
+        names: ['심근경색', '관상동맥중재술']
+    },
+    // 재관류중재술: 뇌경색
+    mkioskty2: {
+        codes: ['Y0020'],
+        names: ['뇌경색', '혈전용해술']
+    },
+    // 뇌출혈수술: 거미막하출혈
+    mkioskty3: {
+        codes: ['Y0031'],
+        names: ['거미막하출혈', '지주막하출혈', '뇌동맥류 수술']
+    },
+    // 뇌출혈수술: 거미막하출혈 외
+    mkioskty4: {
+        codes: ['Y0032'],
+        names: ['거미막하출혈 외', '기타 뇌출혈']
+    },
+    // 대동맥응급: 흉부
+    mkioskty5: {
+        codes: ['Y0041'],
+        names: ['대동맥응급(흉부)', '흉부대동맥']
+    },
+    // 대동맥응급: 복부
+    mkioskty6: {
+        codes: ['Y0042'],
+        names: ['대동맥응급(복부)', '복부대동맥']
+    },
+    // 담낭담관질환: 담낭질환
+    mkioskty7: {
+        codes: ['Y0051'],
+        names: ['담낭질환', '담낭 수술']
+    },
+    // 담낭담관질환: 담도포함질환
+    mkioskty8: {
+        codes: ['Y0052'],
+        names: ['담도포함질환', '담도질환']
+    },
+    // 복부응급수술: 비외상
+    mkioskty9: {
+        codes: ['Y0060'],
+        names: ['복부응급수술(비외상)', '비외상 복부수술']
+    },
+    // 장중첩/폐색: 영유아
+    mkioskty10: {
+        codes: ['Y0070'],
+        names: ['장중첩/폐색(유아)', '장중첩']
+    },
+    // 응급내시경: 성인 위장관
+    mkioskty11: {
+        codes: ['Y0081'],
+        names: ['위장관 응급내시경(성인)']
+    },
+    // 응급내시경: 영유아 위장관
+    mkioskty12: {
+        codes: ['Y0082'],
+        names: ['위장관 응급내시경(영유아)']
+    },
+    // 응급내시경: 성인 기관지
+    mkioskty13: {
+        codes: ['Y0091'],
+        names: ['기관지 응급내시경(성인)']
+    },
+    // 응급내시경: 영유아 기관지
+    mkioskty14: {
+        codes: ['Y0092'],
+        names: ['기관지 응급내시경(영유아)']
+    },
+    // 저체중출생아: 집중치료
+    mkioskty15: {
+        codes: ['Y0100'],
+        names: ['저출생체중아', '저체중출생아']
+    },
+    // 산부인과응급: 분만
+    mkioskty16: {
+        codes: ['Y0111'],
+        names: ['산부인과 응급(분만)', '분만', '자연분만', '제왕절개']
+    },
+    // 산부인과응급: 산과수술
+    mkioskty17: {
+        codes: ['Y0112'],
+        names: ['산부인과 응급(산과수술)', '산과수술']
+    },
+    // 산부인과응급: 부인과수술
+    mkioskty18: {
+        codes: ['Y0113'],
+        names: ['산부인과 응급(부인과수술)', '부인과수술']
+    },
+    // 중증화상: 전문치료
+    mkioskty19: {
+        codes: ['Y0120'],
+        names: ['중증화상', '화상 전문치료']
+    },
+    // 사지접합: 수족지접합
+    mkioskty20: {
+        codes: ['Y0131'],
+        names: ['수족지접합']
+    },
+    // 사지접합: 수족지접합 외
+    mkioskty21: {
+        codes: ['Y0132'],
+        names: ['수족지접합 외']
+    },
+    // 응급투석: HD
+    mkioskty22: {
+        codes: ['Y0141'],
+        names: ['응급투석(HD)', '응급투석 (HD)', '혈액투석', '인공신장실']
+    },
+    // 응급투석: CRRT
+    mkioskty23: {
+        codes: ['Y0142'],
+        names: ['응급투석(CRRT)', '응급투석 (CRRT)', 'CRRT']
+    },
+    // 정신과적응급: 폐쇄병동입원
+    mkioskty24: {
+        codes: ['Y0150'],
+        names: ['정신과적 응급입원', '폐쇄병동']
+    },
+    // 안과적수술: 응급
+    mkioskty25: {
+        codes: ['Y0160'],
+        names: ['안과적 응급 수술', '안과 응급 수술']
+    },
+    // 영상의학혈관중재: 성인
+    mkioskty26: {
+        codes: ['Y0171'],
+        names: ['영상의학혈관중재(성인)']
+    },
+    // 영상의학혈관중재: 영유아
+    mkioskty27: {
+        codes: ['Y0172'],
+        names: ['영상의학혈관중재(영유아)']
+    }
+};
+
+function isNoticeBlocking(msg) {
+    if (!msg) return false;
+    const body = String(msg.symblkmsg || '').trim();
+    const yon = String(msg.symoutdspyon || '').trim();
+
+    if (yon === '차단') {
+        return true;
+    }
+
+    if (/제한\s*없음|가능|원활/.test(body)) {
+        return false;
+    }
+
+    return /(불가|불가능|차단|수용\s*불가|진료\s*불가|수술\s*불가|부재|중단)/.test(body);
+}
+
+function isDiseaseSpecificallyBlocked(activeMessages, itemKey) {
+    const config = SPECIFIC_BLOCK_TARGETS[itemKey];
+    if (!config || !activeMessages.length) return false;
+
+    for (const msg of activeMessages) {
+        if (!isNoticeBlocking(msg)) continue;
+
+        const cod = String(msg.symtypcod || '').trim().toUpperCase();
+        if (config.codes && config.codes.includes(cod)) {
+            return true;
+        }
+
+        const symName = String(msg.symtypcodmag || '').trim();
+        if (config.names && config.names.some(target => symName === target || (target.length >= 4 && symName.includes(target)))) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 function renderSevere(hospital) {
     const target = byId('severe');
+    if (!target) return;
     target.replaceChildren();
 
     byId('severe-time').textContent = '보고 시각 미정보';
@@ -1634,57 +1982,84 @@ function renderSevere(hospital) {
 
     const fields = hospital.severe || {};
 
-    const keys = [
-        ...new Set([
-            ...DISEASES.map((_, i) => `mkioskty${i + 1}`),
-            ...Object.keys(fields).filter(key => /^mkioskty\d+$/.test(key))
-        ])
-    ].sort((a, b) => Number(a.slice(8)) - Number(b.slice(8)));
+    const card = node('article', 'egen-table-card');
+    const header = node('div', 'egen-header-bar severe');
+    header.append(
+        node('span', 'egen-header-icon', '❤️'),
+        node('span', '', '중증응급질환')
+    );
 
-    for (const key of keys) {
-        const status = availability(
-            fields[key],
-            '수용 가능',
-            '수용 불가'
+    const scrollArea = node('div', 'egen-scroll-area');
+    const matrix = node('div', 'severe-matrix-grid');
+
+    // 현재 유효한 진료 공지 목록 필터링
+    const now = Date.now();
+    const activeMessages = (hospital.messages || []).filter(item => {
+        const start = parseApiDate(item.symblksttdtm);
+        const end = parseApiDate(item.symblkenddtm);
+        return (
+            (!start || start.timestamp <= now) &&
+            (!end || end.timestamp > now)
         );
+    });
 
-        const row = node('div', 'severe-row');
+    for (const group of SEVERE_DISEASE_GROUPS) {
+        const box = node('div', 'severe-cat-box');
+        box.append(node('div', 'severe-cat-header', group.title));
 
-        const title = node(
-            'div',
-            'severe-name',
-            DISEASES[Number(key.slice(8)) - 1] || '항목 설명 미정보'
-        );
+        for (const item of group.items) {
+            const row = node('div', 'severe-sub-item');
+            const topRow = node('div', 'severe-sub-top');
+            const label = node('span', 'severe-sub-label', item.label);
+            const valWrap = node('div', 'severe-sub-val');
 
-        title.append(node('small', 'field-code', key));
+            const rawVal = fields[item.key];
+            const rawMsg = fields[`${item.key}msg`];
+            const cleanVal = isBlankOrNull(rawVal) ? '-' : String(rawVal).trim();
+            const cleanMsg = isBlankOrNull(rawMsg) || rawMsg === '정보미제공' ? '' : String(rawMsg).trim();
 
-        if (`${key}msg` in fields) {
-            title.append(
-                node(
-                    'small',
-                    'severe-note',
-                    `참고: ${displayValue(fields[`${key}msg`])}`
-                )
-            );
+            // 1. API 원본 상태 확인
+            // - 원본값이 '불가능'/'N' -> [불가능] (빨간색)
+            // - 비고가 있는 현황 -> '확인 필요'로 통일 (노란색)
+            // - 원본값이 '가능'/'Y'이고 비고가 없는 경우 -> [가능] (초록색)
+            // - 정보미제공/미정보/공란 -> 정직하게 [-] (회색 대시)
+            const status = availability(rawVal, '가능', '불가능');
+            const isBlockedByNotice = isDiseaseSpecificallyBlocked(activeMessages, item.key);
+
+            if (cleanMsg) {
+                valWrap.append(node('span', 'egen-badge-avail-yellow', '확인 필요'));
+            } else if (status.className === 'no' || isBlockedByNotice) {
+                valWrap.append(node('span', 'egen-badge-avail-red', '불가능'));
+            } else if (status.className === 'yes') {
+                valWrap.append(node('span', 'egen-badge-avail-green', '가능'));
+            } else {
+                valWrap.append(node('span', 'egen-badge-dash', '-'));
+            }
+
+            topRow.append(label, valWrap);
+
+            // 2. 호출 인자 및 수신값 표기
+            const paramText = `${item.key}\u00A0\u00A0\u00A0수신값 [${cleanVal}]`;
+            const paramEl = createMarqueeEl('div', 'egen-cell-param', paramText, paramText);
+
+            row.append(topRow, paramEl);
+
+            // 3. 비고란이 있는 경우 바로 아래에 회색 박스로 표시
+            if (cleanMsg) {
+                const remarkText = `비고: ${cleanMsg}`;
+                const remarkEl = createMarqueeEl('div', 'severe-remark-box', remarkText, remarkText);
+                row.append(remarkEl);
+            }
+
+            box.append(row);
         }
 
-        if (status.className === 'unknown' && !isMissing(fields[key])) {
-            title.append(
-                node(
-                    'small',
-                    'severe-note',
-                    `API 원본값: ${displayValue(fields[key])}`
-                )
-            );
-        }
-
-        row.append(
-            title,
-            node('span', `state-pill ${status.className}`, status.text)
-        );
-
-        target.append(row);
+        matrix.append(box);
     }
+
+    scrollArea.append(matrix);
+    card.append(header, scrollArea);
+    target.append(card);
 
     const reported = parseApiDate(
         firstReported(fields.hvidate, fields.mkioskdate)
@@ -1715,168 +2090,267 @@ function bedValue(raw) {
     }
 
     return value < 0
-        ? `${value}석 (API 원본값)`
+        ? `초과수용 ${Math.abs(value)}석`
         : `${value}석`;
 }
 
-/* 상세창 병상 표시 */
+/* 실시간 병상 정의 */
 
-function bedPresentation(fields, definition) {
-    const [currentKey, baselineKey, label, kind] = definition;
-    const raw = fields[currentKey];
-    const current = integerValue(raw);
-    const reference = integerValue(fields[baselineKey]);
+const EMERGENCY_BED_ITEMS = [
+    { label: '일반', current: 'hvec', baseline: 'hvs01' },
+    { label: '소아', current: 'hv28', baseline: 'hvs02' },
+    { label: '외상소생실', current: 'hv60', baseline: 'hvs60' },
+    { label: '일반격리', current: 'hv30', baseline: 'hvs04' },
+    { label: '음압격리', current: 'hv29', baseline: 'hvs03' },
+    { label: '소아일반격리', current: 'hv16', baseline: 'hvs49' },
+    { label: '소아음압격리', current: 'hv15', baseline: 'hvs48' },
+    { label: '코호트격리', current: 'hv27', baseline: 'hvs59' }
+];
 
-    const baseline =
-        reference !== null && reference >= 0
-            ? reference
-            : null;
-
-    const result = {
-        label,
-        currentKey,
-        baselineKey,
-        currentText: '미정보',
-        baselineText: baseline === null ? '미정보' : String(baseline),
-        tone: 'unknown',
-        ringText: '미정보',
-        fraction: null,
-        note: '가용 / 기준'
-    };
-
-    if (current !== null) {
-        if (current < 0) {
-            result.currentText = `초과 ${Math.abs(current)}`;
-            result.tone = 'over';
-            result.ringText = '초과';
-            result.note = `초과 수용 · 원본 ${current}`;
-            return result;
-        }
-
-        result.currentText = String(current);
-        result.tone = 'number';
-        result.ringText = '가용';
-
-        if (
-            baseline !== null &&
-            baseline > 0 &&
-            current <= baseline
-        ) {
-            result.fraction = current / baseline;
-            result.ringText = `${Math.round(result.fraction * 100)}%`;
-        } else if (baseline !== null && current > baseline) {
-            result.note = '가용 수가 기준 수 초과 · 비율 미산정';
-        } else if (baseline === 0) {
-            result.note = '기준 수 0 · 비율 미산정';
-        }
-
-        return result;
+const INPATIENT_BED_SECTIONS = [
+    {
+        title: '중환자실',
+        items: [
+            { label: '일반', current: 'hvicc', baseline: 'hvs17' },
+            { label: '음압격리', current: 'hv35', baseline: 'hvs18' },
+            { label: '소아', current: 'hv32', baseline: 'hvs09' },
+            { label: '신생아', current: 'hvncc', baseline: 'hvs08' },
+            { label: '내과', current: 'hv2', baseline: 'hvs06' },
+            { label: '심장내과', current: 'hv34', baseline: 'hvs15' },
+            { label: '신경과', current: 'hvcc', baseline: 'hvs11' },
+            { label: '화상', current: 'hv8', baseline: 'hvs13' },
+            { label: '외과', current: 'hv3', baseline: 'hvs07' },
+            { label: '신경외과', current: 'hv6', baseline: 'hvs12' },
+            { label: '흉부외과', current: 'hvccc', baseline: 'hvs16' }
+        ]
+    },
+    {
+        title: '응급전용',
+        items: [
+            { label: '입원실', current: 'hv36', baseline: 'hvs19' },
+            { label: '입원실 음압격리', current: 'hv19', baseline: 'hvs52' },
+            { label: '입원실 일반격리', current: 'hv21', baseline: 'hvs53' },
+            { label: '중환자실', current: 'hv31', baseline: 'hvs05' },
+            { label: '중환자실 음압격리', current: 'hv17', baseline: 'hvs50' },
+            { label: '중환자실 일반격리', current: 'hv18', baseline: 'hvs51' },
+            { label: '소아입원실', current: 'hv37', baseline: 'hvs20' },
+            { label: '소아중환자실', current: 'hv33', baseline: 'hvs10' }
+        ]
+    },
+    {
+        title: '외상전용',
+        items: [
+            { label: '중환자실', current: 'hv9', baseline: 'hvs14' },
+            { label: '입원실', current: 'hv38', baseline: 'hvs21' },
+            { label: '수술실', current: 'hv39', baseline: 'hvs23' }
+        ]
+    },
+    {
+        title: '입원실',
+        items: [
+            { label: '일반', current: 'hvgc', baseline: 'hvs38' },
+            { label: '음압격리', current: 'hv41', baseline: 'hvs25' },
+            { label: '정신과 폐쇄병동', current: 'hv40', baseline: 'hvs24' }
+        ]
+    },
+    {
+        title: '기타',
+        items: [
+            { label: '수술실', current: 'hvoc', baseline: 'hvs22' },
+            { label: '분만실', current: 'hv42', baseline: 'hvs26', type: 'delivery' },
+            { label: '화상전용처치실', current: 'hv43', baseline: 'hvs36' }
+        ]
     }
+];
 
-    if (kind === 'mixed') {
-        const status = availability(raw);
-
-        if (status.className !== 'unknown') {
-            result.currentText = status.text;
-            result.ringText = status.text;
-            result.tone = status.className;
-            result.note = '가능 여부 / 기준';
-        }
-    }
-
-    return result;
+function isBlankOrNull(val) {
+    return val === null || val === undefined || String(val).trim() === '';
 }
 
-function createBedCard(fields, definition) {
-    const item = bedPresentation(fields, definition);
-    const card = node('article', `bed-card tone-${item.tone}`);
-    const ring = node('div', 'bed-ring', item.ringText);
-    const info = node('div', 'bed-info');
-    const values = node('p', 'bed-values');
-
-    ring.setAttribute('aria-hidden', 'true');
-
-    if (item.fraction !== null) {
-        ring.classList.add('has-ratio');
-        ring.style.setProperty('--ratio', String(item.fraction));
+function formatParamLabel(currentKey, baselineKey) {
+    if (currentKey && baselineKey) {
+        return `${currentKey} / ${baselineKey} (가용 / 기준)`;
     }
-
-    values.append(
-        node('strong', '', item.currentText),
-        node('span', 'bed-divider', '/'),
-        node('span', 'bed-reference', item.baselineText)
-    );
-
-    info.append(
-        node('h3', '', item.label),
-        values,
-        node('p', 'bed-caption', item.note)
-    );
-
-    const codes = item.baselineKey
-        ? `${item.currentKey} / ${item.baselineKey}`
-        : `${item.currentKey} / 기준 항목 미정보`;
-
-    card.title = codes;
-
-    card.setAttribute(
-        'aria-label',
-        `${item.label}: ${item.note}, ` +
-        `${item.currentText} / ${item.baselineText}`
-    );
-
-    card.append(
-        ring,
-        info,
-        node('small', 'bed-codes', codes)
-    );
-
-    return card;
+    if (currentKey) {
+        return `${currentKey} (가용)`;
+    }
+    if (baselineKey) {
+        return `${baselineKey} (기준)`;
+    }
+    return '';
 }
 
-function renderBeds(hospital) {
-    const main = byId('key-beds');
-    const additional = byId('additional-beds');
+function getBedStatusBadge(fields, def) {
+    const rawVal = fields[def.current];
+    const rawBase = def.baseline ? fields[def.baseline] : null;
 
-    main.replaceChildren();
-    additional.replaceChildren();
-    byId('bed-time').textContent = '보고 시각 미정보';
+    if (def.type === 'delivery') {
+        if (isBlankOrNull(rawVal) && isBlankOrNull(rawBase)) {
+            return { className: 'egen-badge-dash', text: '-' };
+        }
+        const valStr = String(rawVal ?? '').trim().toUpperCase();
+        const baseNum = integerValue(rawBase);
+        const currNum = integerValue(rawVal);
+        const isY = valStr === 'Y' || (currNum !== null && currNum > 0);
+        const count = baseNum !== null ? baseNum : currNum;
 
-    renderRawBeds(hospital);
+        if (isY) {
+            return {
+                className: 'egen-badge-box-green',
+                text: count !== null && count >= 0 ? `Y / ${count}` : 'Y'
+            };
+        }
+        return { className: 'egen-badge-dash', text: '-' };
+    }
+
+    // 4. 만약 API에 호출했는데 NULL이나 공란이면 -으로 표시하세요.
+    if (isBlankOrNull(rawVal)) {
+        return { className: 'egen-badge-dash', text: '-' };
+    }
+
+    const current = integerValue(rawVal);
+    const baseline = integerValue(rawBase);
+
+    if (current === null) {
+        return { className: 'egen-badge-dash', text: '-' };
+    }
+
+    // 2. - 값은 초과수용이란 뜻입니다. 그대로 -대로 표시하지 마세요.
+    if (current < 0) {
+        const overflow = Math.abs(current);
+        const textVal = (baseline !== null && baseline > 0)
+            ? `초과수용 ${overflow}/${baseline}`
+            : `초과수용 ${overflow}`;
+        return {
+            className: 'egen-badge-pill-red egen-badge-overflow',
+            text: textVal
+        };
+    }
+
+    // current >= 0
+    if (baseline !== null && baseline > 0) {
+        const ratio = current / baseline;
+        const textVal = `${current}/${baseline}`;
+        if (current === 0 || ratio <= 0.35) {
+            return { className: 'egen-badge-pill-red', text: `혼잡 ${textVal}` };
+        } else if (ratio < 0.70) {
+            return { className: 'egen-badge-pill-orange', text: `보통 ${textVal}` };
+        } else {
+            return { className: 'egen-badge-pill-green', text: `원활 ${textVal}` };
+        }
+    }
+
+    if (current > 0) {
+        return { className: 'egen-badge-pill-green', text: `원활 ${current}` };
+    } else {
+        return { className: 'egen-badge-pill-red', text: '혼잡 0' };
+    }
+}
+
+function createBedCell(fields, item) {
+    const cell = node('div', 'egen-cell');
+    const topRow = node('div', 'egen-cell-top');
+    const badge = getBedStatusBadge(fields, item);
+
+    topRow.append(
+        node('span', 'egen-cell-label', item.label),
+        node('span', badge.className, badge.text)
+    );
+
+    const currRaw = isBlankOrNull(fields[item.current]) ? '-' : String(fields[item.current]).trim();
+    const baseRaw = item.baseline ? (isBlankOrNull(fields[item.baseline]) ? '-' : String(fields[item.baseline]).trim()) : null;
+
+    let paramText = formatParamLabel(item.current, item.baseline);
+    if (baseRaw !== null) {
+        paramText += `\u00A0\u00A0\u00A0수신값 [${currRaw} / ${baseRaw}]`;
+    } else {
+        paramText += `\u00A0\u00A0\u00A0수신값 [${currRaw}]`;
+    }
+
+    const paramEl = createMarqueeEl('div', 'egen-cell-param', paramText, paramText);
+
+    cell.append(topRow, paramEl);
+    return cell;
+}
+
+function renderErBeds(hospital) {
+    const target = byId('er-beds-board') || byId('beds-board');
+    if (!target) return;
+    target.replaceChildren();
 
     if (!state.sources.beds) {
-        empty(main, '미정보 · 병상 정보 조회에 실패했습니다.');
-        empty(additional, '미정보 · 병상 정보 조회에 실패했습니다.');
+        empty(target, '미정보 · 병상 정보 조회에 실패했습니다.');
         return;
     }
 
     const fields = hospital.beds || {};
 
-    BED_GROUPS.forEach((group, index) => {
-        const grid = index === 0
-            ? main
-            : node('div', 'bed-dashboard');
+    const card = node('article', 'egen-table-card');
+    const header = node('div', 'egen-header-bar emergency');
+    header.append(
+        node('span', 'egen-header-icon', '🚨'),
+        node('span', '', '응급실병상')
+    );
 
-        for (const definition of group.items) {
-            grid.append(createBedCard(fields, definition));
+    const grid = node('div', 'egen-matrix-grid');
+
+    for (const item of EMERGENCY_BED_ITEMS) {
+        grid.append(createBedCell(fields, item));
+    }
+
+    card.append(header, grid);
+    target.append(card);
+}
+
+function renderInpatientBeds(hospital) {
+    const target = byId('inpatient-beds-board');
+    if (!target) return;
+    target.replaceChildren();
+
+    if (!state.sources.beds) {
+        empty(target, '미정보 · 병상 정보 조회에 실패했습니다.');
+        return;
+    }
+
+    const fields = hospital.beds || {};
+
+    const card = node('article', 'egen-table-card');
+    const header = node('div', 'egen-header-bar inpatient');
+    header.append(
+        node('span', 'egen-header-icon', '🛏️'),
+        node('span', '', '입원병상')
+    );
+
+    card.append(header);
+
+    for (const section of INPATIENT_BED_SECTIONS) {
+        const subHeader = node('div', 'egen-subgroup-header', section.title);
+        const subGrid = node('div', 'egen-matrix-grid');
+
+        for (const item of section.items) {
+            subGrid.append(createBedCell(fields, item));
         }
 
-        if (index > 0) {
-            const section = node('section', 'bed-group');
+        card.append(subHeader, subGrid);
+    }
 
-            section.append(
-                node('h3', 'bed-group-title', group.title),
-                grid
-            );
+    target.append(card);
+}
 
-            additional.append(section);
-        }
-    });
+function renderBeds(hospital) {
+    const bedTimeEl = byId('bed-time');
+    if (bedTimeEl) {
+        bedTimeEl.textContent = '보고 시각 미정보';
+    }
 
+    renderRawBeds(hospital);
+    renderErBeds(hospital);
+    renderInpatientBeds(hospital);
+
+    const fields = hospital.beds || {};
     const reported = parseApiDate(fields.hvidate);
-
-    if (reported) {
-        byId('bed-time').textContent = `보고 ${reported.display}`;
+    if (reported && bedTimeEl) {
+        bedTimeEl.textContent = `보고 ${reported.display}`;
     }
 }
 
@@ -1957,10 +2431,215 @@ function renderRawBeds(hospital) {
     }
 }
 
-/* 장비 */
+/* 중증질환 OpenAPI 메타데이터 및 원본 렌더링 */
+
+const MKIOSKTY_METADATA = {
+    mkioskty1: '[재관류중재술] 심근경색',
+    mkioskty2: '[재관류중재술] 뇌경색',
+    mkioskty3: '[뇌출혈수술] 거미막하출혈',
+    mkioskty4: '[뇌출혈수술] 거미막하출혈 외',
+    mkioskty5: '[대동맥응급] 흉부',
+    mkioskty6: '[대동맥응급] 복부',
+    mkioskty7: '[담낭담관질환] 담낭질환',
+    mkioskty8: '[담낭담관질환] 담도포함질환',
+    mkioskty9: '[복부응급수술] 비외상',
+    mkioskty10: '[장중첩/폐색] 영유아',
+    mkioskty11: '[응급내시경] 성인 위장관',
+    mkioskty12: '[응급내시경] 영유아 위장관',
+    mkioskty13: '[응급내시경] 성인 기관지',
+    mkioskty14: '[응급내시경] 영유아 기관지',
+    mkioskty15: '[저체중출생아] 집중치료',
+    mkioskty16: '[산부인과응급] 분만',
+    mkioskty17: '[산부인과응급] 산과수술',
+    mkioskty18: '[산부인과응급] 부인과수술',
+    mkioskty19: '[중증화상] 전문치료',
+    mkioskty20: '[사지접합] 수족지접합',
+    mkioskty21: '[사지접합] 수족지접합 외',
+    mkioskty22: '[응급투석] HD',
+    mkioskty23: '[응급투석] CRRT',
+    mkioskty24: '[정신과적응급] 폐쇄병동입원',
+    mkioskty25: '[안과적수술] 응급',
+    mkioskty26: '[영상의학혈관중재] 성인',
+    mkioskty27: '[영상의학혈관중재] 영유아',
+    mkioskty28: '응급실 (Emergency gate keeper)',
+    mkioskty10msg: '장중첩/폐색(영유아) 가능연령 비고',
+    mkioskty12msg: '위장관 응급내시경(영유아) 가능연령 비고',
+    mkioskty14msg: '기관지 응급내시경(영유아) 가능연령 비고',
+    mkioskty15msg: '저체중 출생아 가능연령 비고',
+    mkioskty27msg: '영상의학 혈관 중재적 시술(영유아) 가능연령 비고',
+    mkioskdate: '키오스크 정보 보고일시 (mkioskdate)',
+    hvidate: '중증질환 정보 보고일시 (hvidate)'
+};
+
+function renderRawSevere(hospital) {
+    const all = byId('all-severe');
+    if (!all) return;
+    all.replaceChildren();
+
+    if (!state.sources.severe) {
+        empty(all, '미정보 · 중증질환 원본 정보를 조회하지 못했습니다.');
+        return;
+    }
+
+    const fields = hospital.severe;
+    if (!fields) {
+        empty(all, '미정보 · 해당 병원의 중증질환 수용정보 데이터가 없습니다.');
+        return;
+    }
+
+    const section = node('section', 'raw-group');
+    section.append(node('h3', '', '중증응급질환 수용가능 정보 · getSrsillDissAceptncPosblInfoInqire (원본값)'));
+
+    const list = node('dl', 'raw-grid');
+
+    const standardKeys = [
+        ...Array.from({ length: 28 }, (_, i) => `mkioskty${i + 1}`),
+        'mkioskty10msg', 'mkioskty12msg', 'mkioskty14msg', 'mkioskty15msg', 'mkioskty27msg',
+        'mkioskdate', 'hvidate'
+    ];
+
+    const extraKeys = Object.keys(fields).filter(
+        k => !standardKeys.includes(k) && k !== 'dutyname' && k !== 'hpid'
+    );
+
+    const allKeys = [...standardKeys, ...extraKeys];
+
+    for (const key of allKeys) {
+        const val = fields[key];
+        const label = MKIOSKTY_METADATA[key] || key;
+        const pair = node('div', 'raw-pair');
+
+        pair.append(
+            node('dt', 'field-code', `${label} (${key})`),
+            node('dd', '', isBlankOrNull(val) ? '-' : String(val).trim())
+        );
+
+        list.append(pair);
+    }
+
+    section.append(list);
+    all.append(section);
+}
+
+function renderRawMessages(hospital) {
+    const all = byId('all-messages');
+    if (!all) return;
+    all.replaceChildren();
+
+    if (!state.sources.messages) {
+        empty(all, '미정보 · 실시간 진료공지 정보를 조회하지 못했습니다.');
+        return;
+    }
+
+    const msgs = hospital.messages || [];
+    if (!msgs.length) {
+        empty(all, '해당 병원에 등록된 실시간 진료 공지가 없습니다.');
+        return;
+    }
+
+    const section = node('section', 'raw-group');
+    section.append(node('h3', '', `실시간 진료 공지 목록 (총 ${msgs.length}건)`));
+
+    for (let i = 0; i < msgs.length; i++) {
+        const item = msgs[i];
+        const card = node('div', 'raw-msg-card');
+        const dl = node('dl', 'raw-grid');
+
+        const fields = [
+            ['순번 (rnum)', item.rnum],
+            ['구분코드 (symTypCod)', item.symtypcod],
+            ['구분명 (symTypCodMag)', item.symtypcodmag],
+            ['진료과 (trtPrtCodMag)', item.trtprtcodmag],
+            ['표출여부 (symOutDspYon)', item.symoutdspyon],
+            ['표출방법 (symOutDspMth)', item.symoutdspmth],
+            ['메시지구분 (symBlkMsgTyp)', item.symblkmsgtyp],
+            ['시작일시 (symBlkSttDtm)', item.symblksttdtm],
+            ['종료일시 (symBlkEndDtm)', item.symblkenddtm],
+            ['공지내용 (symBlkMsg)', item.symblkmsg]
+        ];
+
+        for (const [dt, dd] of fields) {
+            const pair = node('div', 'raw-pair');
+            pair.append(
+                node('dt', 'field-code', dt),
+                node('dd', '', isBlankOrNull(dd) ? '-' : String(dd).trim())
+            );
+            dl.append(pair);
+        }
+
+        const titleText = `공지 #${i + 1} · ${item.trtprtcodmag || item.symtypcodmag || item.symtypcod || '공지'}`;
+        card.append(node('h4', 'raw-msg-title', titleText), dl);
+        section.append(card);
+    }
+
+    all.append(section);
+}
+
+/* 사진 2: 장비정보 정의 (10개 항목) */
+
+const EQUIPMENT_TABLE_ITEMS = [
+    { label: '인공호흡기 일반', key: 'hvventiayn', baseline: 'hvs30' },
+    { label: '인공호흡기 조산아', key: 'hvventisoayn', baseline: 'hvs31' },
+    { label: '인큐베이터', key: 'hvincuayn', baseline: 'hvs32' },
+    { label: 'CRRT', key: 'hvcrrtayn', baseline: 'hvs33' },
+    { label: 'ECMO', key: 'hvecmoayn', baseline: 'hvs34' },
+    { label: '중심체온조절유도기', key: 'hvhypoayn', baseline: 'hvs35' },
+    { label: '고압산소치료기', key: 'hvoxyayn', baseline: 'hvs37' },
+    { label: 'CT', key: 'hvctayn', baseline: 'hvs27' },
+    { label: 'MRI', key: 'hvmriayn', baseline: 'hvs28' },
+    { label: '혈관촬영기', key: 'hvangioayn', baseline: 'hvs29' }
+];
+
+function createEquipmentCell(fields, item) {
+    const cell = node('div', 'egen-cell equipment-cell');
+    const topRow = node('div', 'egen-cell-top');
+
+    const rawVal = fields[item.key];
+    const rawBase = item.baseline ? fields[item.baseline] : null;
+
+    let badgeClass = 'egen-badge-dash';
+    let badgeText = '-';
+
+    if (!isBlankOrNull(rawVal)) {
+        const valStr = String(rawVal).trim().toUpperCase();
+        const numVal = integerValue(rawVal);
+        const isAvail = valStr === 'Y' || (numVal !== null && numVal > 0);
+        const baseline = integerValue(rawBase);
+
+        if (isAvail) {
+            badgeClass = 'egen-badge-box-green';
+            badgeText = (baseline !== null && baseline >= 0) ? `Y / ${baseline}` : 'Y';
+        } else if (valStr === 'N' || numVal === 0) {
+            badgeClass = 'egen-badge-dash';
+            badgeText = '-';
+        }
+    }
+
+    topRow.append(
+        node('span', 'egen-cell-label', item.label),
+        node('span', badgeClass, badgeText)
+    );
+
+    const currRaw = isBlankOrNull(rawVal) ? '-' : String(rawVal).trim();
+    const baseRaw = item.baseline ? (isBlankOrNull(rawBase) ? '-' : String(rawBase).trim()) : null;
+
+    let paramText = formatParamLabel(item.key, item.baseline);
+    if (baseRaw !== null) {
+        paramText += `\u00A0\u00A0\u00A0수신값 [${currRaw} / ${baseRaw}]`;
+    } else {
+        paramText += `\u00A0\u00A0\u00A0수신값 [${currRaw}]`;
+    }
+
+    const paramEl = createMarqueeEl('div', 'egen-cell-param', paramText, paramText);
+
+    cell.append(topRow, paramEl);
+
+    return cell;
+}
 
 function renderEquipment(hospital) {
     const target = byId('equipment');
+    if (!target) return;
     target.replaceChildren();
 
     if (!state.sources.beds) {
@@ -1970,56 +2649,21 @@ function renderEquipment(hospital) {
 
     const fields = hospital.beds || {};
 
-    const keys = [
-        ...new Set([
-            ...Object.keys(EQUIPMENT),
-            ...Object.keys(fields).filter(key => /^hv[a-z]+ayn$/.test(key))
-        ])
-    ].sort();
+    const card = node('article', 'egen-table-card');
+    const header = node('div', 'egen-header-bar equipment');
+    header.append(
+        node('span', 'egen-header-icon', '⚙️'),
+        node('span', '', '가용 장비')
+    );
 
-    for (const key of keys) {
-        const item = node('div', 'equipment-item');
+    const grid = node('div', 'equipment-matrix-grid');
 
-        const name = node(
-            'span',
-            '',
-            EQUIPMENT[key] || '항목 설명 미정보'
-        );
-
-        name.append(node('small', 'field-code', key));
-
-        const status = availability(fields[key]);
-        const baselineKey = EQUIPMENT_BASELINES[key];
-
-        if (baselineKey) {
-            const baseline = integerValue(fields[baselineKey]);
-
-            const count = baseline !== null && baseline >= 0
-                ? String(baseline)
-                : '미정보';
-
-            name.append(
-                node('small', 'equipment-reference', `기준 수 ${count}`)
-            );
-        }
-
-        if (status.className === 'unknown' && !isMissing(fields[key])) {
-            name.append(
-                node(
-                    'small',
-                    'field-code',
-                    `API 원본값: ${displayValue(fields[key])}`
-                )
-            );
-        }
-
-        item.append(
-            name,
-            node('strong', `${status.className}-text`, status.text)
-        );
-
-        target.append(item);
+    for (const item of EQUIPMENT_TABLE_ITEMS) {
+        grid.append(createEquipmentCell(fields, item));
     }
+
+    card.append(header, grid);
+    target.append(card);
 }
 
 /* 기본정보 */
@@ -2306,10 +2950,12 @@ function openHospital(hospital, focus = true) {
 
     renderContacts(hospital);
     renderMessages(hospital);
-    renderSevere(hospital);
     renderBeds(hospital);
     renderEquipment(hospital);
+    renderSevere(hospital);
     renderBasic(hospital);
+    renderRawSevere(hospital);
+    renderRawMessages(hospital);
 
     const failed = Object.entries(state.sources)
         .filter(([, loaded]) => !loaded)
@@ -2330,6 +2976,9 @@ function openHospital(hospital, focus = true) {
         byId('sheet').querySelector('.sheet-scroll').scrollTop = 0;
         byId('sheet-close').focus();
     }
+
+    setTimeout(updateMarquees, 100);
+    setTimeout(updateMarquees, 350);
 }
 
 function setBackgroundInert(value) {
@@ -2814,6 +3463,7 @@ function init() {
 
         window.addEventListener('resize', () => {
             state.map.relayout();
+            updateMarquees();
         });
 
         byId('location-button').disabled = false;

@@ -273,28 +273,8 @@
 
         <div id="contact-actions" class="contact-actions"></div>
 
-        <section class="detail-section">
-            <div class="section-heading">
-                <h2>실시간 병상·수술실</h2>
-                <span id="bed-time"></span>
-            </div>
-
-            <p class="section-help">
-                가용 수 / 기준 수를 표시합니다.
-                숫자 비율은 수용 가능 여부를 뜻하지 않습니다.
-                음수 숫자는 이 메뉴에서만 초과 수용으로 표시하며,
-                NULL·공백·단독 대시는 미정보입니다.
-            </p>
-
-            <div id="key-beds" class="bed-dashboard"></div>
-
-            <details class="bed-more">
-                <summary>중환자실·입원실·추가 격리 항목</summary>
-                <div id="additional-beds"></div>
-            </details>
-        </section>
-
-        <section class="detail-section">
+        <!-- 1. 진료 공지 -->
+        <section class="detail-section" id="section-messages">
             <div class="section-heading">
                 <h2>진료 공지</h2>
                 <span id="message-count"></span>
@@ -302,20 +282,41 @@
             <div id="messages" class="message-list"></div>
         </section>
 
-        <section class="detail-section">
+        <!-- 2. 응급실 병상 -->
+        <section class="detail-section" id="section-er-beds">
             <div class="section-heading">
-                <h2>중증 응급질환 수용 현황</h2>
-                <span id="severe-time"></span>
+                <h2>응급실 병상</h2>
+                <span id="bed-time"></span>
             </div>
-            <div id="severe" class="severe-list"></div>
+            <div id="er-beds-board" class="egen-board-wrapper"></div>
         </section>
 
-        <section class="detail-section">
+        <!-- 3. 입원 병상 -->
+        <section class="detail-section" id="section-inpatient-beds">
+            <div class="section-heading">
+                <h2>입원 병상</h2>
+            </div>
+            <div id="inpatient-beds-board" class="egen-board-wrapper"></div>
+        </section>
+
+        <!-- 4. 가용 장비 -->
+        <section class="detail-section" id="section-equipment">
             <div class="section-heading">
                 <h2>가용 장비</h2>
             </div>
-            <div id="equipment" class="equipment-grid"></div>
+            <div id="equipment" class="egen-board-wrapper"></div>
         </section>
+
+        <!-- 5. 중증응급질환 수용 현황 -->
+        <section class="detail-section" id="section-severe">
+            <div class="section-heading">
+                <h2>중증응급질환 수용 현황</h2>
+                <span id="severe-time"></span>
+            </div>
+            <div id="severe" class="egen-board-wrapper"></div>
+        </section>
+
+        <div id="beds-board" hidden></div>
 
         <p id="data-state" class="data-state"></p>
 
@@ -339,8 +340,18 @@
                 </p>
 
                 <details class="raw-details">
-                    <summary>세부 병상·중환자실·시술 항목 전체 보기</summary>
+                    <summary>세부 병상·중환자실·시술 항목 전체 보기 (hv / hvs 원본값)</summary>
                     <div id="all-beds" class="raw-content"></div>
+                </details>
+
+                <details class="raw-details" open>
+                    <summary>중증응급질환 수용정보 전체 보기 (mkioskty 1~28 및 비고 원본값)</summary>
+                    <div id="all-severe" class="raw-content"></div>
+                </details>
+
+                <details class="raw-details">
+                    <summary>실시간 진료 공지 원본 전체 보기 (getEmrrmSrsillDissMsgInqire)</summary>
+                    <div id="all-messages" class="raw-content"></div>
                 </details>
 
                 <div id="basic-info" class="basic-info"></div>
