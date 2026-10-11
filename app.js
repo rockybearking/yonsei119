@@ -1,26 +1,50 @@
 /* global kakao */
 'use strict';
 
+/**
+ * ==============================================================================
+ * [전국 응급의료기관 실시간 정보 관제 시스템 (app.js)]
+ * 
+ * [시스템 핵심 아키텍처 및 모듈 구성]
+ * 1. 시스템 환경설정 및 공공데이터 API 인증 키/엔드포인트 정의
+ * 2. 보건복지부 지정 상급종합병원(2024~2026) 및 권역 분류 데이터 사전
+ * 3. 의료 장비 및 가용/기준 병상 수동 매핑 사전 (HV_LABELS, HVS_LABELS, API_FIELD_LABELS)
+ * 4. 중증응급질환 27종 분류 체계 (SEVERE_DISEASE_GROUPS)
+ * 5. 데이터 정제 및 예외 처리 유틸리티 (isBlankOrNull, availability, isMissing)
+ * 6. 공공데이터 비동기 수집 파이프라인 (fetchData, requestAll, readXml, groupById)
+ * 7. 카카오맵 SDK GIS 연동 및 지리 연산 (distanceKm, locate, updateMarkers)
+ * 8. 실시간 가용병상·중증질환·장비 렌더링 엔진 (renderErBeds, renderSevere, renderEquipment)
+ * 9. 모바일 제스처 바텀시트 및 접근성 컨트롤 (initSheetDrag, openHospital, closeSheet)
+ * 10. 개발자 디버그 모드 및 실시간 원본 데이터 검증기
+ * ==============================================================================
+ */
+
+// 공공데이터포털(data.go.kr) 국립중앙의료원 중앙응급의료센터 OpenAPI 인증키
 const API_KEY = decodeURIComponent(
     's%2FvWNiKH1YndVRu2mPOq7OXAIj%2Byk0M3JTgvN%2B8' +
     'UVdSFPq8SBR7zuUdG3mxklTrj6WYIiUidSIUwgE8bz09fzQ%3D%3D'
 );
 
+// 응급의료정보 조회 서비스 기본 REST 엔드포인트 URL
 const API_ROOT =
     'https://apis.data.go.kr/B552657/ErmctInfoInqireService';
 
+// 페이지당 요청 레코드 수 (네트워크 호출 횟수 최소화 최적화)
 const PAGE_SIZE = 1000;
 const CARD_WIDTH = 168;
 const CARD_HEIGHT = 60;
 const NOTICE_KEY = 'emergency-notice-hidden-v1';
 
+// 기본 기준점 좌표 (사용자 위치 미수신 시 서울시청 기준 fallback)
 const SEOUL = {
     lat: 37.5668,
     lng: 126.9786
 };
 
-/* 기존 기관 분류 목록 */
-
+/* --------------------------------------------------------------------------
+   [1. 보건복지부 지정 제5기(2024~2026년) 상급종합병원 분류 목록]
+   - 각 권역별 핵심 상급종합병원 및 약칭 매핑 사전
+   -------------------------------------------------------------------------- */
 const TERTIARY_2024_2026 = [
     ['서울', ['강북삼성병원']],
     ['서울', ['건국대학교병원']],
@@ -100,6 +124,10 @@ const REGION_PREFIX = {
     '울산': /^울산/
 };
 
+/* --------------------------------------------------------------------------
+   [2. 필수 특수 의료 장비 11종 필드 매핑]
+   - 각 기관의 장비 보유 및 실시간 가동 여부(Y/N) 플래그
+   -------------------------------------------------------------------------- */
 const EQUIPMENT = {
     hvamyn: '구급차',
     hvangioayn: '혈관촬영기',
@@ -114,6 +142,11 @@ const EQUIPMENT = {
     hvventisoayn: '소아 인공호흡기'
 };
 
+/* --------------------------------------------------------------------------
+   [3. 실시간 가용 병상 40여 종 수동 매핑 사전 (HV_LABELS)]
+   - 국립중앙의료원 OpenAPI 공식 명세서 전수 대조를 통해 구축
+   - AI의 축약 필드명(hvec, hv2 등) 오분류를 방지하고 정확한 한글 레이블 매핑
+   -------------------------------------------------------------------------- */
 const HV_LABELS = {
     hv1: '예비항목2',
     hv2: '[중환자실] 내과',
@@ -161,6 +194,11 @@ const HV_LABELS = {
     hv61: '외상환자진료구역'
 };
 
+/* --------------------------------------------------------------------------
+   [4. 기준 병상수(총 허가/운영 병상) 수동 매핑 사전 (HVS_LABELS)]
+   - AI가 질환 번호로 오인했던 hvs 계열 코드를 '기준 병상수'로 정밀 재분류
+   - 가용률(가용수 / 기준수) 계산 시 분모(기준) 데이터로 활용
+   -------------------------------------------------------------------------- */
 const HVS_LABELS = {
     hvs01: '일반 기준',
     hvs02: '소아 기준',
@@ -218,6 +256,10 @@ const HVS_LABELS = {
     hvs61: '외상환자진료구역 기준'
 };
 
+/* --------------------------------------------------------------------------
+   [5. API 응답 전체 필드 통합 사전 (API_FIELD_LABELS)]
+   - 가용 병상, 기준 병상, 장비 및 기타 시스템 제어 필드를 망라한 단일 매핑 테이블
+   -------------------------------------------------------------------------- */
 const API_FIELD_LABELS = {
     ...HV_LABELS,
     ...HVS_LABELS,
@@ -233,6 +275,10 @@ const API_FIELD_LABELS = {
     hvdnm: '예비항목1'
 };
 
+/* --------------------------------------------------------------------------
+   [6. 중증응급질환 27종 목록 (DISEASES)]
+   - 국립중앙의료원 중앙응급의료센터 선정 27대 중증응급질환 표준 정의
+   -------------------------------------------------------------------------- */
 const DISEASES = [
     '재관류중재술 · 심근경색',
     '재관류중재술 · 뇌경색',
@@ -440,6 +486,13 @@ function integerValue(raw) {
     return Number.isSafeInteger(value) ? value : null;
 }
 
+/**
+ * 경량 DOM 엘리먼트 생성 헬퍼
+ * @param {string} tag - 생성할 HTML 태그명
+ * @param {string} [className=''] - 적용할 CSS 클래스명
+ * @param {string|number} [content=undefined] - 삽입할 텍스트 콘텐츠
+ * @returns {HTMLElement} 생성된 DOM 노드
+ */
 function node(tag, className = '', content = undefined) {
     const item = document.createElement(tag);
 
@@ -454,6 +507,15 @@ function node(tag, className = '', content = undefined) {
     return item;
 }
 
+/**
+ * 전광판(Ticker/Marquee) 애니메이션을 위한 래퍼 엘리먼트 생성
+ * - 텍스트가 박스 너비를 초과할 경우 부드러운 좌우 스크롤 애니메이션 활성화
+ * @param {string} tag - 태그명
+ * @param {string} className - 클래스명
+ * @param {string} text - 표시할 텍스트
+ * @param {string} [title=undefined] - 툴팁 타이틀 속성
+ * @returns {HTMLElement} 래핑된 DOM 노드
+ */
 function createMarqueeEl(tag, className = '', text = '', title = undefined) {
     const el = node(tag, className);
     if (title) el.title = title;
@@ -462,14 +524,32 @@ function createMarqueeEl(tag, className = '', text = '', title = undefined) {
     return el;
 }
 
+/**
+ * 전광판(Marquee) 오버플로우 계산 및 CSS 애니메이션 변수 동적 주입
+ * [성능 최적화]:
+ * - requestAnimationFrame 내에서 읽기(Read) 단계와 쓰기(Write) 단계를 분리하여
+ *   대량의 병상/장비 카드 렌더링 시 발생하는 레이아웃 스래싱(Layout Thrashing)을 완벽 차단
+ */
 function updateMarquees() {
     requestAnimationFrame(() => {
         const containers = document.querySelectorAll('.egen-cell-param, .severe-remark-box');
+        if (!containers.length) return;
+
+        // 1. 읽기(Read) 단계: 전체 오버플로우 크기 일괄 측정
+        const measurements = [];
         for (const container of containers) {
             const inner = container.querySelector('.marquee-inner');
-            if (!inner) continue;
+            if (inner) {
+                measurements.push({
+                    container,
+                    inner,
+                    overflow: inner.scrollWidth - container.clientWidth
+                });
+            }
+        }
 
-            const overflow = inner.scrollWidth - container.clientWidth;
+        // 2. 쓰기(Write) 단계: 스타일 프로퍼티 일괄 적용
+        for (const { container, inner, overflow } of measurements) {
             if (overflow > 2) {
                 container.classList.add('is-marquee');
                 inner.style.setProperty('--ticker-diff', `${Math.ceil(overflow + 14)}px`);
@@ -747,6 +827,11 @@ function groupById(rows, multiple = false) {
 
 /* 기관 분류 */
 
+/**
+ * 병원명 정규화 헬퍼 (NFKC 정규화 및 특수문자/공백 제거)
+ * @param {string} value - 원본 병원명
+ * @returns {string} 비교용 정규화 문자열
+ */
 function normalizeName(value) {
     return String(value || '')
         .normalize('NFKC')
@@ -754,6 +839,13 @@ function normalizeName(value) {
         .toLowerCase();
 }
 
+/**
+ * 기관 분류기 (상급종합병원, 의료원, 일반·기타)
+ * - 1차: dutydivnam 명칭에 '상급종합' 포함 여부 검사
+ * - 2차: 보건복지부 제5기 공식 고시 목록(TERTIARY_2024_2026)과의 지역/명칭 교차 대조
+ * @param {Object} fields - 기관 기본정보 객체
+ * @returns {{group: string, label: string}} 분류 그룹 및 표시 레이블
+ */
 function classify(fields) {
     const name = normalizeName(fields.dutyname);
     const address = fields.dutyaddr || '';
@@ -787,12 +879,20 @@ function classify(fields) {
     };
 }
 
+/**
+ * 권역응급의료센터 여부 판별기
+ * @param {Object} fields - 기관 정보 객체
+ * @returns {boolean} 권역응급의료센터 여부
+ */
 function isRegional(fields) {
     return /권역응급의료센터/.test(fields.dutyemclsname || '');
 }
 
-/* 데이터 갱신 */
-
+/**
+ * 중복 요청 방지(In-flight Deduplication)를 적용한 데이터 로드 진입점
+ * - 이미 데이터 수신 중인 경우 기존 프로미스를 재사용하여 네트워크 대역폭 낭비 차단
+ * @returns {Promise<void>}
+ */
 function loadData() {
     if (state.inflight) {
         return state.inflight;
@@ -805,6 +905,13 @@ function loadData() {
     return state.inflight;
 }
 
+/**
+ * 7대 공공데이터 API 비동기 병렬 수집 파이프라인
+ * [아키텍처 설계]:
+ * 1. AbortController를 통해 이전 미완료 요청 즉시 취소
+ * 2. Promise.allSettled를 적용하여 특정 API의 지연/실패가 전체 시스템 장애로 번지지 않도록 격리
+ * 3. 수신된 XML 데이터들을 병원 고유 식별자(HPID)를 키로 교차 병합 및 정규화
+ */
 async function fetchData() {
     state.loading = true;
 
@@ -997,8 +1104,17 @@ async function fetchData() {
     }
 }
 
-/* 거리와 위치 */
+/* --------------------------------------------------------------------------
+   [7. 지리 연산 및 위치 추적 (GIS & Geolocation)]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 두 좌표 간의 직선 거리 계산 (Haversine Formula)
+ * - 지구 구면 곡률을 반영한 대원 거리(Great-Circle Distance) 계산
+ * @param {{lat: number, lng: number}} a - 시작점 위경도 좌표
+ * @param {{lat: number, lng: number}} b - 도착점 위경도 좌표
+ * @returns {number} 두 지점 간의 거리 (단위: km)
+ */
 function distanceKm(a, b) {
     const radians = degrees => degrees * Math.PI / 180;
     const dLat = radians(b.lat - a.lat);
@@ -1016,6 +1132,13 @@ function distanceKm(a, b) {
     );
 }
 
+/**
+ * 십진수 위경도 좌표를 도·분·초(DMS) 형식으로 변환
+ * @param {number} value - 위도 또는 경도 십진수 값
+ * @param {string} positive - 양수 부호 기호 (N 또는 E)
+ * @param {string} negative - 음수 부호 기호 (S 또는 W)
+ * @returns {string} 도·분·초 포맷 문자열 (예: N 37° 34′ 0.5″)
+ */
 function formatDms(value, positive, negative) {
     const tenths = Math.round(Math.abs(value) * 36000);
     const degrees = Math.floor(tenths / 36000);
@@ -1026,6 +1149,10 @@ function formatDms(value, positive, negative) {
     return `${direction} ${degrees}° ${minutes}′ ${seconds.toFixed(1)}″`;
 }
 
+/**
+ * 사용자 현재 위치 및 좌표 텍스트 UI 갱신
+ * - GPS 수신 성공 시 정밀 좌표 표출, 미수신 시 서울시청 기준 안내
+ */
 function updateCoordinates() {
     updateRadiusUI();
 
@@ -1481,6 +1608,15 @@ function openCluster(items) {
 
 /* 검색 */
 
+/* --------------------------------------------------------------------------
+   [14. 실시간 병원 검색 및 자동완성]
+   -------------------------------------------------------------------------- */
+
+/**
+ * 사용자 입력 키워드 기반 실시간 병원 검색 및 드롭다운 결과 렌더링
+ * - 공백 무시 및 소문자 정규화 기반 매칭
+ * - [성능 최적화]: DocumentFragment를 활용한 DOM 일괄 삽입으로 대량 타이핑 시 리플로우 최소화
+ */
 function updateSearch() {
     closeRadius();
 
@@ -1514,7 +1650,10 @@ function updateSearch() {
         list.append(
             node('li', 'empty-state', '일치하는 기관이 없습니다.')
         );
+        return;
     }
+
+    const fragment = document.createDocumentFragment();
 
     for (const hospital of matches) {
         const li = node('li');
@@ -1540,8 +1679,10 @@ function updateSearch() {
         });
 
         li.append(button);
-        list.append(li);
+        fragment.append(li);
     }
+
+    list.append(fragment);
 }
 
 /* API 시각 */
@@ -1931,6 +2072,17 @@ const SPECIFIC_BLOCK_TARGETS = {
     }
 };
 
+/* --------------------------------------------------------------------------
+   [8. 실시간 진료 공지 교차 검증 및 중증질환 수용성 판별 엔진]
+   -------------------------------------------------------------------------- */
+
+/**
+ * 실시간 진료 제한 공지(메시지)의 차단 여부 판별기
+ * - "제한 없음/가능/원활" 등 정상 진료 문구 제외
+ * - "불가, 차단, 수용불가, 진료불가, 수술불가, 부재, 중단" 등 차단 키워드 감지
+ * @param {Object} msg - API 진료 메시지 객체
+ * @returns {boolean} 진료 차단 여부
+ */
 function isNoticeBlocking(msg) {
     if (!msg) return false;
     const body = String(msg.symblkmsg || '').trim();
@@ -1947,6 +2099,15 @@ function isNoticeBlocking(msg) {
     return /(불가|불가능|차단|수용\s*불가|진료\s*불가|수술\s*불가|부재|중단)/.test(body);
 }
 
+/**
+ * 특정 중증응급질환 항목이 현재 활성 긴급 공지에 의해 차단되었는지 교차 검증
+ * [데이터 무결성 핵심 기능]:
+ * - API 상으로는 "수용 가능"으로 보고되어도, 현장에서 "장비 고장으로 투석 불가" 등
+ *   긴급 공지를 올린 경우 이를 감지하여 "불가능(빨간색)"으로 안전하게 자동 오버라이드
+ * @param {Array<Object>} activeMessages - 현재 시점에 유효한 긴급 공지 목록
+ * @param {string} itemKey - 질환 필드 키 (예: mkioskty22)
+ * @returns {boolean} 해당 질환의 차단 여부
+ */
 function isDiseaseSpecificallyBlocked(activeMessages, itemKey) {
     const config = SPECIFIC_BLOCK_TARGETS[itemKey];
     if (!config || !activeMessages.length) return false;
@@ -1968,6 +2129,12 @@ function isDiseaseSpecificallyBlocked(activeMessages, itemKey) {
     return false;
 }
 
+/**
+ * 27종 중증응급질환 실시간 수용성 보드 렌더링
+ * - API 원본값, 활성 공지 차단 여부, 세부 비고 사항을 종합 분석하여
+ *   [가능(녹색) / 불가능(적색) / 확인필요(황색) / 미제공(-)] 배지 및 파라미터 표출
+ * @param {Object} hospital - 병원 종합 데이터 객체
+ */
 function renderSevere(hospital) {
     const target = byId('severe');
     if (!target) return;
@@ -2163,10 +2330,24 @@ const INPATIENT_BED_SECTIONS = [
     }
 ];
 
+/**
+ * 결측값(Null / Empty / Undefined) 검증 헬퍼
+ * [기술적 난제 3 해결 핵심 로직]:
+ * - 공공데이터 XML 응답에서 태그가 비어있거나 누락된 경우를 엄격히 감지
+ * - 결측값을 단순 숫자 0으로 취급하여 '병상 없음(0개/포화)'으로 왜곡되는 치명적 의료 사고 방지
+ * @param {*} val - 검사할 데이터 값
+ * @returns {boolean} 공백 또는 null 여부
+ */
 function isBlankOrNull(val) {
     return val === null || val === undefined || String(val).trim() === '';
 }
 
+/**
+ * API 호출 파라미터 키 레이블 포맷터
+ * @param {string} currentKey - 가용 병상 필드 키 (예: hvec)
+ * @param {string} baselineKey - 기준 병상 필드 키 (예: hvs01)
+ * @returns {string} 화면 표출용 파라미터 안내 문자열
+ */
 function formatParamLabel(currentKey, baselineKey) {
     if (currentKey && baselineKey) {
         return `${currentKey} / ${baselineKey} (가용 / 기준)`;
@@ -2180,6 +2361,14 @@ function formatParamLabel(currentKey, baselineKey) {
     return '';
 }
 
+/**
+ * 병상 가용 수치 및 기준 수치 기반 실시간 상태 배지 판별기
+ * - 기준수 대비 가용수 비율 또는 절대 수치에 따라 여유/보통/혼잡/초과수용/정보미제공 배지 반환
+ * - 분만실 등 특수 병상의 경우 Y/N 가동 여부 기준으로 판별
+ * @param {Object} fields - 병원 병상 데이터 객체
+ * @param {Object} def - 병상 항목 정의 (current, baseline, type 등)
+ * @returns {{className: string, text: string}} 배지 스타일 클래스 및 표시 텍스트
+ */
 function getBedStatusBadge(fields, def) {
     const rawVal = fields[def.current];
     const rawBase = def.baseline ? fields[def.baseline] : null;
@@ -2247,6 +2436,13 @@ function getBedStatusBadge(fields, def) {
     }
 }
 
+/**
+ * 개별 병상 상태 셀 엘리먼트 생성기
+ * - 병상 레이블, 실시간 가용/기준 상태 배지, API 수신값 파라미터 텍스트 포맷
+ * @param {Object} fields - 병원 병상 원본 데이터
+ * @param {Object} item - 병상 항목 명세 (current, baseline, label)
+ * @returns {HTMLElement} .egen-cell DOM 노드
+ */
 function createBedCell(fields, item) {
     const cell = node('div', 'egen-cell');
     const topRow = node('div', 'egen-cell-top');
@@ -2273,6 +2469,11 @@ function createBedCell(fields, item) {
     return cell;
 }
 
+/**
+ * 응급실 핵심 가용 병상 종합 카드 렌더링
+ * - 일반, 소아, 외상소생실, 음압/일반/코호트 격리 등 응급실 전용 병상 집계
+ * @param {Object} hospital - 병원 데이터 객체
+ */
 function renderErBeds(hospital) {
     const target = byId('er-beds-board') || byId('beds-board');
     if (!target) return;
@@ -2302,6 +2503,11 @@ function renderErBeds(hospital) {
     target.append(card);
 }
 
+/**
+ * 입원 및 중환자실 병상 현황 종합 카드 렌더링
+ * - 중환자실(내과, 외과, 소아, 신생아, 흉부, 심장 등), 응급전용, 외상전용, 일반 입원실 분류별 집계
+ * @param {Object} hospital - 병원 데이터 객체
+ */
 function renderInpatientBeds(hospital) {
     const target = byId('inpatient-beds-board');
     if (!target) return;
@@ -2337,6 +2543,11 @@ function renderInpatientBeds(hospital) {
     target.append(card);
 }
 
+/**
+ * 병상 관련 종합 렌더링 코디네이터
+ * - 보고 시각 파싱, 응급실 병상 보드, 입원실/중환자실 병상 보드, 개발자 원본 뷰를 일괄 호출
+ * @param {Object} hospital - 대상 병원 종합 객체
+ */
 function renderBeds(hospital) {
     const bedTimeEl = byId('bed-time');
     if (bedTimeEl) {
@@ -2354,8 +2565,16 @@ function renderBeds(hospital) {
     }
 }
 
-/* 병상 원본값 */
+/* --------------------------------------------------------------------------
+   [9. 개발자 모드: API 원본 데이터(Raw Fields) 인스펙터]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 개발자 모드: 병상 원시 필드(Raw Fields) 검사 뷰 렌더링
+ * - hv(가용 병상), hvs(기준 병상), 특수 코드 등 국립중앙의료원 원본 응답을 무가공 상태로 투명하게 대조 표출
+ * - [기술적 난제 2 해결 근거]: AI 오분류 방지 및 개발자의 직접 검증 내역을 확인할 수 있는 디버깅 도구
+ * @param {Object} hospital - 병원 객체
+ */
 function renderRawBeds(hospital) {
     const all = byId('all-beds');
     all.replaceChildren();
@@ -2471,6 +2690,12 @@ const MKIOSKTY_METADATA = {
     hvidate: '중증질환 정보 보고일시 (hvidate)'
 };
 
+/**
+ * 개발자 모드: 27종 중증응급질환 API 원시 필드(Raw Fields) 인스펙터
+ * - mkioskty1~28 및 연령제한 비고(msg), 보고일시 등 수신된 XML 노드 전체를 여과 없이 검사
+ * - [데이터 무결성]: AI의 필드 오해석 여부를 개발자가 직접 육안 대조할 수 있도록 보장
+ * @param {Object} hospital - 병원 데이터 객체
+ */
 function renderRawSevere(hospital) {
     const all = byId('all-severe');
     if (!all) return;
@@ -2521,6 +2746,11 @@ function renderRawSevere(hospital) {
     all.append(section);
 }
 
+/**
+ * 개발자 모드: 실시간 진료 제한/특이사항 공지 원시 데이터(Raw Messages) 인스펙터
+ * - 공지 등록/종료일시, 구분코드, 표출 방식, 진료과, 원문 텍스트 전체 표출
+ * @param {Object} hospital - 병원 데이터 객체
+ */
 function renderRawMessages(hospital) {
     const all = byId('all-messages');
     if (!all) return;
@@ -2575,7 +2805,9 @@ function renderRawMessages(hospital) {
     all.append(section);
 }
 
-/* 사진 2: 장비정보 정의 (10개 항목) */
+/* --------------------------------------------------------------------------
+   [10. 가용 장비 현황 (10대 핵심 응급의료 장비 보드)]
+   -------------------------------------------------------------------------- */
 
 const EQUIPMENT_TABLE_ITEMS = [
     { label: '인공호흡기 일반', key: 'hvventiayn', baseline: 'hvs30' },
@@ -2590,6 +2822,13 @@ const EQUIPMENT_TABLE_ITEMS = [
     { label: '혈관촬영기', key: 'hvangioayn', baseline: 'hvs29' }
 ];
 
+/**
+ * 장비 상태 개별 셀 엘리먼트 생성기
+ * - 가용 여부(Y/N/수치) 및 보유 기준 대수를 대조하여 배지 및 파라미터 표출
+ * @param {Object} fields - 병상/장비 API 응답 객체
+ * @param {Object} item - 장비 항목 명세 (label, key, baseline)
+ * @returns {HTMLElement} DOM 셀 노드
+ */
 function createEquipmentCell(fields, item) {
     const cell = node('div', 'egen-cell equipment-cell');
     const topRow = node('div', 'egen-cell-top');
@@ -2637,6 +2876,11 @@ function createEquipmentCell(fields, item) {
     return cell;
 }
 
+/**
+ * 10대 핵심 응급의료 장비 종합 가용 현황 카드 렌더링
+ * - 인공호흡기, 인큐베이터, CRRT, ECMO, 고압산소치료기, CT, MRI 등
+ * @param {Object} hospital - 병원 데이터 객체
+ */
 function renderEquipment(hospital) {
     const target = byId('equipment');
     if (!target) return;
@@ -2666,8 +2910,15 @@ function renderEquipment(hospital) {
     target.append(card);
 }
 
-/* 기본정보 */
+/* --------------------------------------------------------------------------
+   [11. 기관 기본정보 및 외상센터 정보 렌더링]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 기관 기본정보 및 권역외상센터 기본정보 아코디언 뷰 렌더링
+ * - 주소, 인허가일자, 병원 규모, 외상 전문 세부 정보 등
+ * @param {Object} hospital - 병원 종합 데이터 객체
+ */
 function renderBasic(hospital) {
     const target = byId('basic-info');
     target.replaceChildren();
@@ -2714,14 +2965,28 @@ function renderBasic(hospital) {
     }
 }
 
-/* 전화와 외부 지도 */
+/* --------------------------------------------------------------------------
+   [12. 긴급 연락처 연결 및 지도 내비게이션 딥링크 연동]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 전화 걸기 및 웹 링크 생성 헬퍼
+ * @param {string} text - 링크 표시 텍스트
+ * @param {string} href - 대상 URL / tel 스킴
+ * @param {string} className - CSS 클래스명
+ * @returns {HTMLAnchorElement} a 태그 노드
+ */
 function contactLink(text, href, className) {
     const link = node('a', className, text);
     link.href = href;
     return link;
 }
 
+/**
+ * iOS / iPadOS 터치 디바이스 판별기
+ * - iPadOS 데스크톱 모드(Macintosh + maxTouchPoints) 완벽 감지
+ * @returns {boolean} Apple 터치 기기 여부
+ */
 function isAppleTouchDevice() {
     const userAgent = navigator.userAgent || '';
 
@@ -2734,6 +2999,15 @@ function isAppleTouchDevice() {
     );
 }
 
+/**
+ * 모바일 내비게이션 앱 실행 및 미설치 시 웹/스토어 폴백(Fallback) 라우터
+ * - Android: Chrome Intent scheme을 통한 네이티브 인텐트 호출
+ * - iOS: 커스텀 URL scheme 실행 후 visibilitychange/타이머를 통한 앱스토어 전환
+ * - PC: 새 탭에서 웹 길찾기 서비스 실행
+ * @param {string} scheme - 앱 전용 커스텀 스킴
+ * @param {string} androidPackage - 안드로이드 패키지명
+ * @param {string} fallback - 웹 또는 스토어 대체 URL
+ */
 function openMobileApp(scheme, androidPackage, fallback) {
     if (/Android/i.test(navigator.userAgent)) {
         const intent = scheme.replace(/^[a-z]+:\/\//, 'intent://');
@@ -2785,6 +3059,13 @@ function openMobileApp(scheme, androidPackage, fallback) {
     window.location.href = scheme;
 }
 
+/**
+ * 길찾기 제공사별 딥링크 파라미터 빌더
+ * - 카카오맵, 네이버지도, 티맵(T-map) 대응
+ * @param {'kakao'|'naver'|'tmap'} provider - 내비게이션 플랫폼
+ * @param {Object} hospital - 대상 병원 객체
+ * @returns {{scheme: string, package: string, fallback: string}} 내비게이션 실행 설정
+ */
 function navigationLink(provider, hospital) {
     const name = encodeURIComponent(hospital.name);
     const lat = hospital.lat;
@@ -2842,11 +3123,20 @@ function navigationLink(provider, hospital) {
     };
 }
 
+/**
+ * 선택된 내비게이션 앱 즉시 실행
+ * @param {'kakao'|'naver'|'tmap'} provider - 내비게이션 플랫폼
+ * @param {Object} hospital - 대상 병원 객체
+ */
 function launchNavigation(provider, hospital) {
     const link = navigationLink(provider, hospital);
     openMobileApp(link.scheme, link.package, link.fallback);
 }
 
+/**
+ * 응급실 직통전화, 대표전화 및 3대 내비게이션(카카오/네이버/티맵) 액션 버튼 렌더링
+ * @param {Object} hospital - 병원 데이터 객체
+ */
 function renderContacts(hospital) {
     const target = byId('contact-actions');
     const phones = node('div', 'phone-actions');
@@ -2902,8 +3192,17 @@ function renderContacts(hospital) {
     target.replaceChildren(phones, maps);
 }
 
-/* 상세창 */
+/* --------------------------------------------------------------------------
+   [13. 병원 상세정보 바텀시트(Bottom Sheet) 인터랙션 및 접근성]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 특정 병원의 상세정보 바텀시트 개방 및 데이터 바인딩
+ * - 배경 요소 inert 처리로 스크린 리더 및 키보드 초점 격리(Focus Trap)
+ * - 전광판(Marquee) 너비 재계산 큐잉
+ * @param {Object} hospital - 대상 병원 종합 데이터
+ * @param {boolean} [focus=true] - 닫기 버튼으로 초점 자동 이동 여부
+ */
 function openHospital(hospital, focus = true) {
     closeRadius();
     byId('search-results').hidden = true;
@@ -2981,6 +3280,10 @@ function openHospital(hospital, focus = true) {
     setTimeout(updateMarquees, 350);
 }
 
+/**
+ * 모달/시트 활성화 시 백그라운드 UI 비활성화(inert 제어)
+ * @param {boolean} value - 비활성화 여부
+ */
 function setBackgroundInert(value) {
     for (const selector of [
         '#map',
@@ -2992,6 +3295,10 @@ function setBackgroundInert(value) {
     }
 }
 
+/**
+ * 바텀시트 닫기 및 초점 복원
+ * - 시트 애니메이션 초기화, inert 해제, 이전 포커스 위치로 안전하게 복원
+ */
 function closeSheet() {
     byId('sheet').classList.remove('open');
     byId('sheet').style.transform = '';
@@ -3017,6 +3324,13 @@ function closeSheet() {
     }
 }
 
+/**
+ * 모바일 터치 드래그 제스처 바텀시트 컨트롤러
+ * - 스마트폰 환경에서 상단 핸들을 아래로 스와이프하면 바텀시트가 손가락을 따라 부드럽게 이동
+ * - 드래그 거리가 90px 이상이면 자동으로 닫히고, 미만이면 원래 위치로 스냅 복귀
+ * [성능 최적화]:
+ * - GPU 하드웨어 가속이 적용되는 translate3d(0, delta, 0)를 사용하여 60fps 프레임 드랍 방지
+ */
 function initSheetDrag() {
     const handle = byId('sheet-drag-handle');
     const sheet = byId('sheet');
@@ -3049,7 +3363,8 @@ function initSheetDrag() {
 
             if (delta > 0) {
                 event.preventDefault();
-                sheet.style.transform = `translateY(${delta}px)`;
+                // GPU 레이어 하드웨어 가속을 활용한 부드러운 터치 이동
+                sheet.style.transform = `translate3d(0, ${delta}px, 0)`;
             }
         },
         { passive: false }
@@ -3063,6 +3378,7 @@ function initSheetDrag() {
         startY = null;
         sheet.style.transition = '';
 
+        // 임계값(90px) 초과 시 시트 닫기 실행, 미만 시 원위치 복원
         if (delta > 90) {
             closeSheet();
         } else {
@@ -3076,8 +3392,14 @@ function initSheetDrag() {
     handle.addEventListener('touchcancel', finish, { passive: true });
 }
 
-/* 지도 범위 */
+/* --------------------------------------------------------------------------
+   [15. 지도 뷰포트 영역 계산 및 반경 피팅 (Viewport & Bounding Box)]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 상하단 오버레이 패널 높이를 감안하여 지도 뷰포트 패딩을 적용하고 경계 영역 피팅
+ * @param {kakao.maps.LatLngBounds} bounds - 피팅할 경위도 경계 영역
+ */
 function fitBounds(bounds) {
     const height = byId('map').clientHeight || window.innerHeight;
 
@@ -3094,6 +3416,12 @@ function fitBounds(bounds) {
     state.map.setBounds(bounds, top, 32, bottom, 32);
 }
 
+/**
+ * 기준 좌표와 탐색 반경(km)을 기준으로 구면 좌표계(Spherical Coordinates) 경계 바운딩 박스 계산
+ * @param {{lat: number, lng: number}} origin - 중심점 위경도 좌표
+ * @param {number} radiusKm - 탐색 반경 (단위: km)
+ * @returns {{south: number, north: number, west: number, east: number}} 4방향 경계 좌표
+ */
 function radiusExtent(origin, radiusKm) {
     const angle = radiusKm / 6371;
     const latDelta = angle * 180 / Math.PI;
@@ -3112,6 +3440,9 @@ function radiusExtent(origin, radiusKm) {
     };
 }
 
+/**
+ * 선택된 탐색 반경(전국 또는 N km)에 맞춰 지도 뷰포트 및 반경 가이드 원(Circle) 동적 피팅
+ */
 function fitRadius() {
     if (!state.map) {
         return;
@@ -3144,8 +3475,14 @@ function fitRadius() {
     updateCircle();
 }
 
-/* 이용 안내 */
+/* --------------------------------------------------------------------------
+   [16. 응급의료 서비스 이용 안내 모달 (Notice Dialog & LocalStorage)]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 브라우저 LocalStorage에 저장된 '다시 보지 않기' 설정 여부 확인
+ * @returns {boolean} 안내 팝업 숨김 설정 여부
+ */
 function noticeHidden() {
     try {
         return localStorage.getItem(NOTICE_KEY) === '1';
@@ -3154,6 +3491,9 @@ function noticeHidden() {
     }
 }
 
+/**
+ * 이용 안내 모달 다이얼로그 개방
+ */
 function openNotice() {
     byId('notice-skip').textContent = noticeHidden()
         ? '접속할 때 안내 다시 보기'
@@ -3162,6 +3502,9 @@ function openNotice() {
     byId('notice-dialog').showModal();
 }
 
+/**
+ * 이용 안내 다이얼로그 이벤트 리스너 및 초기 표출 제어 초기화
+ */
 function initNotice() {
     const dialog = byId('notice-dialog');
 
@@ -3189,13 +3532,20 @@ function initNotice() {
 
     byId('notice-open').addEventListener('click', openNotice);
 
-    if (!noticeHidden()) {
+    const previewMode = new URLSearchParams(window.location.search).get('preview');
+    if (!noticeHidden() && (!previewMode || previewMode === 'notice')) {
         openNotice();
     }
 }
 
-/* 패널 접기·펼치기 */
+/* --------------------------------------------------------------------------
+   [17. 상단 및 검색 패널 접기/펼치기 반응형 컨트롤러]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 지도 상하단 패널 토글 버튼 이벤트 및 ResizeObserver 바인딩
+ * - 모바일 환경에서 검색창 높이에 맞게 지도 하단 패딩 CSS 변수(--search-panel-height) 자동 동기화
+ */
 function initPanels() {
     const updateHeight = () => {
         const height = byId('search-panel').offsetHeight;
@@ -3257,8 +3607,13 @@ function initPanels() {
     updateHeight();
 }
 
-/* 검색 입력 포커스 정리 */
+/* --------------------------------------------------------------------------
+   [18. 모바일 가상 키보드 및 멀티터치 제스처 최적화]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 검색 입력창 포커스 해제 (스마트폰 가상 키보드 내리기)
+ */
 function blurKeyword() {
     const keyword = byId('keyword');
 
@@ -3267,6 +3622,9 @@ function blurKeyword() {
     }
 }
 
+/**
+ * 지도 드래그/줌/스크롤 제스처 시 가상 키보드를 자동으로 닫아 화면 가림 현상 방지
+ */
 function initSearchFocus() {
     const keyword = byId('keyword');
     let multiTouch = false;
@@ -3315,14 +3673,24 @@ function initSearchFocus() {
     byId('search-form').addEventListener('submit', blurKeyword);
 }
 
-/* 시작 */
+/* --------------------------------------------------------------------------
+   [19. 애플리케이션 진입점 및 초기화 (Bootstrap & Lifecycle)]
+   -------------------------------------------------------------------------- */
 
+/**
+ * 전체 시스템 초기화 엔트리포인트
+ * 1. 검색 포커스 관리, 반응형 패널, 탐색 반경 UI 초기화
+ * 2. 터치 디바이스 감지 및 모바일 클래스 바인딩
+ * 3. 키보드 접근성(Escape로 레이어 닫기, 바텀시트 Focus Trap 순환)
+ * 4. 카카오 지도 SDK 비동기 로드 대기 후 지도 렌더링, 위치 추적 및 실시간 데이터 수집 시작
+ */
 function init() {
     initSearchFocus();
     initPanels();
     initRadius();
     updateSummary();
 
+    // 터치 디바이스 정밀 감지 (모바일 터치 최적화 스타일 적용)
     if (
         navigator.maxTouchPoints > 0 ||
         matchMedia('(pointer: coarse)').matches ||
@@ -3381,6 +3749,7 @@ function init() {
     byId('sheet-close').addEventListener('click', closeSheet);
     byId('sheet-dim').addEventListener('click', closeSheet);
 
+    // 웹 접근성(A11y): Escape 키를 통한 계층적 오버레이 닫기 및 포커스 관리
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
             if (document.querySelector('dialog[open]')) {
@@ -3403,6 +3772,7 @@ function init() {
             }
         }
 
+        // 웹 접근성(A11y): 바텀시트 활성화 상태에서 Tab 키 순환 포커스 트랩(Focus Trap)
         if (
             event.key === 'Tab' &&
             state.selected &&
@@ -3441,12 +3811,14 @@ function init() {
         return;
     }
 
+    // 카카오 지도 SDK 비동기 초기화
     kakao.maps.load(() => {
         state.map = new kakao.maps.Map(byId('map'), {
             center: new kakao.maps.LatLng(SEOUL.lat, SEOUL.lng),
             level: 6
         });
 
+        // 지도 이동 및 줌 완료(idle) 시에만 마커 갱신 (불필요한 렌더링 최소화)
         kakao.maps.event.addListener(
             state.map,
             'idle',
@@ -3469,9 +3841,54 @@ function init() {
         byId('location-button').disabled = false;
         byId('refresh-button').disabled = false;
 
+        // 초기 실시간 공공데이터 수집 및 사용자 위치 자동 측정
         loadData();
         locate();
+
+        // [문서화 및 테스트 자동 스크린샷 캡처 훅]
+        const previewMode = new URLSearchParams(window.location.search).get('preview');
+        if (previewMode) {
+            handlePreviewMode(previewMode);
+        }
     });
 }
 
+/**
+ * README.md 문서 및 프레젠테이션용 자동 캡처 모드 핸들러
+ * @param {string} mode - 'notice' | 'map' | 'radius' | 'detail' | 'cluster'
+ */
+function handlePreviewMode(mode) {
+    if (mode === 'notice') {
+        // 이용안내 면책조항 모달 유지
+        return;
+    }
+
+    // 다른 모드에서는 안내 모달 자동 닫기
+    byId('notice-dialog')?.close();
+
+    if (mode === 'radius') {
+        setTimeout(() => {
+            byId('radius-button')?.click();
+        }, 1500);
+    } else if (mode === 'detail' || mode === 'hospital') {
+        const checkAndOpen = setInterval(() => {
+            if (state.hospitals.length > 0) {
+                clearInterval(checkAndOpen);
+                const target = state.hospitals.find(h => h.regional || h.type?.group === 'tertiary') || state.hospitals[0];
+                openHospital(target);
+            }
+        }, 300);
+        setTimeout(() => clearInterval(checkAndOpen), 12000);
+    } else if (mode === 'cluster') {
+        const checkAndCluster = setInterval(() => {
+            if (state.hospitals.length > 2) {
+                clearInterval(checkAndCluster);
+                openCluster(state.hospitals.slice(0, 3));
+            }
+        }, 300);
+        setTimeout(() => clearInterval(checkAndCluster), 12000);
+    }
+}
+
+// 애플리케이션 실행
 init();

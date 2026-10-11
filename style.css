@@ -1,18 +1,50 @@
+/* ==========================================================================
+   전국 응급의료기관 실시간 정보 관제 시스템 스타일시트 (style.css)
+   
+   [목차]
+   1. :root 디자인 토큰 및 전역 리셋 (Design Tokens & Global Resets)
+   2. 지도 뷰포트 레이아웃 (#map)
+   3. 상단 관제 헤더 패널 (.top-panel)
+   4. 검색 및 반경 필터 툴바 (.search-panel, .map-actions, .radius-popover)
+   5. 모바일 반응형 바텀시트 (.sheet, .sheet-drag-handle, .contact-actions)
+   6. E-Gen 종합 현황판 및 병상·장비·질환 매트릭스 그리드 (.egen-table-card, .egen-cell)
+   7. 전광판 텍스트 애니메이션 (.is-marquee, @keyframes egen-ticker)
+   8. 상태 뱃지 시스템 (.egen-badge-pill-*, .type-badge)
+   9. 다이얼로그 모달 (.cluster-dialog, .notice-dialog)
+   10. 개발자 디버그 모드 (.developer-mode, .raw-details)
+   11. 모바일 및 터치 디바이스 반응형 미디어 쿼리 (@media, .touch-device)
+   ========================================================================== */
+
 :root {
     color-scheme: light;
+    
+    /* 타이포그래피 */
     --font-ui: "NanumSquareNeo", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
     --font-bold: "NanumSquareNeoBold", "NanumSquareNeo", sans-serif;
+    
+    /* 레이아웃 & 간격 토큰 */
     --edge: 14px;
     --panel-padding: 12px;
     --action-size: 48px;
     --ui-gap: 8px;
     --ratio: 0;
     --search-panel-height: 154px;
+    
+    /* 의료 대시보드 테마 컬러 토큰 */
+    --primary-blue: #0284c7;
+    --primary-dark: #0f172a;
+    --text-primary: #182438;
+    --text-secondary: #53677e;
+    --bg-page: #f6f8fc;
+    --bg-panel: rgba(255, 255, 255, 0.96);
+    --border-subtle: #dce5f0;
+    --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05);
+    
     font-family: var(--font-ui), sans-serif;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
-    color: #182438;
-    background: #f6f8fc;
+    color: var(--text-primary);
+    background: var(--bg-page);
 }
 
 * {
@@ -25,6 +57,7 @@ body {
     height: 100%;
     margin: 0;
     overflow: hidden;
+    overscroll-behavior: none;
 }
 
 button,
@@ -810,17 +843,25 @@ h1 {
     align-items: center;
     justify-content: center;
     min-width: 0;
-    min-height: 40px;
-    padding: 8px;
+    min-height: 44px;
+    padding: 8px 12px;
     border: 0;
-    border-radius: 9px;
+    border-radius: 10px;
     color: #fff;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 700;
     text-align: center;
     text-decoration: none;
     overflow-wrap: anywhere;
     cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.12s ease, opacity 0.12s ease, filter 0.12s ease;
+}
+
+.contact-actions a:active,
+.contact-actions button:active {
+    transform: scale(0.97);
+    filter: brightness(0.95);
 }
 
 .phone-button {
@@ -1996,7 +2037,7 @@ h3 {
     text-underline-offset: 3px;
 }
 
-/* 터치 기기 */
+/* 터치 기기 전용 바텀시트 최적화 */
 
 .touch-device .sheet {
     top: auto;
@@ -2004,12 +2045,14 @@ h3 {
     width: min(720px, 100%);
     height: min(90vh, 900px);
     margin: 0 auto;
-    border-radius: 20px 20px 0 0;
-    transform: translateY(102%);
+    border-radius: 24px 24px 0 0;
+    transform: translate3d(0, 102%, 0);
+    will-change: transform;
+    box-shadow: 0 -12px 48px rgba(15, 23, 42, 0.22);
 }
 
 .touch-device .sheet.open {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
 }
 
 .touch-device .sheet-drag-handle {
@@ -2091,12 +2134,14 @@ h3 {
         left: 0;
         width: 100%;
         height: min(90vh, 900px);
-        border-radius: 20px 20px 0 0;
-        transform: translateY(102%);
+        border-radius: 24px 24px 0 0;
+        transform: translate3d(0, 102%, 0);
+        will-change: transform;
+        box-shadow: 0 -12px 48px rgba(15, 23, 42, 0.22);
     }
 
     .sheet.open {
-        transform: translateY(0);
+        transform: translate3d(0, 0, 0);
     }
 
     .sheet-drag-handle {
