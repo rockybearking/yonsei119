@@ -56,12 +56,13 @@
 * AI 생성 코드의 오류를 극복하고 원시 데이터의 무결성을 확보하여, 응급환자와 의료진 모두에게 가장 신뢰할 수 있는 정보를 제공합니다.
 
 ```mermaid
+%%{init: {'flowchart': {'wrappingWidth': 500, 'minNodeWidth': 220}}}%%
 flowchart TD
-    GPS["&nbsp;&nbsp;&nbsp;&nbsp;📍 사용자 현 위치 (GPS)&nbsp;&nbsp;&nbsp;&nbsp;"] --> Radius["&nbsp;&nbsp;&nbsp;&nbsp;🎯 탐색 반경 필터 (5km ~ 전국)&nbsp;&nbsp;&nbsp;&nbsp;"]
-    OpenAPI["&nbsp;&nbsp;&nbsp;&nbsp;🏥 국립중앙의료원 7대 API&nbsp;&nbsp;&nbsp;&nbsp;<br>(병상 / 중증질환 / 공지)"] --> Engine["&nbsp;&nbsp;&nbsp;&nbsp;🛡️ 데이터 교차 검증 & 무결성 엔진&nbsp;&nbsp;&nbsp;&nbsp;<br>• 결측치 '-' 격리<br>• 음수 초과수용 파싱<br>• 실시간 공지 차단 감지"]
-    Radius --> Dashboard["&nbsp;&nbsp;&nbsp;&nbsp;📊 실시간 응급의료 대시보드&nbsp;&nbsp;&nbsp;&nbsp;"]
+    GPS["📍 사용자 현 위치 (GPS)"] --> Radius["🎯 탐색 반경 필터 (5km ~ 전국)"]
+    OpenAPI["🏥 국립중앙의료원 7대 API<br>(병상 / 중증질환 / 공지)"] --> Engine["🛡️ 데이터 교차 검증 & 무결성 엔진<br>• 결측치 '-' 격리<br>• 음수 초과수용 파싱<br>• 실시간 공지 차단 감지"]
+    Radius --> Dashboard["📊 실시간 응급의료 대시보드"]
     Engine --> Dashboard
-    Dashboard --> Kakao["&nbsp;&nbsp;&nbsp;&nbsp;🗺️ 카카오맵 시각화&nbsp;&nbsp;&nbsp;&nbsp;<br>&nbsp;&nbsp;(상급종합 / 권역응급 / 27종 질환)&nbsp;&nbsp;"]
+    Dashboard --> Kakao["🗺️ 카카오맵 시각화<br>(상급종합 / 권역응급 / 27종 질환)"]
 ```
 
 ---
@@ -113,12 +114,13 @@ flowchart TD
 | `getStrmListInfoInqire` 외 2종 | **권역외상센터 전용정보** | 권역외상센터 목록, 외상소생실 및 외상 전용 중환자실 데이터 연동 |
 
 ```mermaid
+%%{init: {'flowchart': {'wrappingWidth': 600, 'minNodeWidth': 220}}}%%
 flowchart TD
-    Client["&nbsp;&nbsp;&nbsp;&nbsp;💻 Client 브라우저&nbsp;&nbsp;&nbsp;&nbsp;"] --> Load["&nbsp;&nbsp;&nbsp;&nbsp;loadData() : In-flight 중복 요청 차단&nbsp;&nbsp;&nbsp;&nbsp;"]
-    Load --> Promise["&nbsp;&nbsp;&nbsp;&nbsp;Promise.allSettled() : 7대 OpenAPI 비동기 병렬 요청&nbsp;&nbsp;&nbsp;&nbsp;"]
-    Promise --> Abort["&nbsp;&nbsp;<b>AbortController</b>&nbsp;&nbsp;<br>&nbsp;15초 타임아웃 & 이전 요청 취소&nbsp;"]
-    Promise --> Isolate["&nbsp;&nbsp;<b>장애 격리</b>&nbsp;&nbsp;<br>&nbsp;개별 API 실패 시에도 가용 데이터 표출&nbsp;"]
-    Promise --> Group["&nbsp;&nbsp;<b>groupById(rows)</b>&nbsp;&nbsp;<br>&nbsp;HPID 기준 정규화 & 교차 병합&nbsp;"]
+    Client["💻 Client 브라우저"] --> Load["loadData() : In-flight 중복 요청 차단"]
+    Load --> Promise["Promise.allSettled() : 7대 OpenAPI 비동기 병렬 요청"]
+    Promise --> Abort["AbortController<br>15초 타임아웃 & 이전 요청 취소"]
+    Promise --> Isolate["장애 격리<br>개별 API 실패 시에도 가용 데이터 표출"]
+    Promise --> Group["groupById(rows)<br>HPID 기준 정규화 & 교차 병합"]
 ```
 
 ---
