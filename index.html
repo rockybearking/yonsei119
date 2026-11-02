@@ -1,46 +1,39 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <!-- ==========================================================================
-         [1. 문서 기본 설정 및 뷰포트 메타 태그]
-         - 모바일 사파리, 크롬 등 다양한 디바이스 환경에서 Safe Area 대응 (viewport-fit=cover)
-         - 핀치 줌 방지 대신 가독성을 보장하고, PWA 환경 및 테마 색상 지정
-         ========================================================================== -->
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#f6f8fc">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="format-detection" content="telephone=no">
-    <meta name="description" content="전국 응급의료기관 실시간 가용병상, 중증응급질환 수용여부, 가용 의료장비 현황 지도 관제 서비스">
-
-    <title>전국 응급의료기관 실시간 정보</title>
+    <title>이 프로젝트는 Deprecated 되었습니다</title>
 
     <!-- ==========================================================================
-         [2. 성능 최적화: 외부 리소스 사전 연결 (Preconnect / DNS Prefetch)]
-         - 폰트 제공처(네이버) 및 지도 API(카카오), 공공데이터 포털 도메인 사전 핸드셰이크
+         [DEPRECATED NOTICE]
+         이 프로젝트는 Django 백엔드 모노레포로 이관되어 본 프로젝트는 Deprecated 처리되었습니다.
+         운영 서비스 주소: https://yonsei119.onrender.com
          ========================================================================== -->
+
+    <!-- 기존 리소스 및 스크립트 보존 (브라우저 실행 및 화면 간섭 방지를 위해 비활성화 보존)
     <link rel="preconnect" href="https://hangeul.pstatic.net" crossorigin>
     <link rel="preconnect" href="https://dapi.kakao.com" crossorigin>
     <link rel="dns-prefetch" href="https://apis.data.go.kr">
-
-    <!-- 본고딕/나눔스퀘어 네오 웹폰트 및 시스템 스타일시트 -->
     <link rel="stylesheet" href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css">
     <link rel="stylesheet" href="style.css">
-
-    <!-- ==========================================================================
-         [3. 스크립트 비동기 지연 로드 (defer)]
-         - 카카오맵 SDK: 지도 서비스 및 라이브러리(services) 로드
-         - app.js: 애플리케이션 핵심 로직 (API 연동, 상태 관리, 지도 시각화, 바텀시트)
-         ========================================================================== -->
     <script
             src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=64961e084dede515b221656f5fe6600c&amp;libraries=services&amp;autoload=false"
             defer
     ></script>
     <script src="app.js" defer></script>
+    -->
 </head>
 
-<body>
+<body style="margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 16px; line-height: 1.6; color: #111827; background-color: #ffffff;">
+    <p style="margin: 0;">이 프로젝트는 Deprecated 되었습니다. 프로젝트는 '<a href="https://yonsei119.onrender.com" style="color: #0284c7; text-decoration: underline;">https://yonsei119.onrender.com</a>'으로 이관되었습니다.</p>
+
+    <!-- ==========================================================================
+         [LEGACY CODE PRESERVATION]
+         기존 원본 코드를 100% 훼손 없이 안전하게 보존합니다.
+         template 태그 내부는 브라우저가 화면에 렌더링하지 않으며 스크립트도 실행되지 않습니다.
+         ========================================================================== -->
+    <template id="legacy-code-archive" style="display: none !important;">
 <!-- ==========================================================================
      [4. 메인 지도 뷰포트]
      - 카카오맵 인스턴스가 동적으로 마운트되는 최하단 풀스크린 레이어
@@ -521,5 +514,6 @@
         </button>
     </div>
 </dialog>
+    </template>
 </body>
 </html>
