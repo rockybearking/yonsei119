@@ -1,54 +1,14 @@
 package com.yonsei119.dto;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-/**
- * ============================================================================
- * [레코드 역할 — 핵심 도메인 DTO]
- * 국립중앙의료원(NEMC) 7개 OpenAPI 엔드포인트의 XML 데이터를 기관 고유코드({@code HPID}) 기준으로
- * 교차 병합(Cross-Merge)하고 종별 분류까지 마친 **단일 응급의료기관 통합 정보 그릇**입니다.
- * <p>
- * [파이썬 장고(Django) 비유]
- * - 장고에서 DB 모델 없이 외부 공공데이터 API 여러 개를 합쳐서 내려줄 때 쓰는
- *   **핵심 도메인 {@code @dataclass} 겸 DRF {@code HospitalSerializer}** 역할입니다!
- * <p>
- * [코드의 경로성 (어디서 오고 어디로 가는가?)]
- * - [원본 수집 (Step 1)] : {@code service/NmcOpenApiClient.java}가 공공데이터포털 XML 7종을 파싱해 {@code Map<String, String>}으로 전달
- * - [병합 및 생성 (Step 2)] : {@code service/EmergencyDataService.java}의 {@code fetchFreshSnapshot()}이 {@code HPID}로 묶고,
- *   {@code service/HospitalClassifier.java}를 호출해 {@code regional} 여부 및 {@code type}({@code HospitalTypeDto})을 판정한 뒤 이 {@code HospitalDto}를 생성!
- * - [전달 (Step 3)] : {@code EmergencySnapshotDto.hospitals} 리스트에 담겨 {@code EmergencyApiController} ({@code GET /api/hospitals})를 통해 전송
- * - [프론트엔드 사용처 (Step 4 — {@code frontend/app.js})] :
- *   - {@code createMarkerContent()} / {@code updateMarkerContent()} : {@code name}, {@code regional}, {@code type}, {@code beds.hvec}으로 지도 위 알약형 병원 카드 표시
- *   - {@code openHospital()} : 우측(모바일은 하단) 상세 시트({@code #sheet})에 응급실 병상({@code beds}), 장비({@code basic}), 중증질환({@code severe}),
- *     응급 메시지({@code messages}), 권역외상센터({@code trauma}), 직통 전화번호({@code erTel}, {@code tel})를 렌더링!
- * <p>
- * [절대 지켜야 할 응급의료 도메인 규칙 (수정 시 주의!)]
- * - {@code beds} 맵의 값(예: {@code hvec} 응급실 일반병상)은 숫자가 아니라 **원본 문자열({@code "-3"}, {@code "5"}, {@code ""})** 그대로 유지합니다!
- *   - 음수({@code "-3"})는 에러가 아니라 현장에서 정원보다 3명을 더 받고 있다는 **'초과수용 3석(포화)'** 핵심 지표입니다.
- *   - 빈 문자열({@code ""})이나 키 누락은 병상이 {@code 0}개인 것이 아니라 **'미보고/미운영({@code -})'**이므로 절대 {@code "0"}으로 바꾸면 안 됩니다.
- * <p>
- * [수정 시 영향 및 예시]
- * - 병원 홈페이지 URL 같은 새 최상위 필드를 추가하고 싶다면:
- *   1) 이 레코드에 {@code String homepageUrl}을 추가하고,
- *   2) {@code EmergencyDataService.java}에서 {@code new HospitalDto(...)} 호출 시 값을 넣어주면 프론트엔드 {@code hospital.homepageUrl}로 즉시 전달됩니다.
- * ============================================================================
- *
- * @param id       국립중앙의료원 기관 고유코드 ({@code HPID}, 예: {@code "A2200001"})
- * @param name     응급의료기관 기관명 ({@code dutyName}, 예: {@code "연세대학교원주세브란스기독병원"})
- * @param address  기관 도로명/지번 주소 ({@code dutyAddr})
- * @param tel      대표 전화번호 ({@code dutyTel1})
- * @param erTel    응급실 직통 전화번호 ({@code dutyTel3})
- * @param lat      WGS84 위도 ({@code wgs84Lat})
- * @param lng      WGS84 경도 ({@code wgs84Lon})
- * @param regional 권역응급의료센터 지정 여부 ({@code true}: 권역응급 배지 부여)
- * @param type     기관 종별 분류 메타데이터 ({@link HospitalTypeDto} — 상급종합 / 의료원 / 일반·기타)
- * @param basic    응급의료기관 목록 + 기본정보 XML 태그 전체 병합 맵 (키가 모두 소문자, 예: {@code "dgididname"}, {@code "dutyeryn"})
- * @param trauma   권역외상센터 목록 + 기본정보 병합 맵 (권역외상센터가 아닌 병원은 {@code null})
- * @param beds     실시간 가용병상 정보 맵 ({@code "hvec"} 응급실, {@code "hvs01"} 기준병상, {@code "hvctayn"} CT 가용여부 등 원본 문자열)
- * @param messages 응급실 및 중증질환 실시간 전달 메시지 리스트 ({@code "symblkmsg"}, {@code "symblkmsgtyp"} 등)
- * @param severe   28대 중증질환 실시간 수용 가능 여부 맵 ({@code "mkioskty1"} ~ {@code "mkioskty28"} — {@code "Y"}/{@code "N"}/{@code "정보없음"})
+import java.util.Set;
+/*
+ * [자바 문법] package, import : 단일 응급의료기관의 통합 도메인 데이터를 담는 DTO 패키지와 표준 컬렉션 도구를 불러옴.
+ * [자바/스프링/라이브러리 내장 도구(타입)] List, Map, Set, LinkedHashMap : 순서 있는 목록·키-값 사전·중복 없는 집합 내장 타입임 (이름 변경 불가).
  */
+
 public record HospitalDto(
         String id,
         String name,
@@ -65,4 +25,76 @@ public record HospitalDto(
         List<Map<String, String>> messages,
         Map<String, String> severe
 ) {
+/*
+ * [자바 문법] public record, double(실수형), boolean(논리형)
+ * [자바/스프링/라이브러리 내장 도구(타입)] String, Map<String, String>, List<Map<String, String>> (이름 변경 불가)
+ * [내가 지은 이름]
+ * - 대문자 타입명: HospitalDto, HospitalTypeDto
+ * - 소문자 필드명: id(기관코드 HPID), name(병원명), address(주소), tel(대표전화), erTel(응급실 직통전화), lat(위도), lng(경도),
+ *   regional(권역응급 여부), type(종별 객체), basic(기본정보 맵), trauma(외상센터 맵), beds(실시간 병상 맵), messages(긴급공지 리스트), severe(28대 중증질환 맵)
+ * [핵심 도메인 규칙 (절대 변경 주의)]
+ * - beds 맵 안의 병상 값(예: hvec="-4", hv28="")은 int 숫자로 바꾸지 않고 String 원본 그대로 보관함.
+ *   ├── "-4" : 정원보다 4명을 더 수용 중인 '초과수용(포화)' 현장 지표
+ *   ├── "0"  : 잔여 병상 0석 '만실'
+ *   └── ""   : 해당 병상 미운영 또는 '미보고(-)' (절대 "0"으로 왜곡 금지)
+ */
+
+    public HospitalDto toCompactSummary(Set<String> allowedBedKeys) {
+    /*
+     * [자바 문법] public HospitalDto : 초기 목록 조회(?compact=true) 시 불필요한 대용량 원문(basic 60여 개 태그 등)을 덜어낸 경량 복제본을 반환하는 메서드임.
+     * [자바/스프링/라이브러리 내장 도구(타입)] Set<String> (이름 변경 불가)
+     * [내가 지은 이름] toCompactSummary(함수명), allowedBedKeys(화면 매트릭스 렌더링에 실제 쓰이는 병상·장비 키 집합)
+     */
+        Map<String, String> compactBasic = basic == null || basic.isEmpty()
+                ? Map.of()
+                : extractNonEmptyKeys(basic, List.of("dutyemclsname", "dutydivnam", "dgididname", "dutyeryn"));
+
+        Map<String, String> compactTrauma = (trauma != null && !trauma.isEmpty())
+                ? Map.of("designated", "Y")
+                : null;
+
+        Map<String, String> compactBeds = null;
+        if (beds != null) {
+            if (allowedBedKeys == null || allowedBedKeys.isEmpty()) {
+                compactBeds = beds;
+            } else {
+                Map<String, String> filtered = new LinkedHashMap<>();
+                for (Map.Entry<String, String> entry : beds.entrySet()) {
+                    if (allowedBedKeys.contains(entry.getKey())) {
+                        filtered.put(entry.getKey(), entry.getValue());
+                    }
+                }
+                compactBeds = Map.copyOf(filtered);
+            }
+        }
+
+        return new HospitalDto(
+                id, name, address, tel, erTel, lat, lng, regional, type,
+                compactBasic, compactTrauma, compactBeds, messages, severe
+        );
+        /*
+         * [스프링/자바 내장 함수] Map.of(...), Map.copyOf(...) : 수정 불가능한 안전한 불변 맵을 생성함 (이름 변경 불가).
+         * [경량화 전·후 데이터 비교 예시]
+         * - 전체 상세 조회 (GET /api/hospitals/A2200001): basic(진료시간표·약도설명 등 65개 원본 키 전체 포함) -> 개발자 모드 100% 대조용
+         * - 초기 목록 조회 (GET /api/hospitals?compact=true): 지도·증상필터·병상보드 필수 필드만 유지 -> 모바일 초기 JSON 용량 대폭 절감
+         */
+    }
+
+    private static Map<String, String> extractNonEmptyKeys(Map<String, String> source, List<String> keys) {
+    /*
+     * [자바 문법] private static : 이 레코드 내부에서만 쓰는 키 선별 보조 함수임.
+     * [내가 지은 이름] extractNonEmptyKeys, source, keys
+     */
+        Map<String, String> picked = new LinkedHashMap<>();
+        for (String key : keys) {
+            String val = source.get(key);
+            if (val != null && !val.isBlank()) {
+                picked.put(key, val);
+            }
+        }
+        return Map.copyOf(picked);
+        /*
+         * [스프링/자바 내장 함수] val.isBlank(), Map.copyOf(...) (이름 변경 불가)
+         */
+    }
 }

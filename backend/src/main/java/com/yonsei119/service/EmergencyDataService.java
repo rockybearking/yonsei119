@@ -4,6 +4,7 @@ import com.yonsei119.config.Yonsei119Properties;
 import com.yonsei119.dto.EmergencySnapshotDto;
 import com.yonsei119.dto.HospitalDto;
 import com.yonsei119.dto.HospitalTypeDto;
+import com.yonsei119.util.GeoUtils;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,136 +27,148 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-/**
- * ============================================================================
- * [클래스 역할]
- * 국립중앙의료원(NEMC) 7개 OpenAPI에서 수집한 흩어진 데이터를 **기관 고유코드({@code HPID}) 기준으로 하나로 병합**하고,
- * **인메모리 캐시(Stale-While-Revalidate)** + **서버 시작 즉시 사전 로딩(Pre-warming)** +
- * **20분 주기 백그라운드 자동 갱신({@code @Scheduled})**을 통해 사용자에게 0.01초 만에 응답하는 핵심 비즈니스 서비스입니다.
- * <p>
- * [파이썬 장고(Django) 비유]
- * - 장고 프로젝트에서 아래 3가지를 합쳐 놓은 핵심 비즈니스 계층입니다:
- *   1) **{@code services/emergency_service.py}** : 7종 공공데이터 병합 및 비즈니스 규칙 처리 ({@code mergeDatasetsIntoSnapshot})
- *   2) **{@code django.core.cache} (LocMemCache)** : 메모리 캐싱으로 매번 외부 API를 부르지 않고 초고속 응답 ({@code getSnapshot})
- *   3) **{@code apps.py}의 {@code ready()} + {@code Celery Beat} / {@code APScheduler}** : 서버 부팅 직후 사전 로딩({@code warmUpCacheOnStartup}) 및
- *      주기적 백그라운드 자동 갱신({@code scheduledBackgroundRefresh})
- * <p>
- * [코드의 경로성 (어디서 오고 어디로 가는가?)]
- * - [어디서 호출되는가 (Incoming)] :
- *   1) {@code controller/EmergencyApiController.java}의 {@code getHospitals()} ({@code GET /api/hospitals}),
- *      {@code rankDirections()} ({@code GET /api/directions/rank}), {@code geocode()} ({@code GET /api/geocode})에서 {@link #getSnapshot(boolean)} 호출!
- *   2) Spring 프레임워크 이벤트/스케줄러가 {@link #warmUpCacheOnStartup()}과 {@link #scheduledBackgroundRefresh()}를 자동 호출!
- * - [어느 파일을 부르는가 (Outgoing)] :
- *   1) {@code service/NmcOpenApiClient.java} ({@code fetchAllDatasets()}) → 공공데이터 XML 7종 수집
- *   2) {@code service/HospitalClassifier.java} ({@code isRegional()}, {@code classify()}) → 각 병원의 종별(상급종합/권역/의료원/기타) 판별
- *   3) {@code dto/HospitalDto.java} 및 {@code dto/EmergencySnapshotDto.java} 조립 후 컨트롤러로 반환 → {@code frontend/app.js}로 전송!
- * <p>
- * [수정 시 영향 및 예시]
- * - 대한민국 유효 위경도 필터 범위({@code MIN_LAT} ~ {@code MAX_LAT}, {@code MIN_LNG} ~ {@code MAX_LNG})를 넓히고 싶다면 아래 상수를 조정합니다:
- *   예시(변경 전): {@code private static final double MIN_LAT = 33.0;}
- *   예시(변경 후 — 이어도 인근 해역까지 포함 시): {@code private static final double MIN_LAT = 32.0;}
- * ============================================================================
+/*
+ * [자바 문법] package, import : 7대 공공데이터를 HPID 기준으로 교차 병합하고 Hot/Cold 이원화 캐시 및 경량/상세 조회를 총괄하는 핵심 서비스 패키지 선언임.
+ * [자바/스프링/라이브러리 내장 도구(타입)]
+ * - Instant, ZonedDateTime, ZoneId, DateTimeFormatter : UTC 기준 절대 시각 및 한국 표준시(KST) 포맷팅용 Java 8+ 표준 시간 도구임 (이름 변경 불가).
+ * - AtomicBoolean, ExecutorService, CompletableFuture : 중복 백그라운드 실행을 막고 비동기 캐시 워밍을 수행하는 동시성 도구임 (이름 변경 불가).
+ * [스프링/라이브러리 내장 어노테이션]
+ * - @Service (출처: org.springframework.stereotype) : 핵심 비즈니스 로직을 수행하는 주방장 빈(Bean)임을 선언함 (형제: @RestController, @Repository, @Component).
+ * - @EventListener (출처: org.springframework.context.event) : 서버 부팅 완료 이벤트(ApplicationReadyEvent)를 감지해 사전 로딩을 시작함.
+ * - @Scheduled (출처: org.springframework.scheduling.annotation) : 정해진 주기(기본 3분)마다 백그라운드 갱신을 자동 실행함.
  */
+
 @Service
 public class EmergencyDataService {
+/*
+ * [스프링/라이브러리 내장 어노테이션] @Service
+ * [자바 문법] public class
+ * [내가 지은 이름] EmergencyDataService : 전국 응급의료기관 데이터 교차 병합(Cross-Merge) 및 Stale-While-Revalidate + Hot/Cold 캐시 관리 서비스임.
+ * [핵심 원리 & 식당 주방 비유]
+ * 1) 사전 조리(Pre-warming): 식당 문을 열자마자(ApplicationReadyEvent) 미리 전국 530여 개 병원 데이터를 준비해 첫 손님도 0.01초 만에 응답받게 함.
+ * 2) Hot / Cold 이원화 조리: 잘 안 바뀌는 병원 주소·기본정보(Cold 4종)는 6시간마다 갱신하고, 실시간 병상·공지·중증질환(Hot 3종)만 3분마다 재빠르게 갈아끼움.
+ * 3) 요약 메뉴판 vs 상세 원산지표 분리: 목록 조회(?compact=true)는 가벼운 요약본을 즉시 내주고, 개별 상세 조회(/api/hospitals/{hpid})는 원본 태그 전체를 제공함.
+ */
 
     private static final Logger log = LoggerFactory.getLogger(EmergencyDataService.class);
-
-    /** 대한민국 영역 유효 위도(Latitude) 최소/최대 범위 — {@code (0.0, 0.0)} 같은 좌표 오류 병원이 지도를 망가뜨리는 것을 차단합니다. */
-    private static final double MIN_LAT = 33.0;
-    private static final double MAX_LAT = 39.0;
-
-    /** 대한민국 영역 유효 경도(Longitude) 최소/최대 범위 */
-    private static final double MIN_LNG = 124.0;
-    private static final double MAX_LNG = 132.0;
-
-    /** 스냅샷 생성 시각({@code updatedAt}) 표기를 위한 한국 표준시(KST, UTC+9) 시간대 */
     private static final ZoneId KST_ZONE = ZoneId.of("Asia/Seoul");
-
-    /** 수동 강제 새로고침({@code ?refresh=true}) 연타 및 동시 호출로부터 공공데이터 트래픽 한도를 보호하기 위한 최소 쿨다운(초) */
     private static final long MIN_FORCE_REFRESH_COOLDOWN_SECONDS = 15L;
+    /*
+     * [자바 문법] private static final
+     * [내가 지은 이름] KST_ZONE(한국 표준시 시간대), MIN_FORCE_REFRESH_COOLDOWN_SECONDS(새로고침 버튼 연타 공격 방어용 15초 쿨다운)
+     */
+
+    private static final Set<String> ESSENTIAL_UI_BED_KEYS = Set.of(
+            "hvec", "hvs01", "hv28", "hvs02", "hv60", "hvs60", "hv61", "hvs61",
+            "hv30", "hvs04", "hv29", "hvs03", "hv14", "hvs47", "hv13", "hvs46",
+            "hv16", "hvs49", "hv15", "hvs48", "hv27", "hvs59",
+            "hvicc", "hvs17", "hv35", "hvs18", "hv32", "hvs09", "hvncc", "hvs08",
+            "hv2", "hvs06", "hv34", "hvs15", "hvcc", "hvs11", "hv8", "hvs13",
+            "hv3", "hvs07", "hv6", "hvs12", "hvccc", "hvs16",
+            "hv36", "hvs19", "hv19", "hvs52", "hv21", "hvs53", "hv31", "hvs05",
+            "hv17", "hvs50", "hv18", "hvs51", "hv37", "hvs20", "hv33", "hvs10",
+            "hv9", "hvs14", "hv38", "hvs21", "hv39", "hvs23",
+            "hv22", "hvs54", "hv23", "hvs55", "hv24", "hvs56", "hv25", "hvs57", "hv26", "hvs58",
+            "hvgc", "hvs38", "hv4", "hv41", "hvs25", "hv40", "hvs24",
+            "hvoc", "hvs22", "hv42", "hvs26", "hv43", "hvs36",
+            "hvventiayn", "hvs30", "hvventisoayn", "hvs31", "hvincuayn", "hvs32",
+            "hvcrrtayn", "hvs33", "hvecmoayn", "hvs34", "hvhypoayn", "hvs35",
+            "hvoxyayn", "hvs37", "hvctayn", "hvs27", "hvmriayn", "hvs28",
+            "hvangioayn", "hvs29", "hvamyn", "hvidate", "dutytel3"
+    );
+    /*
+     * [스프링/자바 내장 함수] Set.of(...) : 중복 없는 불변 집합 생성 (이름 변경 불가)
+     * [내가 지은 이름] ESSENTIAL_UI_BED_KEYS (지도 신호등·증상 필터·응급실/입원실/장비 매트릭스에 실제 표시되는 핵심 코드 집합)
+     */
 
     private final NmcOpenApiClient openApiClient;
     private final HospitalClassifier classifier;
     private final Yonsei119Properties properties;
-
-    /** 수동 새로고침이나 초기 콜드 스타트 시 여러 스레드가 동시에 공공데이터 API를 중복 호출하지 못하게 막는 동기화 자물쇠 */
     private final Object cacheLock = new Object();
-
-    /** 백그라운드 비동기 갱신이 이미 돌고 있으면 중복 실행을 건너뛰기 위한 원자적 플래그 */
     private final AtomicBoolean backgroundRefreshInProgress = new AtomicBoolean(false);
-
-    /** 사용자 요청 스레드와 완전히 분리된 백그라운드 캐시 워머 전용 단일 데몬 스레드 */
     private final ExecutorService backgroundRefreshExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "yonsei119-cache-warmer");
         thread.setDaemon(true);
         return thread;
     });
-
-    /**
-     * 가장 최근에 완성된 전국 병원 통합 스냅샷 인메모리 캐시.
-     * {@code volatile} 키워드를 붙여 백그라운드 스레드가 새 스냅샷으로 갈아끼우는 즉시 모든 웹 요청 스레드가 최신본을 읽도록 보장합니다.
+    /*
+     * [자바 문법] private final
+     * [내가 지은 이름] openApiClient(공공데이터 수집기), classifier(종별 분류기), properties(설정 상자),
+     *   cacheLock(동시 갱신 방지 자물쇠), backgroundRefreshInProgress(백그라운드 중복 방지 스위치), backgroundRefreshExecutor(전용 워커 스레드)
      */
+
     private volatile EmergencySnapshotDto cachedSnapshot;
+    private volatile EmergencySnapshotDto cachedCompactSnapshot;
+    private volatile Map<String, HospitalDto> cachedHospitalById = Map.of();
+    private volatile Map<String, List<Map<String, String>>> cachedColdDatasets = Map.of();
     private volatile Instant cachedAt = Instant.EPOCH;
+    private volatile Instant coldCachedAt = Instant.EPOCH;
+    /*
+     * [자바 문법] private volatile : 멀티스레드 환경에서 백그라운드 워커가 새 스냅샷으로 교체하는 즉시 모든 웹 요청 스레드가 옛날 CPU 캐시 대신 최신 참조를 읽도록 강제하는 키워드임.
+     * [내가 지은 이름]
+     * - cachedSnapshot        : 전체 원본 태그가 포함된 마스터 스냅샷
+     * - cachedCompactSnapshot : 모바일 초기 로딩용 경량 스냅샷 (미리 만들어 두어 요청마다 재조립 비용 0)
+     * - cachedHospitalById    : GET /api/hospitals/{hpid} 조회 시 O(1) 즉시 반환용 해시 인덱스
+     * - cachedColdDatasets    : 6시간 주기로 재사용할 Cold 4종(list, basic, traumaList, traumaBasic) 원본 캐시
+     */
 
     public EmergencyDataService(
             NmcOpenApiClient openApiClient,
             HospitalClassifier classifier,
             Yonsei119Properties properties
     ) {
+    /*
+     * [자바 문법] public EmergencyDataService(...) : 스프링 의존성 주입(DI) 생성자임.
+     */
         this.openApiClient = openApiClient;
         this.classifier = classifier;
         this.properties = properties;
+        /*
+         * [핵심 실행 코드] 스프링이 조립해 준 싱글톤 부품 3개를 내 필드에 연결함.
+         */
     }
 
-    /**
-     * [메서드 역할 — 서버 부팅 직후 자동 사전 로딩(Cache Pre-warming)]
-     * Spring Boot 서버가 포트(8080) 개방을 마치자마자({@code ApplicationReadyEvent}) 자동 실행됩니다.
-     * (장고 {@code AppConfig.ready()}에서 백그라운드 워커를 깨우는 것과 유사합니다.)
-     * <p>
-     * [왜 필요한가요?]
-     * 첫 번째 방문자가 접속했을 때 7개 API를 그때서야 부르면 수 초를 기다려야 하지만,
-     * 서버가 켜지자마자 미리 백그라운드에서 받아두면 첫 방문자도 0.01초 만에 전국 병원을 확인할 수 있습니다!
-     * <p>
-     * [수정 시 영향] 끄고 싶다면 {@code application.yml}의 {@code yonsei119.nemc.auto-refresh-enabled: false}로 바꾸세요.
-     */
     @EventListener(ApplicationReadyEvent.class)
     public void warmUpCacheOnStartup() {
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @EventListener(ApplicationReadyEvent.class) : 8080 포트가 열리자마자 자동 호출됨.
+     * [내가 지은 이름] warmUpCacheOnStartup
+     */
         if (!properties.nemc().autoRefreshEnabled()) {
-            log.info("NEMC 자동 캐시 사전 로딩(Pre-warming)이 비활성화 상태입니다 (auto-refresh-enabled=false).");
+            log.info("NEMC 자동 캐시 사전 로딩(Pre-warming) 비활성화 상태입니다 (auto-refresh-enabled=false).");
             return;
         }
         log.info("서버 기동 완료 — 백그라운드에서 전국 응급의료기관 초기 캐시 사전 로딩(Pre-warming)을 시작합니다.");
         triggerAsyncBackgroundRefresh("서버 시작 직후 사전 로딩(Pre-warming)");
+        /*
+         * [핵심 원리] 서버 부팅 자체를 가로막지 않고 별도 데몬 스레드에서 Cold+Hot 7개 API를 미리 채워 둠.
+         */
     }
 
-    /**
-     * [메서드 역할 — 20분 주기 백그라운드 자동 갱신(@Scheduled)]
-     * {@code application.yml}의 {@code yonsei119.nemc.refresh-interval-ms}(기본 1,200,000ms = 20분) 간격으로 자동 실행됩니다.
-     * ({@code Yonsei119Application.java}의 {@code @EnableScheduling} 덕분에 별도 Celery 서버 없이 내장 스케줄러로 동작합니다!)
-     * <p>
-     * [수정 시 영향 및 예시]
-     * - 코드 수정 없이 {@code application.yml}의 {@code refresh-interval-ms: 600000}(10분)만 수정하면 주기가 바뀝니다.
-     * - 만약 매일 정각마다 돌리는 Cron 표현식 방식으로 바꾸고 싶다면 어노테이션을 아래처럼 교체할 수 있습니다:
-     *   예시(변경 후): {@code @Scheduled(cron = "0 0/15 * * * *", zone = "Asia/Seoul")} (매 15분 정각 실행)
-     */
     @Scheduled(
-            initialDelayString = "${yonsei119.nemc.refresh-interval-ms:1200000}",
-            fixedDelayString = "${yonsei119.nemc.refresh-interval-ms:1200000}"
+            initialDelayString = "${yonsei119.nemc.refresh-interval-ms:180000}",
+            fixedDelayString = "${yonsei119.nemc.refresh-interval-ms:180000}"
     )
     public void scheduledBackgroundRefresh() {
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @Scheduled(initialDelayString=..., fixedDelayString=...) :
+     *   이전 갱신이 끝난 시점으로부터 지정 시간(기본 180,000ms = 3분)마다 반복 실행함 (형제 옵션: fixedRateString, cron).
+     * [내가 지은 이름] scheduledBackgroundRefresh
+     */
         if (!properties.nemc().autoRefreshEnabled()) {
             return;
         }
-        triggerAsyncBackgroundRefresh("주기적 스케줄러(@Scheduled) 자동 갱신");
+        triggerAsyncBackgroundRefresh("주기적 스케줄러(@Scheduled) Hot/Cold 자동 갱신");
+        /*
+         * [핵심 원리] 3분마다 실행되지만, 내부에서 Cold 캐시(6시간)가 유효하면 Hot 실시간 3종 API만 빠르게 갱신함.
+         */
     }
 
-    /**
-     * [메서드 역할] 중복 실행 없이 백그라운드 스레드({@code yonsei119-cache-warmer})에 캐시 갱신 작업을 예약합니다.
-     */
     public void triggerAsyncBackgroundRefresh(String reason) {
+    /*
+     * [자바 문법] public void : 이미 백그라운드 갱신이 돌고 있으면 중복 실행을 건너뛰고, 비어 있을 때만 워커 스레드에 작업을 맡김.
+     * [내가 지은 이름] triggerAsyncBackgroundRefresh, reason(로그 출력용 갱신 사유)
+     */
         if (!backgroundRefreshInProgress.compareAndSet(false, true)) {
             return;
         }
@@ -166,57 +179,92 @@ public class EmergencyDataService {
                 backgroundRefreshInProgress.set(false);
             }
         }, backgroundRefreshExecutor);
+        /*
+         * [스프링/자바 내장 함수] backgroundRefreshInProgress.compareAndSet(false, true) : 원자적(Atomic)으로 false일 때만 true로 바꾸며 동시 중복 실행을 100% 차단함.
+         */
     }
 
-    /**
-     * [메서드 역할 — 컨트롤러가 호출하는 대표 진입 메서드!]
-     * 전국 응급의료기관 통합 스냅샷({@code EmergencySnapshotDto})을 반환합니다.
-     * <p>
-     * [코드의 경로성]
-     * - [어디서 왔는가 (Incoming)] : {@code EmergencyApiController.getHospitals()}, {@code rankDirections()}, {@code geocode()}
-     * - [어디로 가는가 (Outgoing)] :
-     *   - 캐시 히트 시: 메모리의 {@code cachedSnapshot}을 {@code asCachedSnapshot()}({@code cached = true})으로 감싸 0.01초 내 즉시 반환!
-     *   - 캐시 미스 또는 {@code forceRefresh = true}(화면 '새로고침' 클릭) 시: {@link #refreshCacheSynchronously(String, boolean, Instant)} 호출!
-     *
-     * @param forceRefresh {@code true}이면 기존 캐시를 무시하고 즉시 공공데이터포털에서 최신 병상 데이터를 새로 받아옵니다.
-     * @return 통합된 {@link EmergencySnapshotDto}
-     */
     public EmergencySnapshotDto getSnapshot(boolean forceRefresh) {
-        long ttlSeconds = Math.max(5L, properties.nemc().cacheTtlSeconds());
+    /*
+     * [자바 문법] public : 기존 호출부 및 단위 테스트 호환용 기본 스냅샷 조회 메서드임 (원본 전체 포함).
+     * [내가 지은 이름] getSnapshot, forceRefresh
+     */
+        return getSnapshot(forceRefresh, false);
+        /*
+         * [핵심 원리] compact=false로 위임하여 모든 필드가 담긴 전체 스냅샷을 반환함.
+         */
+    }
+
+    public EmergencySnapshotDto getSnapshot(boolean forceRefresh, boolean compact) {
+    /*
+     * [자바 문법] public : 강제 새로고침 여부(forceRefresh)와 경량 요약 모드 여부(compact)를 받아 스냅샷을 반환하는 대표 메서드임.
+     * [내가 지은 이름] getSnapshot(오버로딩 함수명), forceRefresh, compact
+     */
+        long hotTtlSeconds = Math.max(5L, properties.nemc().cacheTtlSeconds());
         Instant now = Instant.now();
 
-        EmergencySnapshotDto current = this.cachedSnapshot;
-        if (!forceRefresh && current != null) {
-            // Stale-While-Revalidate: TTL이 지났더라도 사용자는 기다리게 하지 않고 기존 캐시를 먼저 준 뒤 뒤에서 갱신!
-            if (now.isAfter(this.cachedAt.plusSeconds(ttlSeconds))) {
-                triggerAsyncBackgroundRefresh("TTL 경과에 따른 비동기 Stale-While-Revalidate 갱신");
+        EmergencySnapshotDto currentFull = this.cachedSnapshot;
+        if (!forceRefresh && currentFull != null) {
+            if (now.isAfter(this.cachedAt.plusSeconds(hotTtlSeconds))) {
+                triggerAsyncBackgroundRefresh("Hot TTL 경과에 따른 비동기 Stale-While-Revalidate 갱신");
             }
-            return asCachedSnapshot(current);
+            EmergencySnapshotDto target = compact && this.cachedCompactSnapshot != null
+                    ? this.cachedCompactSnapshot
+                    : currentFull;
+            return asCachedSnapshot(target);
         }
 
-        if (forceRefresh && current != null
+        if (forceRefresh && currentFull != null
                 && now.isBefore(this.cachedAt.plusSeconds(MIN_FORCE_REFRESH_COOLDOWN_SECONDS))) {
-            return asCachedSnapshot(current);
+            EmergencySnapshotDto target = compact && this.cachedCompactSnapshot != null
+                    ? this.cachedCompactSnapshot
+                    : currentFull;
+            return asCachedSnapshot(target);
         }
 
-        return refreshCacheSynchronously(
+        EmergencySnapshotDto refreshed = refreshCacheSynchronously(
                 forceRefresh ? "사용자 수동 새로고침 요청" : "최초 콜드 스타트 동기 수집",
                 forceRefresh,
                 now
         );
+        if (compact && this.cachedCompactSnapshot != null) {
+            return refreshed.cached() ? asCachedSnapshot(this.cachedCompactSnapshot) : this.cachedCompactSnapshot;
+        }
+        return refreshed;
+        /*
+         * [핵심 원리 — Stale-While-Revalidate 패턴]
+         * - 3분(hotTtlSeconds)이 지났더라도 손님(브라우저)을 수 초 동안 빈 화면으로 기다리게 하지 않고,
+         *   일단 메모리에 있는 직전 스냅샷을 0.01초 만에 내어준 뒤 주방 뒤편(triggerAsyncBackgroundRefresh)에서 조용히 새 데이터를 받아 갈아끼움.
+         */
     }
 
-    /**
-     * [메서드 역할]
-     * 동기화 블록({@code synchronized (cacheLock)}) 안에서 안전하게 신규 스냅샷을 만들어 {@code cachedSnapshot}을 교체합니다.
-     * 동시 요청 병합(Request Coalescing)과 최소 쿨다운을 적용해 중복 외부 API 호출을 차단하며,
-     * 외부 공공데이터포털 전체 장애로 빈 목록이 오더라도 기존 {@code current} 캐시를 날리지 않고 보존합니다!
+    public HospitalDto getHospitalById(String hpid) {
+    /*
+     * [자바 문법] public : 기관 고유코드(HPID, 예: "A2200001")로 특정 병원의 전체 원본 상세 정보(HospitalDto)를 1ms 이내에 찾아 반환함.
+     * [내가 지은 이름] getHospitalById(함수명), hpid(조회할 병원 코드)
      */
+        if (hpid == null || hpid.isBlank()) {
+            return null;
+        }
+        String normalizedId = hpid.trim();
+        if (this.cachedSnapshot == null) {
+            getSnapshot(false, false);
+        }
+        return this.cachedHospitalById.get(normalizedId);
+        /*
+         * [스프링/자바 내장 함수] Map.get(...) : 530개 리스트를 처음부터 뒤지지 않고 해시 인덱스로 단 한 번에(O(1)) 꺼냄.
+         */
+    }
+
     private EmergencySnapshotDto refreshCacheSynchronously(
             String reason,
             boolean respectForceCooldown,
             Instant requestEnteredAt
     ) {
+    /*
+     * [자바 문법] private : synchronized 잠금 블록 안에서 중복 외부 호출 없이 안전하게 신규 스냅샷을 조립해 교체함.
+     * [내가 지은 이름] refreshCacheSynchronously, reason, respectForceCooldown, requestEnteredAt
+     */
         synchronized (cacheLock) {
             EmergencySnapshotDto current = this.cachedSnapshot;
             Instant currentCachedAt = this.cachedAt;
@@ -232,10 +280,11 @@ public class EmergencyDataService {
 
             long startMs = System.currentTimeMillis();
             try {
-                EmergencySnapshotDto fresh = buildFreshSnapshot();
+                boolean forceAll = respectForceCooldown;
+                EmergencySnapshotDto fresh = buildFreshSnapshot(forceAll);
                 long elapsedMs = System.currentTimeMillis() - startMs;
                 if (!fresh.hospitals().isEmpty() || current == null) {
-                    this.cachedSnapshot = fresh;
+                    storeSnapshotIndexes(fresh);
                     this.cachedAt = Instant.now();
                     log.info("응급의료기관 캐시 갱신 완료 [사유: {}] — 총 {}개 기관 ({}ms 소요)",
                             reason, fresh.totalCount(), elapsedMs);
@@ -251,43 +300,135 @@ public class EmergencyDataService {
                 throw ex;
             }
         }
+        /*
+         * [자바 문법] synchronized (cacheLock) { ... } : 동시에 100명의 사용자가 접속해도 단 1개의 스레드만 공공데이터 API를 호출하고 나머지 99명은 완성된 캐시를 즉시 공유받음.
+         */
     }
 
-    /** 단위/통합 테스트에서 초기 캐시 스냅샷 상태(부분·전체 장애 폴백 검증용)를 설정합니다. */
-    public void setCachedSnapshotForTest(EmergencySnapshotDto snapshot) {
-        synchronized (cacheLock) {
-            this.cachedSnapshot = snapshot;
-            this.cachedAt = snapshot != null ? Instant.now() : Instant.EPOCH;
+    private void storeSnapshotIndexes(EmergencySnapshotDto fullSnapshot) {
+    /*
+     * [자바 문법] private void : 마스터 스냅샷이 완성될 때 경량 목록 스냅샷(cachedCompactSnapshot)과 HPID 조회 인덱스(cachedHospitalById)를 한 번에 미리 구축함.
+     * [내가 지은 이름] storeSnapshotIndexes, fullSnapshot
+     */
+        if (fullSnapshot == null) {
+            this.cachedSnapshot = null;
+            this.cachedCompactSnapshot = null;
+            this.cachedHospitalById = Map.of();
+            return;
         }
+
+        Map<String, HospitalDto> byId = new LinkedHashMap<>(fullSnapshot.hospitals().size());
+        List<HospitalDto> compactList = new ArrayList<>(fullSnapshot.hospitals().size());
+        for (HospitalDto hospital : fullSnapshot.hospitals()) {
+            if (hospital.id() != null && !hospital.id().isBlank()) {
+                byId.put(hospital.id(), hospital);
+            }
+            compactList.add(hospital.toCompactSummary(ESSENTIAL_UI_BED_KEYS));
+        }
+
+        this.cachedSnapshot = fullSnapshot;
+        this.cachedHospitalById = Map.copyOf(byId);
+        this.cachedCompactSnapshot = new EmergencySnapshotDto(
+                fullSnapshot.updatedAt(),
+                fullSnapshot.cached(),
+                fullSnapshot.totalCount(),
+                fullSnapshot.tertiaryCount(),
+                fullSnapshot.regionalCount(),
+                fullSnapshot.medicalCount(),
+                fullSnapshot.traumaCount(),
+                fullSnapshot.otherCount(),
+                fullSnapshot.sources(),
+                fullSnapshot.endpointCounts(),
+                List.copyOf(compactList)
+        );
+        /*
+         * [핵심 성능 원리] 갱신 시점(3분에 1번)에 미리 경량본과 해시맵을 만들어 두므로, 초당 수백 번 들어오는 사용자 조회 요청에서는 CPU 연산과 객체 할당이 거의 0에 수렴함.
+         */
     }
 
-    /** 서버 종료 시 백그라운드 데몬 스레드 풀을 깔끔하게 정리합니다. */
+    public void setCachedSnapshotForTest(EmergencySnapshotDto snapshot) {
+    /*
+     * [자바 문법] public void : JUnit 통합 테스트에서 장애 폴백 시나리오를 재현하기 위해 초기 캐시를 주입하는 테스트 전용 메서드임.
+     * [내가 지은 이름] setCachedSnapshotForTest, snapshot
+     */
+        synchronized (cacheLock) {
+            storeSnapshotIndexes(snapshot);
+            this.cachedAt = snapshot != null ? Instant.now() : Instant.EPOCH;
+            if (snapshot == null) {
+                this.cachedColdDatasets = Map.of();
+                this.coldCachedAt = Instant.EPOCH;
+            }
+        }
+        /*
+         * [핵심 원리] 테스트 종료 후 null을 넘기면 Cold 캐시까지 깨끗하게 초기화되어 다른 테스트에 영향을 주지 않음.
+         */
+    }
+
     @PreDestroy
     public void shutdown() {
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @PreDestroy
+     * [내가 지은 이름] shutdown
+     */
         backgroundRefreshExecutor.shutdownNow();
+        /*
+         * [스프링/자바 내장 함수] backgroundRefreshExecutor.shutdownNow() (이름 변경 불가)
+         */
     }
 
-    /**
-     * [메서드 역할]
-     * {@code NmcOpenApiClient.fetchAllDatasets()}로 7개 XML 데이터를 받아온 뒤 {@link #mergeDatasetsIntoSnapshot}으로 병합합니다.
-     */
     public EmergencySnapshotDto buildFreshSnapshot() {
-        Map<String, List<Map<String, String>>> rawDatasets = openApiClient.fetchAllDatasets();
-        return mergeDatasetsIntoSnapshot(rawDatasets);
+    /*
+     * [자바 문법] public : 전체 강제 수집(Cold+Hot) 기본 오버로드 메서드임.
+     * [내가 지은 이름] buildFreshSnapshot
+     */
+        return buildFreshSnapshot(true);
+        /*
+         * [핵심 원리] 명시적으로 전체 빌드를 요청한 경우 Cold/Hot 모두 최신 수집함.
+         */
     }
 
-    /**
-     * [메서드 역할 — 7종 OpenAPI 데이터 교차 병합(Cross-Merge) 엔진]
-     * 각각 따로 내려오는 7개 API 결과({@code list}, {@code basic}, {@code beds}, {@code messages}, {@code severe}, {@code traumaList}, {@code traumaBasic})를
-     * 모든 병원의 공통 열쇠인 **기관코드({@code hpid}, 예: {@code "A2200001"})** 기준으로 레고 블록처럼 하나의 {@code HospitalDto}로 조립합니다.
-     * (파이썬 Pandas의 {@code df_list.merge(df_beds, on="hpid", how="left")} 조인 연산을 순수 Java Map으로 초고속 처리하는 부분입니다!)
-     * <p>
-     * [코드의 경로성]
-     * - [입력] {@code NmcOpenApiClient.fetchAllDatasets()} 결과 (또는 {@code Yonsei119BackendTests.testDatasetCrossMerge()}의 테스트 데이터)
-     * - [내부 참조] {@code HospitalClassifier.isRegional()}, {@code HospitalClassifier.classify()} 호출
-     * - [출력] {@code EmergencySnapshotDto} ({@code dto/EmergencySnapshotDto.java})
+    public EmergencySnapshotDto buildFreshSnapshot(boolean forceColdRefresh) {
+    /*
+     * [자바 문법] public : Cold 마스터 데이터(6시간 캐시)가 아직 유효하면 재사용하고, Hot 실시간 3종만 새로 수집해 병합하는 이원화 빌더임.
+     * [내가 지은 이름] buildFreshSnapshot, forceColdRefresh
      */
+        Instant now = Instant.now();
+        long coldTtlSeconds = properties.nemc().effectiveColdCacheTtlSeconds();
+        boolean hasValidColdCache = !forceColdRefresh
+                && !this.cachedColdDatasets.isEmpty()
+                && !this.cachedColdDatasets.getOrDefault("list", List.of()).isEmpty()
+                && now.isBefore(this.coldCachedAt.plusSeconds(coldTtlSeconds));
+
+        Map<String, List<Map<String, String>>> combinedRaw = new LinkedHashMap<>();
+        if (hasValidColdCache) {
+            combinedRaw.putAll(this.cachedColdDatasets);
+            combinedRaw.putAll(openApiClient.fetchHotDatasets());
+        } else {
+            Map<String, List<Map<String, String>>> allFetched = openApiClient.fetchAllDatasets();
+            combinedRaw.putAll(allFetched);
+            if (!allFetched.getOrDefault("list", List.of()).isEmpty()) {
+                Map<String, List<Map<String, String>>> nextCold = new LinkedHashMap<>();
+                for (String coldKey : NmcOpenApiClient.COLD_ENDPOINTS.keySet()) {
+                    nextCold.put(coldKey, allFetched.getOrDefault(coldKey, List.of()));
+                }
+                this.cachedColdDatasets = Map.copyOf(nextCold);
+                this.coldCachedAt = now;
+            }
+        }
+        return mergeDatasetsIntoSnapshot(combinedRaw);
+        /*
+         * [Hot / Cold 수집 분기 흐름도]
+         *   hasValidColdCache == true (평상시 3분 주기 갱신)
+         *   ├── Cold 4종(list, basic, traumaList, traumaBasic) : 메모리 캐시 즉시 재사용 (API 호출 0회)
+         *   └── Hot  3종(beds, messages, severe)               : 공공데이터포털 실시간 호출 (API 호출 3회)
+         */
+    }
+
     public EmergencySnapshotDto mergeDatasetsIntoSnapshot(Map<String, List<Map<String, String>>> rawDatasets) {
+    /*
+     * [자바 문법] public : 7개 데이터셋을 기관코드(hpid) 단일 열쇠로 교차 병합(Cross-Merge)하여 최종 스냅샷 DTO를 완성함.
+     * [내가 지은 이름] mergeDatasetsIntoSnapshot(함수명), rawDatasets(7종 원시 맵 데이터)
+     */
         List<Map<String, String>> listItems = rawDatasets.getOrDefault("list", List.of());
         List<Map<String, String>> basicItems = rawDatasets.getOrDefault("basic", List.of());
         List<Map<String, String>> bedItems = rawDatasets.getOrDefault("beds", List.of());
@@ -296,7 +437,6 @@ public class EmergencyDataService {
         List<Map<String, String>> traumaListItems = rawDatasets.getOrDefault("traumaList", List.of());
         List<Map<String, String>> traumaBasicItems = rawDatasets.getOrDefault("traumaBasic", List.of());
 
-        // 빠른 O(1) 조회를 위해 각 리스트를 `hpid -> 데이터` 해시맵으로 인덱싱합니다 (중첩 루프 O(N^2) 방지)
         Map<String, Map<String, String>> listById = groupSingleById(listItems);
         Map<String, Map<String, String>> basicById = groupSingleById(basicItems);
         Map<String, Map<String, String>> bedsById = groupSingleById(bedItems);
@@ -305,17 +445,7 @@ public class EmergencyDataService {
         Map<String, Map<String, String>> traumaListById = groupSingleById(traumaListItems);
         Map<String, Map<String, String>> traumaBasicById = groupSingleById(traumaBasicItems);
 
-        // 부분 장애 방어: 특정 API 하나만 일시적으로 빈 리스트를 반환하더라도 직전 캐시의 기관별 필드를 유지합니다.
-        Map<String, HospitalDto> previousById = new LinkedHashMap<>();
-        EmergencySnapshotDto previousSnapshot = this.cachedSnapshot;
-        if (previousSnapshot != null && previousSnapshot.hospitals() != null) {
-            for (HospitalDto prevHospital : previousSnapshot.hospitals()) {
-                if (prevHospital.id() != null && !prevHospital.id().isBlank()) {
-                    previousById.put(prevHospital.id(), prevHospital);
-                }
-            }
-        }
-
+        Map<String, HospitalDto> previousById = this.cachedHospitalById;
         Set<String> uniqueIds = new LinkedHashSet<>(listById.keySet());
         uniqueIds.addAll(traumaListById.keySet());
         if (uniqueIds.isEmpty() && !previousById.isEmpty()) {
@@ -370,7 +500,6 @@ public class EmergencyDataService {
                 messages = prev.messages();
             }
 
-            // 위도·경도 추출 (`wgs84lat`/`wgs84lon` 우선, 없으면 `latitude`/`longitude` 보조 태그 확인)
             double lat = parseCoordinate(
                     firstNonBlank(
                             listFields.get("wgs84lat"),
@@ -395,8 +524,7 @@ public class EmergencyDataService {
                 lng = prev.lng();
             }
 
-            // 대한민국 영역 밖이거나 (0, 0) 오류 좌표인 기관은 지도 마커 왜곡 방지를 위해 건너뜁니다.
-            if (!isValidKoreaCoordinate(lat, lng)) {
+            if (!GeoUtils.isValidKoreaCoordinate(lat, lng)) {
                 continue;
             }
 
@@ -432,7 +560,6 @@ public class EmergencyDataService {
                 classificationFields.put("dutyaddr", resolvedDutyAddr);
             }
 
-            // `list`·`basic`이 동시에 빈 장애 상황에서는 직전 정상 스냅샷(`prev`)의 권역/종별 등급을 보존합니다.
             boolean upstreamIdentityMissing = listItems.isEmpty() && basicItems.isEmpty() && traumaListItems.isEmpty();
             boolean regional = (upstreamIdentityMissing && prev != null)
                     ? (prev.regional() || classifier.isRegional(classificationFields))
@@ -484,10 +611,10 @@ public class EmergencyDataService {
         endpointCounts.put("traumaBasic", traumaBasicItems.size());
 
         Map<String, Boolean> sources = new LinkedHashMap<>();
-        sources.put("list", !listItems.isEmpty());
-        sources.put("basic", !basicItems.isEmpty());
+        sources.put("list", !listItems.isEmpty() || !previousById.isEmpty());
+        sources.put("basic", !basicItems.isEmpty() || !previousById.isEmpty());
         sources.put("beds", !bedItems.isEmpty());
-        sources.put("messages", rawDatasets.containsKey("messages"));
+        sources.put("messages", rawDatasets.containsKey("messages") && (!messageItems.isEmpty() || !bedItems.isEmpty()));
         sources.put("severe", !severeItems.isEmpty());
         sources.put("traumaList", !traumaListItems.isEmpty());
         sources.put("traumaBasic", !traumaBasicItems.isEmpty());
@@ -508,37 +635,57 @@ public class EmergencyDataService {
                 Map.copyOf(endpointCounts),
                 List.copyOf(hospitals)
         );
+        /*
+         * [7종 데이터 교차 병합(Cross-Merge) 구조 예시]
+         *   list("A2200001") + basic("A2200001") + beds("A2200001") + messages("A2200001") + severe("A2200001") + trauma("A2200001")
+         *   └──> HospitalDto(id="A2200001", name="연세대학교원주세브란스기독병원", regional=true, erBeds="-2", ...)
+         *   (좌표가 0.0, 0.0 등 대한민국 영역 밖인 오류 데이터는 GeoUtils.isValidKoreaCoordinate에서 자동 제외됨)
+         */
     }
 
-    /** 1:1 관계 데이터({@code list}, {@code basic}, {@code beds}, {@code severe})를 {@code hpid} 키 기준 단일 맵으로 묶는 헬퍼 */
     private static Map<String, Map<String, String>> groupSingleById(List<Map<String, String>> items) {
+    /*
+     * [자바 문법] private static : 1:1 데이터 리스트를 hpid -> Map 해시 사전으로 인덱싱하여 O(N^2) 중첩 탐색을 O(1)로 줄임.
+     * [내가 지은 이름] groupSingleById, items
+     */
         Map<String, Map<String, String>> map = new LinkedHashMap<>();
         for (Map<String, String> item : items) {
             String rawId = item.get("hpid");
             if (rawId == null || rawId.isBlank()) {
                 continue;
             }
-            String id = rawId.trim();
-            map.put(id, item);
+            map.put(rawId.trim(), item);
         }
         return map;
+        /*
+         * [스프링/자바 내장 함수] item.get("hpid"), rawId.trim(), map.put(...) (이름 변경 불가)
+         */
     }
 
-    /** 1:N 관계 데이터({@code messages} — 한 병원이 여러 개의 응급실 공지 메시지를 올릴 수 있음)를 {@code hpid} 키 기준 리스트로 묶는 헬퍼 */
     private static Map<String, List<Map<String, String>>> groupMultiById(List<Map<String, String>> items) {
+    /*
+     * [자바 문법] private static : 한 병원이 여러 건의 공지를 올리는 1:N 메시지 데이터를 hpid -> List<Map>으로 묶음.
+     * [내가 지은 이름] groupMultiById, items
+     */
         Map<String, List<Map<String, String>>> map = new LinkedHashMap<>();
         for (Map<String, String> item : items) {
             String rawId = item.get("hpid");
             if (rawId == null || rawId.isBlank()) {
                 continue;
             }
-            String id = rawId.trim();
-            map.computeIfAbsent(id, k -> new ArrayList<>()).add(Map.copyOf(item));
+            map.computeIfAbsent(rawId.trim(), k -> new ArrayList<>()).add(Map.copyOf(item));
         }
         return map;
+        /*
+         * [스프링/자바 내장 함수] map.computeIfAbsent(키, 생성람다) : 해당 병원 키가 처음 등장하면 빈 ArrayList를 자동 생성해 넣고 이어서 추가함 (이름 변경 불가).
+         */
     }
 
     private static double parseCoordinate(String text) {
+    /*
+     * [자바 문법] private static double : 문자열 좌표를 실수(double)로 안전하게 파싱하고, 실패 시 Double.NaN을 반환함.
+     * [내가 지은 이름] parseCoordinate, text
+     */
         if (text == null || text.isBlank()) {
             return Double.NaN;
         }
@@ -547,16 +694,16 @@ public class EmergencyDataService {
         } catch (NumberFormatException ex) {
             return Double.NaN;
         }
-    }
-
-    private static boolean isValidKoreaCoordinate(double lat, double lng) {
-        return Double.isFinite(lat)
-                && Double.isFinite(lng)
-                && lat >= MIN_LAT && lat <= MAX_LAT
-                && lng >= MIN_LNG && lng <= MAX_LNG;
+        /*
+         * [스프링/자바 내장 함수] Double.parseDouble(...), Double.NaN (형제 함수: Integer.parseInt, Long.parseLong)
+         */
     }
 
     private static String firstNonBlank(String... candidates) {
+    /*
+     * [자바 문법] private static, 가변 인자(String... candidates : 개수 제한 없이 여러 후보 문자열을 나열해 전달 가능)
+     * [내가 지은 이름] firstNonBlank, candidates
+     */
         if (candidates == null) {
             return "";
         }
@@ -566,17 +713,30 @@ public class EmergencyDataService {
             }
         }
         return "";
+        /*
+         * [핵심 원리] 여러 XML 소스 후보 값 중 비어 있지 않은 첫 번째 유효 텍스트를 찾아 반환함.
+         */
     }
 
     private static String displayValue(String value) {
+    /*
+     * [자바 문법] private static : 값이 비어 있으면 "미정보", 있으면 공백 제거 문자열을 반환함.
+     * [내가 지은 이름] displayValue, value
+     */
         if (value == null || value.isBlank()) {
             return "미정보";
         }
         return value.trim();
+        /*
+         * [스프링/자바 내장 함수] value.isBlank(), value.trim() (이름 변경 불가)
+         */
     }
 
-    /** 캐시에서 꺼내 줄 때 {@code cached} 플래그만 {@code true}로 표시한 복제 DTO를 생성합니다. */
     private static EmergencySnapshotDto asCachedSnapshot(EmergencySnapshotDto snapshot) {
+    /*
+     * [자바 문법] private static : 기존 불변 스냅샷에서 cached 플래그만 true로 바꾼 새 DTO를 반환함.
+     * [내가 지은 이름] asCachedSnapshot, snapshot
+     */
         return new EmergencySnapshotDto(
                 snapshot.updatedAt(),
                 true,
@@ -590,5 +750,8 @@ public class EmergencyDataService {
                 snapshot.endpointCounts(),
                 snapshot.hospitals()
         );
+        /*
+         * [핵심 원리] 불변 리스트(hospitals) 참조 자체는 그대로 재사용하므로 메모리 복사 비용 없이 1마이크로초 만에 생성됨.
+         */
     }
 }

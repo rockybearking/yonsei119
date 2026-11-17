@@ -5,12 +5,15 @@ import com.yonsei119.dto.DirectionsResponseDto;
 import com.yonsei119.dto.EmergencySnapshotDto;
 import com.yonsei119.dto.FrontendConfigDto;
 import com.yonsei119.dto.GeocodeResponseDto;
+import com.yonsei119.dto.HospitalDto;
 import com.yonsei119.dto.HospitalEtaRankDto;
 import com.yonsei119.dto.ReverseGeocodeResponseDto;
 import com.yonsei119.service.EmergencyDataService;
 import com.yonsei119.service.NaverDirectionsService;
+import com.yonsei119.service.NaverGeocodingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,99 +22,90 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-/**
- * ============================================================================
- * [클래스 역할]
- * 프론트엔드 웹 애플리케이션({@code frontend/app.js})이 {@code fetch('/api/...')}로 보내는 모든 HTTP 요청을
- * 가장 먼저 받아서 알맞은 서비스({@code service/*.java})로 전달하고, 결과를 JSON으로 응답하는
- * 백엔드의 **관문(REST API Controller)** 클래스입니다.
- * <p>
- * [파이썬 장고(Django) 비유 — 백엔드 입문자 핵심 포인트!]
- * - 장고에서는 URL 주소를 연결하는 **{@code urls.py}** 파일과, 요청을 받아 처리하는 **{@code views.py}** 파일이 나뉘어 있습니다.
- *   - 장고 {@code urls.py} 예시: {@code path("api/hospitals", views.get_hospitals)}
- *   - 장고 {@code views.py} 예시: {@code def get_hospitals(request): refresh = request.GET.get("refresh", "false") ... return JsonResponse(...)}
- * - Spring Boot에서는 클래스 위의 {@code @RequestMapping("/api")}와 메서드 위의 {@code @GetMapping("/hospitals")} 어노테이션이
- *   **장고의 {@code urls.py} + {@code views.py} 역할을 한 곳에서 직관적으로 수행**합니다!
- * - 또한 컨트롤러 안에 복잡한 계산 로직을 직접 적지 않고 {@code EmergencyDataService}, {@code NaverDirectionsService}를 호출하는데,
- *   이는 장고 실무에서 {@code views.py}를 얇게 유지하고 비즈니스 로직을 {@code services.py}로 분리하는 설계 패턴과 정확히 같습니다.
- * <p>
- * [전체 API 경로성 요약표 (프론트엔드 ↔ 컨트롤러 ↔ 서비스 ↔ 반환 DTO)]
- * 1. {@code GET /api/health}          : Render 배포 헬스체크 / 모니터링 → 자체 {@code Map} JSON 반환
- * 2. {@code GET /api/config}          : 초기 지도 인증키·기본위치 조회 → {@code Yonsei119Properties} → {@link FrontendConfigDto}
- * 3. {@code GET /api/hospitals}       : {@code app.js:fetchData()} → {@code EmergencyDataService.getSnapshot()} → {@link EmergencySnapshotDto}
- * 4. {@code GET /api/directions}      : {@code app.js:requestDirections()} / {@code refreshActiveRoute()} → {@code NaverDirectionsService.getDrivingRoute()} → {@link DirectionsResponseDto}
- * 5. {@code GET /api/directions/rank} : {@code app.js:loadEtaRanking()} → {@code NaverDirectionsService.rankHospitalsByDrivingTime()} → {@code List<HospitalEtaRankDto>}
- * 6. {@code GET /api/reverse-geocode} : {@code app.js:updateOriginAddress()} → {@code NaverDirectionsService.reverseGeocode()} → {@link ReverseGeocodeResponseDto}
- * 7. {@code GET /api/geocode}         : {@code app.js:geocodeAndMoveOrigin()} → {@code NaverDirectionsService.geocode()} → {@link GeocodeResponseDto}
- * <p>
- * [수정 시 영향 및 예시]
- * - 만약 모든 API 주소 앞에 버전({@code /api/v1/...})을 붙이고 싶다면:
- *   예시(변경 전): {@code @RequestMapping("/api")}
- *   예시(변경 후): {@code @RequestMapping("/api/v1")}
- *   (주의: 이렇게 바꾸면 프론트엔드 {@code frontend/app.js}의 {@code fetch('/api/...')} 경로들도 모두 {@code /api/v1/...}로 함께 맞춰주어야 합니다!)
- * ============================================================================
+/*
+ * [자바 문법] package, import : 브라우저의 fetch('/api/...') 주문을 가장 먼저 받는 REST API 카운터 패키지 선언 및 스프링 웹 도구 불러오기임.
+ * [자바/스프링/라이브러리 내장 도구(타입)]
+ * - ResponseEntity<T> : HTTP 상태 코드(200 OK, 404 Not Found 등)와 응답 데이터(JSON 도시락)를 함께 포장해 보내는 공식 봉투 타입임 (이름 변경 불가).
+ * - Instant, Map, LinkedHashMap, List : 현재 시각 기록 및 JSON 구조 생성용 표준 타입임 (이름 변경 불가).
+ * [스프링/라이브러리 내장 어노테이션]
+ * - @RestController (출처: org.springframework.web.bind.annotation) : 모든 메서드의 반환 객체를 자동으로 JSON 문자열로 직렬화해 응답하는 REST 전용 컨트롤러 스위치임
+ *   (형제 어노테이션: HTML 뷰 템플릿을 반환하는 @Controller, 비즈니스 로직 @Service, 데이터 저장소 @Repository).
+ * - @RequestMapping("/api") (출처: org.springframework.web.bind.annotation) : 이 클래스 안의 모든 URL 앞에 공통으로 "/api" 접두사를 붙여 줌.
+ * - @GetMapping (출처: org.springframework.web.bind.annotation) : HTTP GET 조회 요청을 연결함
+ *   (목적별 형제 어노테이션: 생성 @PostMapping, 전체수정 @PutMapping, 일부수정 @PatchMapping, 삭제 @DeleteMapping).
+ * - @RequestParam, @PathVariable : 주소창의 쿼리스트링(?refresh=true)과 경로 변수(/hospitals/{hpid})를 자바 변수로 꺼내 줌.
  */
+
 @RestController
 @RequestMapping("/api")
 public class EmergencyApiController {
+/*
+ * [스프링/라이브러리 내장 어노테이션] @RestController, @RequestMapping("/api")
+ * [자바 문법] public class
+ * [내가 지은 이름] EmergencyApiController : 연세 119 시스템의 8개 핵심 REST API 엔드포인트를 총괄하는 관문 컨트롤러 클래스임.
+ * [핵심 원리 & 식당 카운터 비유]
+ * - 손님(프론트엔드 JS)이 카운터(/api/...)에 주문서를 내밀면, 카운터 직원은 직접 요리하지 않고
+ *   응급데이터 주방장(EmergencyDataService), 길찾기 주방장(NaverDirectionsService), 주소번역 주방장(NaverGeocodingService)에게 전달한 뒤
+ *   완성된 요리(DTO)를 깔끔한 JSON 도시락(ResponseEntity)에 담아 손님에게 내어줌.
+ */
 
-    /** {@code application.yml} 설정값을 담고 있는 불변 프로퍼티 객체 ({@code config/Yonsei119Properties.java}에서 주입됨) */
     private final Yonsei119Properties properties;
-
-    /** 전국 응급실 공공데이터 수집·병합·캐싱 담당 서비스 ({@code service/EmergencyDataService.java}에서 주입됨) */
     private final EmergencyDataService emergencyDataService;
-
-    /** 네이버 자동차 경로탐색(Directions 5/15) 및 지오코딩 담당 서비스 ({@code service/NaverDirectionsService.java}에서 주입됨) */
     private final NaverDirectionsService naverDirectionsService;
-
-    /**
-     * [생성자 역할 — 의존성 주입(Dependency Injection, DI)]
-     * Spring이 서버 시작 시 미리 만들어 둔 싱글톤(Singleton) 객체 3개를 이 컨트롤러에 자동으로 꽂아줍니다.
-     * (파이썬에서 직접 {@code EmergencyDataService()}를 매번 {@code new}로 생성하지 않고 공용 인스턴스를 주입받는 구조입니다.)
+    private final NaverGeocodingService naverGeocodingService;
+    /*
+     * [자바 문법] private final : 외부에서 임의 변경할 수 없고 생성 시점에 한 번만 꽂히는 안전한 상자 선언임.
+     * [내가 지은 이름]
+     * - 대문자 시작 타입명(설계도): Yonsei119Properties, EmergencyDataService, NaverDirectionsService, NaverGeocodingService
+     * - 소문자 시작 변수명(실제 상자): properties, emergencyDataService, naverDirectionsService, naverGeocodingService
      */
+
     public EmergencyApiController(
             Yonsei119Properties properties,
             EmergencyDataService emergencyDataService,
-            NaverDirectionsService naverDirectionsService
+            NaverDirectionsService naverDirectionsService,
+            NaverGeocodingService naverGeocodingService
     ) {
+    /*
+     * [자바 문법] public EmergencyApiController(...) : 스프링이 서버 부팅 시 4개의 싱글톤 객체를 자동으로 꽂아주는 생성자(생성자 주입 DI)임.
+     */
         this.properties = properties;
         this.emergencyDataService = emergencyDataService;
         this.naverDirectionsService = naverDirectionsService;
+        this.naverGeocodingService = naverGeocodingService;
+        /*
+         * [핵심 실행 코드] 전달받은 4개의 핵심 부품을 컨트롤러 멤버 변수에 단단히 연결함.
+         */
     }
 
-    /**
-     * [API 1] {@code GET /api/health} — 서버 생존 여부 확인(Health Check) 엔드포인트
-     * <p>
-     * [코드의 경로성]
-     * - [어디서 호출하는가 (Incoming)] : Render 클라우드 헬스체커, 브라우저 직접 접속, {@code Yonsei119BackendTests.healthEndpointReturnsUp()}
-     * - [어디로 가는가 (Outgoing)] : 별도 서비스 호출 없이 서버 현재 시각과 Java 버전을 담아 즉시 HTTP 200 JSON으로 반환
-     * <p>
-     * [수정 시 영향 및 예시]
-     * - 응답 JSON에 현재 캐시된 병원 수({@code cachedHospitalCount})를 추가로 보여주고 싶다면:
-     *   {@code body.put("cachedHospitalCount", emergencyDataService.getSnapshot(false).totalCount());} 한 줄을 추가하면 됩니다.
-     */
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @GetMapping("/health") -> 최종 URL: GET /api/health (형제: @PostMapping, @PutMapping, @DeleteMapping)
+     * [자바/스프링/라이브러리 내장 도구(타입)] ResponseEntity<Map<String, Object>> (이름 변경 불가)
+     * [내가 지은 이름] health(함수명), "/health"(하위 경로)
+     */
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "UP");
         body.put("service", "yonsei119-backend");
         body.put("timestamp", Instant.now().toString());
         body.put("javaVersion", Runtime.version().toString());
         return ResponseEntity.ok(body);
+        /*
+         * [스프링/자바 내장 함수] ResponseEntity.ok(body) : HTTP 200 OK 상태 코드와 함께 JSON 응답을 반환함
+         *   (형제 함수: ResponseEntity.notFound().build(), ResponseEntity.badRequest().body(...), ResponseEntity.status(500).body(...)).
+         * [응답 JSON 예시]
+         *   GET http://localhost:8080/api/health
+         *   └──> { "status": "UP", "service": "yonsei119-backend", "timestamp": "2026-11-17T09:30:00Z", "javaVersion": "17.0.21..." }
+         */
     }
 
-    /**
-     * [API 2] {@code GET /api/config} — 프론트엔드 공개 환경설정 조회 엔드포인트
-     * <p>
-     * [코드의 경로성]
-     * - [어디서 호출하는가 (Incoming)] : 프론트엔드 초기화/점검 또는 {@code Yonsei119BackendTests.configEndpointExposesPublicClientIdOnly()}
-     * - [어디를 참조하는가 (Outgoing)] :
-     *   {@code application.yml} → {@code config/Yonsei119Properties.java} → {@code dto/FrontendConfigDto.java}로 변환 후 JSON 반환
-     * - [보안 핵심] : {@code properties.naver().clientSecret()}은 절대 담지 않고 공개용 {@code clientId}와 {@code darkStyleId}만 내려보냅니다.
-     */
     @GetMapping("/config")
     public ResponseEntity<FrontendConfigDto> getConfig() {
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @GetMapping("/config") -> 최종 URL: GET /api/config
+     * [내가 지은 이름] FrontendConfigDto(반환 DTO 타입), getConfig(함수명)
+     */
         FrontendConfigDto config = new FrontendConfigDto(
                 properties.naver().clientId(),
                 properties.naver().darkStyleId(),
@@ -120,50 +114,58 @@ public class EmergencyApiController {
                 properties.defaultOrigin().label()
         );
         return ResponseEntity.ok(config);
+        /*
+         * [보안 & 아키텍처 핵심 원리]
+         * - 프론트엔드가 이 API에서 naverClientId와 naverDarkStyleId를 받아 동적으로 네이버 지도 SDK를 검증·로드하므로,
+         *   HTML 하드코딩 없이 환경변수(.env) 하나로 백엔드·프론트엔드 지도 키가 완벽히 통일됨 (clientSecret은 절대 미포함).
+         */
     }
 
-    /**
-     * [API 3] {@code GET /api/hospitals?refresh=false|true} — 전국 응급의료기관 실시간 통합 스냅샷 조회
-     * <p>
-     * [코드의 경로성]
-     * - [어디서 왔는가 (Incoming)] :
-     *   프론트엔드 {@code frontend/app.js}의 {@code fetchData(forceRefresh)} ({@code loadData(false)} 최초 로딩 및 상단 {@code '새로고침'} 버튼 {@code loadData(true)})
-     * - [어디로 가는가 (Outgoing)] :
-     *   {@code service/EmergencyDataService.java}의 {@link EmergencyDataService#getSnapshot(boolean)} 호출
-     *   → 캐시가 유효하면 메모리에서 즉시 반환, 만료되었거나 {@code refresh=true}이면 {@code service/NmcOpenApiClient.java}로 7개 OpenAPI 병렬 수집 후
-     *   → {@code dto/EmergencySnapshotDto.java} (내부에 530여 개 {@code dto/HospitalDto.java} 리스트 포함) JSON을 프론트엔드로 응답!
-     * <p>
-     * [수정 시 영향 및 예시]
-     * - 쿼리 파라미터 이름을 {@code ?refresh=true} 대신 {@code ?force=true}로 바꾸고 싶다면:
-     *   예시(변경 전): {@code @RequestParam(name = "refresh", defaultValue = "false") boolean refresh}
-     *   예시(변경 후): {@code @RequestParam(name = "force", defaultValue = "false") boolean refresh}
-     *   (단, {@code frontend/app.js}의 {@code fetchData()} 안의 {@code ?refresh=true} 문자열도 함께 수정해야 합니다.)
-     */
     @GetMapping("/hospitals")
     public ResponseEntity<EmergencySnapshotDto> getHospitals(
-            @RequestParam(name = "refresh", defaultValue = "false") boolean refresh
+            @RequestParam(name = "refresh", defaultValue = "false") boolean refresh,
+            @RequestParam(name = "compact", defaultValue = "false") boolean compact
     ) {
-        EmergencySnapshotDto snapshot = emergencyDataService.getSnapshot(refresh);
+    /*
+     * [스프링/라이브러리 내장 어노테이션]
+     * - @GetMapping("/hospitals") -> 최종 URL: GET /api/hospitals
+     * - @RequestParam(name = "...", defaultValue = "false") : 쿼리 파라미터가 생략되면 자동으로 false 기본값을 채워 줌 (형제: @PathVariable, @RequestHeader, @RequestBody).
+     * [내가 지은 이름] getHospitals(함수명), refresh(강제 새로고침 여부), compact(모바일 경량 요약 모드 여부)
+     */
+        EmergencySnapshotDto snapshot = emergencyDataService.getSnapshot(refresh, compact);
         return ResponseEntity.ok(snapshot);
+        /*
+         * [요청 URL별 동작 예시]
+         * 1) GET /api/hospitals?compact=true         : 프론트엔드 초기 접속 (불필요한 대용량 원문 제외 경량 스냅샷 0.01초 반환)
+         * 2) GET /api/hospitals?refresh=true&compact=true : 상단 '새로고침' 버튼 클릭 (공공데이터 즉시 재수집 후 반환)
+         * 3) GET /api/hospitals                      : 전체 원본 필드 포함 통합 스냅샷 반환
+         */
     }
 
-    /**
-     * [API 4] {@code GET /api/directions} — 네이버 자동차 경로 탐색 (Directions 5 / Directions 15 프록시)
-     * <p>
-     * [코드의 경로성]
-     * - [어디서 왔는가 (Incoming)] :
-     *   1) 병원 상세 시트의 {@code '소요시간·요금 조회'} 및 {@code '지도에 경로 표시'} 버튼 → {@code frontend/app.js}의 {@code requestDirections(drawOnMap)}
-     *   2) 지도 우클릭(모바일 롱탭)으로 출발지를 옮겼을 때 실시간 경로 자동 재계산 → {@code frontend/app.js}의 {@code refreshActiveRoute()}
-     * - [어디로 가는가 (Outgoing)] :
-     *   {@code service/NaverDirectionsService.java}의 {@link NaverDirectionsService#getDrivingRoute} 호출
-     *   → 네이버 클라우드 Directions 5 또는 15 API 서버 통신 (혼잡도 구간 {@code congestion} 및 대체 경로 비교 포함)
-     *   → {@code dto/DirectionsResponseDto.java} JSON 응답 → {@code app.js}의 {@code renderDirectionsResult()} 및 {@code drawRouteOnMap()}이 지도에 렌더링!
-     * <p>
-     * [수정 시 영향 및 예시]
-     * - 기본 탐색 옵션을 실시간 빠른길({@code trafast}) 대신 실시간 최적({@code traoptimal})으로 바꾸고 싶다면:
-     *   예시(변경 전): {@code @RequestParam(name = "option", defaultValue = "trafast") String option}
-     *   예시(변경 후): {@code @RequestParam(name = "option", defaultValue = "traoptimal") String option}
+    @GetMapping("/hospitals/{hpid}")
+    public ResponseEntity<HospitalDto> getHospitalDetail(
+            @PathVariable(name = "hpid") String hpid
+    ) {
+    /*
+     * [스프링/라이브러리 내장 어노테이션]
+     * - @GetMapping("/hospitals/{hpid}") -> 최종 URL 예시: GET /api/hospitals/A2200001
+     * - @PathVariable(name = "hpid") : URL 경로의 {hpid} 자리에 적힌 병원 코드를 문자열 변수 hpid에 쏙 뽑아 넣어 줌.
+     * [내가 지은 이름] getHospitalDetail(함수명), hpid(기관 고유코드 변수명)
      */
+        if (hpid == null || !hpid.trim().matches("^[A-Za-z0-9_-]{3,24}$")) {
+            return ResponseEntity.badRequest().build();
+        }
+        HospitalDto detail = emergencyDataService.getHospitalById(hpid);
+        if (detail == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(detail);
+        /*
+         * [스프링/자바 내장 함수] ResponseEntity.badRequest().build() (HTTP 400), ResponseEntity.notFound().build() (HTTP 404), ResponseEntity.ok(detail) (HTTP 200)
+         * [핵심 원리] 사용자가 병원 상세 시트의 '개발자 모드(원본 필드 전체 대조)'를 열 때 이 엔드포인트를 호출하여 basic 60여 개 원본 XML 태그까지 100% 무손실로 확인함.
+         */
+    }
+
     @GetMapping("/directions")
     public ResponseEntity<DirectionsResponseDto> getDirections(
             @RequestParam(name = "startLat") double startLat,
@@ -174,78 +176,81 @@ public class EmergencyApiController {
             @RequestParam(name = "option", defaultValue = "trafast") String option,
             @RequestParam(name = "waypoints", defaultValue = "") String waypoints
     ) {
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @GetMapping("/directions") -> 최종 URL: GET /api/directions
+     * [내가 지은 이름] getDirections(함수명), startLat, startLng(출발 좌표), goalLat, goalLng(목표 병원 좌표), apiType, option, waypoints
+     */
         DirectionsResponseDto result = naverDirectionsService.getDrivingRoute(
                 startLat, startLng, goalLat, goalLng, apiType, option, waypoints
         );
         return ResponseEntity.ok(result);
+        /*
+         * [호출 URL 및 데이터 흐름 예시]
+         *   GET /api/directions?startLat=37.3190&startLng=127.9012&goalLat=37.3191&goalLng=127.9456&apiType=directions5&option=trafast
+         *   └──> NaverDirectionsService -> DirectionsResponseDto (폴리라인 path + 정밀 혼잡도 sections + 4대 대안 경로 alternatives 반환)
+         */
     }
 
-    /**
-     * [API 5] {@code GET /api/directions/rank} — 주변 응급실 실도로 최단 도착시간(ETA) 병렬 순위 추천
-     * <p>
-     * [코드의 경로성]
-     * - [어디서 왔는가 (Incoming)] :
-     *   좌측 검색 패널의 {@code '실도로 최단시간 순위'} 버튼 클릭(또는 우클릭 출발지 변경 시 자동 갱신) → {@code frontend/app.js}의 {@code loadEtaRanking()}
-     * - [어디로 가는가 (Outgoing)] :
-     *   1) 먼저 {@code EmergencyDataService.getSnapshot(false)}로 현재 메모리에 캐싱된 전국 병원 목록을 가져옵니다.
-     *   2) 그 병원 목록을 {@code NaverDirectionsService.rankHospitalsByDrivingTime(...)}에 넘겨 반경 내 후보 병원들의 실제 도로 주행 시간을 병렬 계산합니다.
-     *   3) 소요시간 오름차순으로 정렬된 {@code List<HospitalEtaRankDto>}({@code dto/HospitalEtaRankDto.java})를 반환하면 {@code app.js}가 순위 카드를 그립니다.
-     * <p>
-     * [수정 시 영향 및 예시]
-     * - 추천 순위 기본 표시 개수를 5개에서 8개로 늘리고 싶다면:
-     *   예시(변경 전): {@code @RequestParam(name = "limit", defaultValue = "5") int limit}
-     *   예시(변경 후): {@code @RequestParam(name = "limit", defaultValue = "8") int limit}
-     *   (그리고 {@code frontend/app.js}의 {@code loadEtaRanking()}에서 보내는 {@code limit: '5'} 파라미터도 {@code '8'}로 바꾸면 8개가 표시됩니다.)
-     */
     @GetMapping("/directions/rank")
     public ResponseEntity<List<HospitalEtaRankDto>> rankDirections(
             @RequestParam(name = "startLat") double startLat,
             @RequestParam(name = "startLng") double startLng,
             @RequestParam(name = "radiusKm", defaultValue = "20") double radiusKm,
             @RequestParam(name = "limit", defaultValue = "5") int limit,
+            @RequestParam(name = "includeRegional", defaultValue = "true") boolean includeRegional,
+            @RequestParam(name = "includeTertiary", defaultValue = "true") boolean includeTertiary,
+            @RequestParam(name = "includeMedical", defaultValue = "true") boolean includeMedical,
             @RequestParam(name = "includeOther", defaultValue = "false") boolean includeOther,
+            @RequestParam(name = "onlyAvailable", defaultValue = "false") boolean onlyAvailable,
+            @RequestParam(name = "symptom", defaultValue = "all") String symptom,
+            @RequestParam(name = "mode", defaultValue = "optimal") String mode,
             @RequestParam(name = "option", defaultValue = "trafast") String option
     ) {
-        EmergencySnapshotDto snapshot = emergencyDataService.getSnapshot(false);
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @GetMapping("/directions/rank") -> 최종 URL: GET /api/directions/rank
+     * [내가 지은 이름] rankDirections(함수명), includeRegional~includeOther(4대 종별 동기화), onlyAvailable(가용 병상만), symptom(증상 프리셋), mode("optimal"|"fastest")
+     */
+        EmergencySnapshotDto snapshot = emergencyDataService.getSnapshot(false, false);
         List<HospitalEtaRankDto> ranked = naverDirectionsService.rankHospitalsByDrivingTime(
-                snapshot.hospitals(), startLat, startLng, radiusKm, limit, includeOther, option
+                snapshot.hospitals(), startLat, startLng, radiusKm, limit,
+                includeRegional, includeTertiary, includeMedical, includeOther,
+                onlyAvailable, symptom, mode, option
         );
         return ResponseEntity.ok(ranked);
+        /*
+         * [호출 URL 예시]
+         *   GET /api/directions/rank?startLat=37.3190&startLng=127.9012&radiusKm=20&mode=optimal&symptom=stroke&onlyAvailable=true
+         *   └──> 뇌졸중·뇌출혈 수용 가능 + 차단 공지 없음 + 가용 병상 보유 병원들의 실도로 주행시간·수용성 최적 순위 리스트 반환
+         */
     }
 
-    /**
-     * [API 6] {@code GET /api/reverse-geocode} — 위경도 좌표를 한국어 도로명/지번 주소로 변환 (역지오코딩)
-     * <p>
-     * [코드의 경로성]
-     * - [어디서 왔는가 (Incoming)] :
-     *   프론트엔드 {@code frontend/app.js}의 {@code updateOriginAddress()} (GPS 현재 위치 확인 시, 지도 우클릭/롱탭 시, 출발지 초기화 시 호출)
-     * - [어디로 가는가 (Outgoing)] :
-     *   {@code service/NaverDirectionsService.java}의 {@link NaverDirectionsService#reverseGeocode(double, double)} 호출
-     *   → NCP Reverse Geocoding API 조회 → {@code dto/ReverseGeocodeResponseDto.java} JSON 반환 → {@code #origin-address-text}에 주소 표시!
-     */
     @GetMapping("/reverse-geocode")
     public ResponseEntity<ReverseGeocodeResponseDto> reverseGeocode(
             @RequestParam(name = "lat") double lat,
             @RequestParam(name = "lng") double lng
     ) {
-        return ResponseEntity.ok(naverDirectionsService.reverseGeocode(lat, lng));
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @GetMapping("/reverse-geocode") -> 최종 URL: GET /api/reverse-geocode
+     * [내가 지은 이름] reverseGeocode(함수명), lat(위도), lng(경도)
+     */
+        return ResponseEntity.ok(naverGeocodingService.reverseGeocode(lat, lng));
+        /*
+         * [호출 예시] GET /api/reverse-geocode?lat=37.3190&lng=127.9012 -> "강원 원주시 흥업면" 도로명·행정동 주소 반환
+         */
     }
 
-    /**
-     * [API 7] {@code GET /api/geocode} — 주소·지역·장소 검색어를 위경도 좌표로 변환 (지오코딩)
-     * <p>
-     * [코드의 경로성]
-     * - [어디서 왔는가 (Incoming)] :
-     *   좌측 상단 검색창({@code #keyword})에 지역명/주소를 입력 후 엔터 또는 항목 클릭 시 → {@code frontend/app.js}의 {@code geocodeAndMoveOrigin(query)}
-     * - [어디로 가는가 (Outgoing)] :
-     *   {@code EmergencyDataService.getSnapshot(false)}의 병원 주소록과 함께 {@code NaverDirectionsService.geocode(query, hospitals)}를 호출
-     *   → NCP Geocoding API + 내장 지명/병원 매칭 폴백 → {@code dto/GeocodeResponseDto.java} JSON 반환 → 지도가 해당 좌표로 이동!
-     */
     @GetMapping("/geocode")
     public ResponseEntity<GeocodeResponseDto> geocode(
             @RequestParam(name = "query") String query
     ) {
-        EmergencySnapshotDto snapshot = emergencyDataService.getSnapshot(false);
-        return ResponseEntity.ok(naverDirectionsService.geocode(query, snapshot.hospitals()));
+    /*
+     * [스프링/라이브러리 내장 어노테이션] @GetMapping("/geocode") -> 최종 URL: GET /api/geocode
+     * [내가 지은 이름] geocode(함수명), query(사용자 입력 주소·장소 검색어)
+     */
+        EmergencySnapshotDto snapshot = emergencyDataService.getSnapshot(false, true);
+        return ResponseEntity.ok(naverGeocodingService.geocode(query, snapshot.hospitals()));
+        /*
+         * [호출 예시] GET /api/geocode?query=연세대길 1 -> 위경도 좌표 리스트 반환
+         */
     }
 }

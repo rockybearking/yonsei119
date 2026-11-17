@@ -1,35 +1,23 @@
 package com.yonsei119.dto;
-
-/**
- * ============================================================================
- * [레코드 역할 — DTO]
- * 개별 응급의료기관의 종별 분류(상급종합병원 / 의료원 / 일반·기타 응급의료기관) 메타데이터를 담는 DTO입니다.
- * <p>
- * [파이썬 장고(Django) 비유]
- * - {@code HospitalDto} 안에 중첩(Nested)되어 포함되는 작은 읽기 전용 {@code @dataclass} / {@code HospitalTypeSerializer}입니다.
- * <p>
- * [코드의 경로성 (어디서 오고 어디로 가는가?)]
- * - [생성 (Incoming Producer)] : {@code service/HospitalClassifier.java}의 상수({@code TERTIARY}, {@code MEDICAL}, {@code OTHER}) 및 {@code classifyType()} 메서드
- * - [포함 (Embedded In)] : {@code dto/HospitalDto.java}의 {@code type} 필드 → {@code /api/hospitals} JSON 응답의 {@code hospital.type} 객체
- * - [소비 (Outgoing Consumer)] : {@code frontend/app.js}의 아래 로직들과 직접 매칭됩니다:
- *   1) 필터링({@code visibleTypes()}, {@code updateMarkers()}): {@code group} 값({@code "tertiary"}, {@code "medical"}, {@code "other"})으로 체크박스 필터와 대조
- *   2) 지도 마커 색상 및 배지({@code visualGroup()}, {@code createMarkerContent()}): {@code group} 및 {@code label} 표시
- *   3) 정렬 우선순위({@code hospitalPriority()}): 거리순 외 동일 조건일 때 {@code priority}가 낮을수록 먼저 배치
- * <p>
- * [수정 시 영향 및 예시]
- * - 지도나 시트에 찍히는 {@code '상급종합'} 글자를 {@code '3차 상급종합'}으로 바꾸고 싶다면 이 파일이 아니라
- *   이 객체를 실제로 생성하는 {@code service/HospitalClassifier.java}의 {@code TERTIARY} 상수 라벨을 고치면 전체 화면에 일괄 반영됩니다!
- * ============================================================================
- *
- * @param group    프론트엔드 필터 식별 키 ({@code "tertiary"}, {@code "medical"}, {@code "other"})
- * @param label    화면 표시용 한글 종별 라벨 ({@code "상급종합"}, {@code "의료원"}, {@code "일반·기타"})
- * @param accent   종별 대표 강조 HEX 색상 코드 ({@code "#111111"}, {@code "#0284c7"}, {@code "#64748b"})
- * @param priority 정렬 우선순위 정수 (낮을수록 상위 등급: 상급종합 {@code 0}, 의료원 {@code 2}, 일반·기타 {@code 3})
+/*
+ * [자바 문법] package : 프론트엔드와 백엔드 사이를 오가는 데이터 도시락(DTO: Data Transfer Object) 전용 폴더(com.yonsei119.dto) 선언임.
  */
+
 public record HospitalTypeDto(
         String group,
         String label,
         String accent,
         int priority
 ) {
+/*
+ * [자바 문법] public record, int(정수 기본형)
+ * [자바/스프링/라이브러리 내장 도구(타입)] String : 자바 표준 문자열 타입임 (이름 변경 불가).
+ * [내가 지은 이름]
+ * - 대문자 타입명: HospitalTypeDto (응급의료기관 종별 분류 도시락 설계도)
+ * - 소문자 변수(상자)명: group("tertiary"|"medical"|"other"), label("상급종합병원" 등 화면 표시명), accent(대표 HEX 색상), priority(정렬 우선순위 숫자)
+ * [핵심 원리 & JSON 변환 예시]
+ * - 스프링 부트 내장 Jackson 번역기가 이 record의 소문자 변수 이름을 그대로 JSON 키로 변환해 브라우저로 보냄:
+ *   new HospitalTypeDto("tertiary", "상급종합병원", "#d34458", 1)
+ *   └──> { "group": "tertiary", "label": "상급종합병원", "accent": "#d34458", "priority": 1 }
+ */
 }

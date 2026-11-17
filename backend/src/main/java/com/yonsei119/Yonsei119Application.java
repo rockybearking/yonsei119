@@ -4,81 +4,45 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
-
-/**
- * ============================================================================
- * [클래스 역할]
- * 연세 119 응급실 정보 시스템(YONSEI 119 Emergency Information System)의
- * Spring Boot 메인 애플리케이션 진입점(Entry Point) 클래스입니다.
- * <p>
- * [파이썬 장고(Django) 비유]
- * - 장고의 **{@code manage.py} + {@code wsgi.py}(또는 {@code asgi.py})**를 합친 것과 정확히 같은 출발점 파일입니다!
- * - 장고에서는 터미널에서 {@code python manage.py runserver}를 치면 {@code settings.py}를 읽고 {@code urls.py}를 스캔해 웹 서버를 띄우듯,
- *   Spring Boot에서는 이 클래스의 {@link #main(String[])} 함수가 실행되면서 {@code com.yonsei119} 하위 폴더({@code config}, {@code controller},
- *   {@code service}, {@code dto})에 있는 모든 클래스들을 자동으로 스캔(Component Scan)하여 내장 Tomcat 웹 서버를 띄웁니다.
- * <p>
- * [코드의 경로성 (어디서 오고 어디로 가는가?)]
- * - [어디서 왔는가 (Incoming)] :
- *   1) 개발 환경: {@code ./gradlew bootRun} ({@code backend/build.gradle}) 또는 IntelliJ IDEA의 ▶ Run 버튼
- *   2) 배포 환경: {@code java -jar yonsei119-backend.jar} 실행 시 JVM이 이 클래스의 {@code main()}을 가장 먼저 호출합니다.
- * - [어디로 가는가 (Outgoing — 서버 부팅 순서)] :
- *   1) {@link ConfigurationPropertiesScan}이 {@code src/main/resources/application.yml}을 읽어
- *      {@code config/Yonsei119Properties.java} 객체를 생성합니다.
- *   2) {@link SpringBootApplication}의 컴포넌트 스캔이 아래 핵심 빈(Bean)들을 순서대로 조립(의존성 주입, DI)합니다:
- *      - {@code config/WebConfig.java} (정적 프론트엔드 {@code frontend/} 연결 및 CORS 설정)
- *      - {@code service/HospitalClassifier.java} (응급실 종별 분류기)
- *      - {@code service/NmcOpenApiClient.java} (국립중앙의료원 XML API 호출기)
- *      - {@code service/EmergencyDataService.java} (7종 API 병합 및 캐시 관리 서비스)
- *      - {@code service/NaverDirectionsService.java} (네이버 길찾기·지오코딩 서비스)
- *      - {@code controller/EmergencyApiController.java} ({@code /api/**} URL 엔드포인트 라우터)
- *   3) 서버 준비 완료 직후 {@code EmergencyDataService.warmUpCacheOnStartup()}이 실행되어 전국 병원 데이터를 미리 캐싱하고,
- *      {@link EnableScheduling}에 의해 20분마다 {@code EmergencyDataService.scheduledAutoRefresh()}가 자동 실행됩니다.
- * <p>
- * [수정 시 영향 및 예시]
- * - 백그라운드 주기적 스케줄링({@code @Scheduled}) 기능을 프로젝트 전체에서 완전히 끄고 싶다면:
- *   예시(변경 전):
- *   {@code
- *   @SpringBootApplication
- *   @ConfigurationPropertiesScan
- *   @EnableScheduling
- *   public class Yonsei119Application
- *   }
- *   예시(변경 후 — {@code @EnableScheduling} 한 줄 주석 처리 또는 제거):
- *   {@code
- *   @SpringBootApplication
- *   @ConfigurationPropertiesScan
- *   // @EnableScheduling
- *   public class Yonsei119Application
- *   }
- *   (단, 코드 수정 없이 설정으로만 끄고 싶다면 {@code application.yml}의 {@code yonsei119.nemc.auto-refresh-enabled: false}로 바꾸는 것이 더 안전합니다.)
- * ============================================================================
+/*
+ * [자바 문법] package, import : 이 파일의 소속 폴더(com.yonsei119)를 선언하고, 스프링 부트가 미리 만들어 둔 도구들을 불러옴.
+ * [자바/스프링/라이브러리 내장 도구(타입)] SpringApplication : 스프링 부트 웹 서버(내장 Tomcat)에 시동을 거는 공식 런처 클래스임 (이름 변경 불가).
+ * [스프링/라이브러리 내장 어노테이션]
+ * - @SpringBootApplication (출처: org.springframework.boot.autoconfigure) : 자동 설정 + 컴포넌트 스캔(@Component, @Service, @RestController 탐색)을 한 번에 켜는 핵심 스위치임.
+ * - @ConfigurationPropertiesScan (출처: org.springframework.boot.context.properties) : application.yml 설정값을 자바 record(Yonsei119Properties) 상자에 자동 주입하도록 스캔함.
+ * - @EnableScheduling (출처: org.springframework.scheduling.annotation) : 백그라운드 타이머(@Scheduled)가 주기적으로 공공데이터를 갱신할 수 있게 허용함 (형제 어노테이션: @EnableAsync, @EnableCaching).
  */
+
 @SpringBootApplication
 @ConfigurationPropertiesScan
 @EnableScheduling
 public class Yonsei119Application {
+/*
+ * [스프링/라이브러리 내장 어노테이션] @SpringBootApplication, @ConfigurationPropertiesScan, @EnableScheduling : 서버의 3대 핵심 엔진(웹서버, 환경설정 바인딩, 자동 갱신 시계)을 장착함.
+ * [자바 문법] public class : 어디서든 접근 가능한(public) 자바 설계도(class)를 선언하는 예약어임.
+ * [내가 지은 이름] Yonsei119Application : 대문자로 시작하는 메인 클래스 이름임 (파일명 Yonsei119Application.java와 반드시 글자까지 같아야 함).
+ * [핵심 원리 & 비유]
+ * - '응급의료 관제 식당' 전체의 정문 전원 스위치임.
+ * - 이 스위치가 켜지면 카운터(EmergencyApiController), 주방(EmergencyDataService, NaverDirectionsService), 식자재 구매팀(NmcOpenApiClient)이 자동으로 조립되어 영업을 시작함.
+ */
 
-    /**
-     * [메서드 역할]
-     * Java 가상머신(JVM)이 프로그램을 시작할 때 가장 먼저 호출하는 표준 진입 함수입니다.
-     * (파이썬의 {@code if __name__ == "__main__": execute_from_command_line(sys.argv)}와 동일한 위치입니다.)
-     * <p>
-     * [수정 시 영향 및 예시]
-     * - 실행 시 기본 배너(Spring 글자 로고)를 콘솔에서 숨기고 싶다면 아래와 같이 수정할 수 있습니다:
-     *   예시(변경 전):
-     *   {@code
-     *   SpringApplication.run(Yonsei119Application.class, args);
-     *   }
-     *   예시(변경 후):
-     *   {@code
-     *   SpringApplication app = new SpringApplication(Yonsei119Application.class);
-     *   app.setBannerMode(org.springframework.boot.Banner.Mode.OFF);
-     *   app.run(args);
-     *   }
-     *
-     * @param args 실행 시 전달된 커맨드라인 인자 배열 (예: {@code --server.port=9090})
-     */
     public static void main(String[] args) {
+    /*
+     * [자바 문법] public static void : 자바 가상머신(JVM)이 객체 생성 없이(static) 가장 먼저 찾아 실행하며, 반환값이 없는(void) 표준 시작점 문법임.
+     * [자바/스프링/라이브러리 내장 도구(타입)] String[] : 실행 시 전달되는 문자열 배열 타입임 (이름 변경 불가).
+     * [스프링/자바 내장 함수] main : 자바 프로그램의 시작 함수 이름으로 절대 다른 이름으로 바꿀 수 없음.
+     * [내가 지은 이름] args : 터미널 실행 옵션(예: --server.port=9090)을 담아 두는 소문자 변수(상자) 이름임.
+     */
         SpringApplication.run(Yonsei119Application.class, args);
+        /*
+         * [스프링/자바 내장 함수] SpringApplication.run(...) : 내장 Tomcat 웹 서버를 띄우고 모든 스프링 빈(Bean)을 메모리에 올리는 공식 시동 함수임 (이름 변경 불가).
+         * [자바 문법] .class : Yonsei119Application 설계도 자체의 정보를 넘겨주는 자바 문법 키워드임.
+         * [실제 작동 흐름 예시]
+         *   JVM이 main(args) 호출
+         *   └──> SpringApplication.run(...) 실행
+         *        ├──> 1) application.yml 로드 -> Yonsei119Properties 생성
+         *        ├──> 2) 내장 웹 서버 8080 포트 개방 (http://localhost:8080)
+         *        └──> 3) EmergencyDataService.warmUpCacheOnStartup() 실행 (전국 응급실 사전 캐싱 시작)
+         */
     }
 }

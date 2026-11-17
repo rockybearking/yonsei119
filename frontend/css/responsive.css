@@ -1,0 +1,263 @@
+@media (max-width: 720px) {
+    .directions-alternatives {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .navigation-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px), (any-pointer: coarse) {
+    #keyword,
+    #keyword::placeholder,
+    #radius,
+    .directions-select {
+        font-size: 16px;
+    }
+}
+/*
+ * [iOS Safari & Android WebView 필수 방어]
+ * - 모바일 터치 기기에서 input/select 글자 크기가 16px 미만이면 포커스 순간 브라우저가 강제 화면 확대(Auto-Zoom)를 일으켜 지도 UI가 깨짐.
+ * - 16px 고정을 통해 아이폰·갤럭시 전 기종에서 흔들림 없는 검색 입력을 보장함.
+ */
+
+@media (max-width: 640px) {
+    :root {
+        --edge: 12px;
+    }
+
+    .mobile-top-left-menu {
+        position: fixed;
+        top: calc(var(--edge) + env(safe-area-inset-top, 0px));
+        left: calc(var(--edge) + env(safe-area-inset-left, 0px));
+        z-index: 16;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .mobile-menu-drawer .map-actions {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .mobile-menu-drawer .map-action {
+        --action-size: 42px;
+        width: 42px;
+        height: 42px;
+        flex: 0 0 42px;
+    }
+
+    .mobile-menu-drawer .radius-popover {
+        position: absolute;
+        top: calc(100% + 8px);
+        bottom: auto;
+        left: 0;
+        right: auto;
+        width: min(260px, calc(100vw - 28px));
+        z-index: 25;
+    }
+
+    body:has(#active-route-banner:not([hidden])) .mobile-top-left-menu .mobile-menu-drawer {
+        margin-top: 38px;
+    }
+
+    .search-panel {
+        left: calc(var(--edge) + env(safe-area-inset-left, 0px));
+        right: calc(var(--edge) + env(safe-area-inset-right, 0px));
+        width: auto;
+        max-width: none;
+    }
+
+    .search-panel.is-collapsed {
+        left: auto;
+        width: fit-content;
+    }
+
+    .eta-rank-box {
+        max-height: min(28dvh, 190px);
+    }
+
+    .sheet {
+        top: auto;
+        left: 0;
+        width: 100%;
+        height: min(90dvh, 900px);
+        border-radius: 24px 24px 0 0;
+        transform: translate3d(0, 102%, 0);
+        will-change: transform;
+        box-shadow: 0 -12px 48px rgba(15, 23, 42, 0.22);
+    }
+
+    .sheet.open {
+        transform: translate3d(0, 0, 0);
+    }
+
+    .sheet.open.half-peek {
+        transform: translate3d(0, calc(100% - 268px - env(safe-area-inset-bottom, 0px)), 0);
+    }
+
+    .sheet-drag-handle {
+        display: flex;
+    }
+
+    .sheet-header {
+        padding: 10px 16px 12px;
+    }
+
+    .sheet-scroll {
+        padding: 12px 14px calc(22px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .detail-section {
+        padding: 14px;
+    }
+
+    .directions-toolbar,
+    .directions-select-group,
+    .directions-kpi-grid,
+    .egen-matrix-grid,
+    .equipment-matrix-grid,
+    .severe-matrix-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .directions-toolbar {
+        display: grid;
+        gap: 7px;
+    }
+
+    .directions-btn-group .directions-action-btn {
+        flex: 1 1 0;
+        min-height: 42px;
+    }
+
+    .active-route-banner {
+        left: calc(var(--edge) + env(safe-area-inset-left, 0px) + 52px);
+        right: calc(var(--edge) + env(safe-area-inset-right, 0px));
+        transform: none;
+        width: auto;
+        max-width: none;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        padding: 8px 11px;
+        border-radius: 18px;
+    }
+
+    .active-route-footer {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 5px 6px;
+    }
+
+    .active-route-actions {
+        margin-left: auto;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+}
+/*
+ * [스마트폰 640px 이하 반응형 레이아웃]
+ * - 좌측 상단 ☰ 서랍 메뉴와 우측 상단 2줄 활성 경로 배너가 서로 겹치지 않도록 52px 안전 간격을 두었음.
+ * - 상세 시트는 하단 바텀시트 + Half-Peek 2단 스냅으로 자동 동작함.
+ */
+
+@media (max-width: 390px) {
+    .origin-info-row {
+        flex-wrap: wrap;
+        gap: 5px 8px;
+    }
+
+    .origin-address-text {
+        flex: 1 1 100%;
+    }
+
+    .origin-info-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 360px) {
+    .filters,
+    .raw-grid,
+    .phone-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .detail-section {
+        padding: 12px;
+    }
+}
+
+@media (max-width: 310px) {
+    .directions-alternatives,
+    .navigation-actions {
+        grid-template-columns: 1fr;
+    }
+}
+/*
+ * [초소형 모바일 화면 방어] iPhone SE(320px), 표준 Android(360px), 갤럭시 Z 폴드 커버 화면(280~310px)에서도 글자 잘림이나 가로 넘침이 0건이 되도록 열 수를 단계적으로 축소함.
+ */
+
+@media (max-height: 450px) {
+    .eta-rank-box {
+        max-height: min(22dvh, 110px);
+    }
+
+    .search-results {
+        max-height: 35dvh;
+    }
+
+    @media (max-width: 559px) {
+        .filters {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+}
+/*
+ * [스마트폰 가로 모드(Landscape) 대응] 세로 높이가 450px 이하로 낮아진 상태에서도 지도 시야가 확보되도록 드롭다운 최대 높이를 자동 제한함.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+    .sheet,
+    .status-toast {
+        transition: none;
+    }
+
+    .spinner,
+    .is-loading .refresh-icon,
+    .location-marker::before,
+    .location-marker::after,
+    .location-dot,
+    .is-marquee .marquee-inner {
+        animation: none;
+    }
+
+    .is-marquee .marquee-inner {
+        transform: none;
+    }
+
+    .location-marker::before {
+        opacity: 0.3;
+    }
+
+    .location-marker::after {
+        display: none;
+    }
+}
+/*
+ * [웹 접근성 WCAG 2.3.3 — 동작 줄이기(prefers-reduced-motion) 배려]
+ * - 전정기관 민감증이나 배터리 절약 모드를 켠 사용자를 위해 불필요한 무한 파동·회전·전광판 애니메이션을 즉시 정지함.
+ */

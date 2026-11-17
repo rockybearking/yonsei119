@@ -1,0 +1,710 @@
+.active-route-banner {
+    position: fixed;
+    top: calc(var(--edge) + env(safe-area-inset-top, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 11;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: calc(100vw - 28px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    padding: 8px 13px;
+    border: 1px solid #b6e3c4;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+}
+
+.active-route-summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.active-route-api {
+    flex-shrink: 0;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #03c75a;
+    color: #ffffff;
+    font-size: 10px;
+    font-family: var(--font-bold), sans-serif;
+}
+
+.active-route-name-btn {
+    min-width: 0;
+    flex: 1 1 auto;
+    border: 0;
+    padding: 2px 4px;
+    border-radius: 6px;
+    background: transparent;
+    color: #0f172a;
+    font-size: 12.5px;
+    font-family: var(--font-bold), sans-serif;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.active-route-name-btn:hover {
+    background: rgba(3, 199, 90, 0.1);
+}
+
+.active-route-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.active-route-meta {
+    flex-shrink: 0;
+    white-space: nowrap;
+    color: #0f766e;
+    font-size: 12px;
+    font-family: var(--font-bold), sans-serif;
+}
+
+.active-route-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.active-route-call,
+.active-route-open,
+.active-route-clear,
+.active-route-reset {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-family: var(--font-bold), sans-serif;
+    line-height: 1.2;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.active-route-call {
+    border: 1px solid #fca5a5;
+    background: #dc2626;
+    color: #ffffff;
+}
+
+.active-route-call:hover {
+    background: #b91c1c;
+}
+
+.active-route-open {
+    border: 1px solid #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.active-route-open:hover {
+    background: #dbeafe;
+}
+
+.active-route-clear {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+}
+
+.active-route-clear:hover {
+    background: #e2e8f0;
+}
+
+.active-route-reset {
+    border: 1px solid #fecdd3;
+    background: #fff1f2;
+    color: #be123c;
+}
+
+.active-route-reset:hover {
+    background: #ffe4e6;
+}
+/*
+ * [신규 UX 개선 — 활성 경로 상단 배너(.active-route-banner) 직통 전화 & 상세 재열기 통합]
+ * - 시트를 닫고 경로 지도를 넓게 보는 중에도 상단 배너에서 즉시 '응급실 전화'(.active-route-call)를 걸거나 '상세'(.active-route-open) 시트를 다시 열 수 있음.
+ */
+
+.directions-section {
+    border: 1px solid #ccebd7;
+    background: linear-gradient(180deg, #f6fef9 0%, #ffffff 100%);
+}
+
+.directions-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+}
+
+.directions-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.naver-route-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    border-radius: 5px;
+    background: #03c75a;
+    color: #ffffff;
+    font-size: 10px;
+    font-family: var(--font-bold), sans-serif;
+}
+
+.directions-status-badge {
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #e6f7ed;
+    color: #0f7a3e;
+    font-size: 11px;
+    font-family: var(--font-bold), sans-serif;
+}
+
+.directions-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.directions-select-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    flex: 1 1 320px;
+    width: 100%;
+    min-width: 0;
+}
+
+.directions-select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    padding: 0 30px 0 10px;
+    border: 1px solid #c5d9cc;
+    border-radius: 8px;
+    background-color: #ffffff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 9px center;
+    background-size: 14px 14px;
+    -webkit-appearance: none;
+    appearance: none;
+    color: #1e293b;
+    font-size: 12.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.directions-btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.directions-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 12px;
+    font-family: var(--font-bold), sans-serif;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.directions-action-btn.primary {
+    border-color: #03c75a;
+    background: #03c75a;
+    color: #ffffff;
+}
+
+.directions-action-btn.primary:hover {
+    background: #02b150;
+}
+/*
+ * [내가 지은 클래스] .directions-toolbar, .directions-select, .directions-action-btn (Directions 5/15 엔진 및 경유 병원 선택 툴바)
+ */
+
+.directions-alternatives {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.directions-alt-btn {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    width: 100%;
+    min-width: 0;
+    padding: 9px 10px;
+    border: 1px solid #94a3b8;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #0f172a;
+    text-align: left;
+    cursor: pointer;
+    word-break: keep-all;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.directions-alt-btn:hover {
+    border-color: #03c75a;
+    background: #f0fdf4;
+}
+
+.directions-alt-btn.is-active {
+    border: 1.5px solid #03c75a;
+    background: #ecfdf5;
+    box-shadow: 0 2px 8px rgba(3, 199, 90, 0.14);
+}
+
+.directions-alt-title {
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #475569;
+}
+
+.directions-alt-btn.is-active .directions-alt-title {
+    color: #028a3e;
+}
+
+.directions-alt-eta {
+    font-size: 0.86rem;
+    font-weight: 900;
+    color: #0f172a;
+    line-height: 1.25;
+}
+
+.directions-alt-meta {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #64748b;
+    line-height: 1.3;
+}
+
+.directions-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+}
+
+.directions-kpi-card {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid #dbece1;
+    border-radius: 10px;
+    background: #ffffff;
+    word-break: keep-all;
+}
+
+.directions-kpi-label {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    margin-bottom: 3px;
+}
+
+.directions-kpi-value {
+    display: block;
+    color: #0f172a;
+    font-size: 15px;
+    font-family: var(--font-bold), sans-serif;
+}
+
+.directions-kpi-value.highlight {
+    color: #028a3d;
+}
+
+.directions-kpi-sub {
+    display: block;
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 10px;
+    line-height: 1.35;
+}
+/*
+ * [내가 지은 클래스] .directions-alternatives(4대 경로 옵션 동시 비교 카드), .directions-kpi-grid(소요시간·실도로거리·요금 3열 요약)
+ */
+
+.directions-traffic-summary {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid #dbece1;
+    border-radius: 10px;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.directions-traffic-legend {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 11px;
+    color: #475569;
+}
+
+.traffic-legend-title {
+    font-family: var(--font-bold), sans-serif;
+    color: #334155;
+}
+
+.traffic-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 700;
+}
+
+.traffic-legend-item::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 5px;
+    border-radius: 999px;
+}
+
+.traffic-legend-item.smooth::before {
+    background: #03c75a;
+}
+
+.traffic-legend-item.slow::before {
+    background: #f59e0b;
+}
+
+.traffic-legend-item.jam::before {
+    background: #ef4444;
+}
+
+.directions-section-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.directions-section-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+
+.directions-section-chip.congestion-smooth {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+}
+
+.directions-section-chip.congestion-slow {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fcd34d;
+}
+
+.directions-section-chip.congestion-jam {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+}
+
+.directions-guide-details {
+    margin-top: 8px;
+    border-top: 1px dashed #d5e6dc;
+    padding-top: 8px;
+}
+
+.directions-guide-details summary {
+    color: #166534;
+    font-size: 12px;
+    font-family: var(--font-bold), sans-serif;
+    cursor: pointer;
+}
+
+.directions-guide-list {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.6;
+}
+/*
+ * [내가 지은 클래스] .directions-section-chip, .directions-guide-list (도로별 실시간 소통 칩 & 회전 교차로 안내 목록)
+ */
+
+.origin-eta-bar {
+    margin-top: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.origin-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid #d6e2ef;
+    border-radius: 8px;
+    background: #f4f8fd;
+}
+
+.origin-address-text {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #475569;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.origin-info-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 0 0 auto;
+}
+
+.origin-reset-btn {
+    min-height: 28px;
+    padding: 4px 8px;
+    border: 1px solid #fecdd3;
+    border-radius: 6px;
+    background: #fff1f2;
+    color: #be123c;
+    font-size: 0.73rem;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.eta-rank-btn {
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid rgba(3, 199, 90, 0.45);
+    border-radius: 6px;
+    background: rgba(3, 199, 90, 0.1);
+    color: #028a3e;
+    font-size: 0.74rem;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.eta-rank-btn[aria-expanded="true"] {
+    background: #03c75a;
+    border-color: #029f48;
+    color: #ffffff;
+}
+
+.eta-rank-box {
+    max-height: 245px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 8px;
+    border: 1px solid #d6e2ef;
+    border-radius: 8px;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.eta-rank-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 2px 5px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.74rem;
+    font-weight: 800;
+    color: #475569;
+}
+
+.eta-mode-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.eta-mode-btn {
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 2px 7px;
+    cursor: pointer;
+}
+
+.eta-mode-btn[aria-pressed="true"] {
+    background: #0284c7;
+    border-color: #0369a1;
+    color: #ffffff;
+}
+
+.eta-rank-close {
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.73rem;
+    font-weight: 800;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.eta-rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.eta-rank-item {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border: 1px solid #dce5f0;
+    border-radius: 7px;
+    background: #f8fafc;
+    color: #1e293b;
+    text-align: left;
+    cursor: pointer;
+}
+
+.eta-rank-item:hover {
+    border-color: #03c75a;
+    background: rgba(3, 199, 90, 0.06);
+}
+
+.eta-rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 5px;
+    background: rgba(17, 102, 212, 0.12);
+    color: #1d4ed8;
+    font-size: 0.72rem;
+    font-weight: 900;
+}
+
+.eta-rank-item.rank-1 .eta-rank-badge {
+    background: #03c75a;
+    color: #ffffff;
+}
+
+.eta-rank-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.eta-rank-main strong {
+    font-size: 0.8rem;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.eta-rank-main small {
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.eta-rank-er {
+    flex: 0 0 auto;
+    padding: 3px 7px;
+    border-radius: 5px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    font-size: 0.71rem;
+    font-weight: 800;
+    color: #1e293b;
+    white-space: nowrap;
+}
+
+.eta-rank-er.is-saturated {
+    border-color: #fca5a5;
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+.eta-rank-er.is-plenty {
+    border-color: #86efac;
+    background: #f0fdf4;
+    color: #15803d;
+}
+/*
+ * [신규 추천 UX — 수용최적 vs 최단시간 모드 스위치(.eta-mode-switch) 및 병상 포화 배지 구분]
+ * - '수용최적' 모드에서는 초과수용·차단공지 병원에 페널티가 부여되어 실질 수용 가능한 최적 병원이 1위로 노출됨.
+ */

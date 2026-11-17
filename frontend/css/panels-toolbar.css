@@ -1,0 +1,566 @@
+.search-panel {
+    --search-font-size: 12px;
+    --action-size: clamp(38px, 9.8vw, 45px);
+    position: fixed;
+    z-index: 10;
+    right: calc(var(--edge) + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--edge) + env(safe-area-inset-bottom, 0px));
+    width: min(
+            444px,
+            calc(100vw - 2 * var(--edge) - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
+    );
+    padding: var(--panel-padding);
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid #dce5f0;
+    border-radius: 18px;
+    box-shadow: 0 12px 36px rgba(21, 44, 76, 0.15);
+}
+
+.search-panel.is-collapsed {
+    width: fit-content;
+}
+/*
+ * [내가 지은 클래스] .search-panel, .search-panel.is-collapsed (우측 하단 검색·증상필터·반경 통합 플로팅 관제 패널)
+ * [브라우저 내장 함수] clamp(최소, 권장, 최대), min(...), calc(...), env(safe-area-inset-*) (아이폰 노치·홈바 침범 방지 안전여백)
+ * [성능 핵심 원리] 초당 60프레임으로 그려지는 WebGL 지도 위에서 무거운 backdrop-filter 블러를 쓰지 않고 고불투명도(0.98) 표면을 사용해 모바일 발열을 차단함.
+ */
+
+.panel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.search-panel > .panel-heading {
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 9px;
+}
+
+.search-panel.is-collapsed > .panel-heading {
+    margin-bottom: 0;
+}
+
+.search-heading {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    color: #43576c;
+    font-size: 13px;
+    font-family: var(--font-bold), sans-serif;
+}
+
+.search-panel #map-actions {
+    flex: 1 1 auto;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    margin-left: 2px;
+    gap: 6px;
+}
+
+.search-panel.is-collapsed #map-actions {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    gap: 6px;
+}
+
+.search-panel #search-toggle {
+    margin-left: 0;
+    min-width: 48px;
+    min-height: var(--action-size);
+    padding: 0 10px;
+    border-radius: 12px;
+}
+/*
+ * [CSS 레이아웃] --action-size: clamp(38px, 9.8vw, 45px) + #map-actions (flex: 1 1 auto; justify-content: space-between)
+ * [핵심 원리] 동그라미 버튼 크기를 검색 상자 폭(444px)에 맞춰 45px로 넉넉히 키우고 균등 배분하여,
+ *   좌측 '검색' 글씨와 '반경' 버튼 사이의 어색한 빈 여백 없이 [검색 · 반경 · 내위치 · 새로고침 · 교통 · 다크모드 · 갱신시간 · 접기]가 꽉 차게 정렬됨.
+ */
+
+.panel-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 44px;
+    min-height: 30px;
+    padding: 5px 9px;
+    border: 1px solid #e0e8f2;
+    border-radius: 8px;
+    background: #edf3fa;
+    color: #365879;
+    font-size: var(--search-font-size);
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.panel-toggle:hover {
+    background: #dfeaf7;
+}
+
+.text-button {
+    border: 0;
+    padding: 8px 0;
+    color: #536b89;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+}
+/*
+ * [내가 지은 클래스] .panel-toggle(패널 접기/닫기 보조 버튼), .text-button(밑줄 텍스트형 보조 버튼)
+ */
+
+.map-actions {
+    position: static;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+}
+
+.map-action {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    flex: 0 0 var(--action-size);
+    width: var(--action-size);
+    height: var(--action-size);
+    padding: 0;
+    border: 1px solid #d6e2ef;
+    border-radius: 50%;
+    background: #ffffff;
+    color: #17579e;
+    box-shadow: 0 2px 7px rgba(23, 63, 104, 0.12);
+    text-decoration: none;
+    touch-action: manipulation;
+    cursor: pointer;
+    transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.14s ease;
+}
+
+.map-action:hover,
+.map-action[aria-expanded="true"] {
+    border-color: #397dd3;
+    background: #edf5ff;
+}
+
+.map-action:active {
+    transform: scale(0.94);
+}
+
+.map-action:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.map-action svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.85;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+/*
+ * [내가 지은 클래스] .map-actions(도구 모음 컨테이너), .map-action(반경·내위치·새로고침·교통·다크모드 동그라미 버튼)
+ * [핵심 원리] 중복 선언되어 있던 구형 고정 좌하단 규칙을 제거하고 단일 플렉스 툴바로 깔끔히 통합했음.
+ */
+
+.traffic-toggle-btn {
+    font-size: 11.5px;
+    font-family: var(--font-bold), sans-serif;
+}
+
+.traffic-toggle-btn[aria-pressed="true"] {
+    background: #03c75a;
+    border-color: #029f48;
+    color: #ffffff;
+}
+/*
+ * [CSS 속성 선택자] [aria-pressed="true"] (실시간 교통 레이어가 켜진 상태를 접근성 속성과 시각 색상으로 동시 표현)
+ */
+
+.radius-tool {
+    position: static;
+}
+
+.radius-button {
+    gap: 1px;
+    line-height: 1.15;
+}
+
+.radius-button-label {
+    font-size: 9.5px;
+    color: #607895;
+}
+
+#radius-value {
+    font-size: 10.5px;
+    font-family: var(--font-bold), sans-serif;
+    white-space: nowrap;
+}
+
+.radius-popover {
+    position: absolute;
+    left: auto;
+    right: 0;
+    bottom: calc(100% + 8px);
+    width: min(250px, 100%);
+    max-height: 60dvh;
+    overflow: auto;
+    padding: var(--panel-padding);
+    border: 1px solid #dce5f0;
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 12px 36px rgba(21, 44, 76, 0.16);
+}
+
+.radius-popover h2 {
+    margin: 0;
+    font-size: 13px;
+}
+
+#radius {
+    display: block;
+    width: 100%;
+    height: 40px;
+    margin-top: 10px;
+    padding: 0 10px;
+    border: 1px solid #c8d7ea;
+    border-radius: 9px;
+    background: #f8fbff;
+    color: #294e76;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+#radius-help {
+    margin: 9px 0 0;
+    color: #64758a;
+    font-size: 10.5px;
+    line-height: 1.55;
+    overflow-wrap: break-word;
+}
+/*
+ * [내가 지은 클래스/ID] .radius-popover, #radius, #radius-help (5km ~ 100km 및 전국 반경 즉시 전환 팝오버)
+ */
+
+.search-updated-pill {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: var(--action-size);
+    padding: 4px 11px;
+    margin: 0;
+    border: 1px solid #d6e2ef;
+    border-radius: 13px;
+    background: #f4f8fd;
+    color: #365879;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.search-updated-pill .updated-label {
+    font-size: 9.5px;
+    color: #607895;
+}
+
+.search-updated-pill time {
+    display: block;
+    margin-top: 1px;
+    color: #17579e;
+    font-size: 11.5px;
+    font-family: var(--font-bold), sans-serif;
+    font-variant-numeric: tabular-nums;
+}
+/*
+ * [CSS 숫자 정렬 속성] font-variant-numeric: tabular-nums (시간 숫자가 바뀔 때 글자 폭이 흔들리지 않도록 고정폭 숫자로 렌더링)
+ */
+
+.search-row {
+    display: flex;
+    align-items: center;
+}
+
+#search-form {
+    contain: inline-size;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    flex: 1;
+    min-width: 0;
+    gap: var(--ui-gap);
+}
+
+#keyword {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid #c8d7ea;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #182438;
+    font-size: var(--search-font-size);
+}
+
+#search-form button {
+    min-width: 50px;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563bf;
+    color: #ffffff;
+    font-size: var(--search-font-size);
+    font-family: var(--font-bold), sans-serif;
+    cursor: pointer;
+}
+
+#search-form button:hover {
+    background: #1c52a3;
+}
+/*
+ * [내가 지은 ID] #search-form, #keyword (병원명·지역·도로명 주소 통합 검색 입력 폼)
+ */
+
+.search-results {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    width: 100%;
+    max-height: min(44dvh, 340px);
+    margin: 0;
+    padding: 5px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    list-style: none;
+    background: #ffffff;
+    border: 1px solid #dce5f0;
+    border-radius: 13px;
+    box-shadow: 0 14px 32px rgba(16, 36, 60, 0.2);
+}
+
+.result-button {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 100%;
+    padding: 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #233448;
+    font-size: var(--search-font-size);
+    line-height: 1.45;
+    text-align: left;
+    cursor: pointer;
+}
+
+.result-button:hover,
+.result-button:focus-visible {
+    background: #edf5ff;
+}
+
+.result-button small {
+    color: #64758a;
+    font-size: 11px;
+}
+
+.search-geocode-li {
+    border-top: 1px dashed #cbd5e1;
+}
+
+.search-geocode-btn {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 12px;
+    border: 0;
+    background: rgba(17, 102, 212, 0.06);
+    color: #1d4ed8;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.search-geocode-btn:hover,
+.search-geocode-btn:focus-visible {
+    background: rgba(17, 102, 212, 0.13);
+}
+
+.search-geocode-btn strong {
+    font-size: 0.8rem;
+}
+
+.search-geocode-btn small {
+    color: #64748b;
+    font-size: 0.73rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+/*
+ * [내가 지은 클래스] .search-results, .result-button, .search-geocode-btn (병원 자동완성 + 주소 지오코딩 출발점 이동 드롭다운)
+ */
+
+.filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    font-size: var(--search-font-size);
+}
+
+.filters label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 33px;
+    padding-inline: 6px;
+    border: 1px solid #e3eaf2;
+    border-radius: 7px;
+    background: #f8fafd;
+    color: var(--hospital-color);
+    font-family: var(--font-bold), sans-serif;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.filters input {
+    flex-shrink: 0;
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    accent-color: var(--hospital-color);
+}
+/*
+ * [브라우저 내장 CSS 속성] accent-color: var(--hospital-color) (커스텀 체크박스 재구현 없이도 네이티브 체크박스 색상을 종별 테마색으로 즉시 일치)
+ */
+
+.symptom-filter-wrap {
+    margin-top: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.symptom-chips-bar {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding: 2px 1px;
+    touch-action: pan-x;
+}
+
+.symptom-chips-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.symptom-chip {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 29px;
+    padding: 4px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 11.5px;
+    font-family: var(--font-bold), sans-serif;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.symptom-chip:hover {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+.symptom-chip[aria-pressed="true"] {
+    background: #2563eb;
+    border-color: #1d4ed8;
+    color: #ffffff;
+}
+
+.symptom-chip.avail-only-chip[aria-pressed="true"] {
+    background: #059669;
+    border-color: #047857;
+    color: #ffffff;
+}
+/*
+ * [신규 핵심 도메인 UI — 원터치 증상·상황 프리셋 칩 (.symptom-chips-bar / .symptom-chip)]
+ * - 위급한 보호자가 28종 mkioskty 코드를 몰라도 [가용병상만] [소아응급] [뇌졸중·뇌출혈] [흉통·심근경색] [중증외상] [산부인과·분만] [중증화상] [응급투석]을
+ *   원터치로 누르면 즉시 수용 가능(Y) + 차단공지 없음 병원만 지도와 추천 순위에 남겨 줌.
+ * - touch-action: pan-x 로 모바일에서도 지도 드래그와 간섭 없이 좌우로 부드럽게 스와이프됨.
+ */
+
+.map-count {
+    margin: 6px 0 0;
+    font-size: 10.5px;
+    line-height: 1.45;
+    color: #6b7f97;
+}
+
+.map-count:empty {
+    display: none;
+}
+
+.mobile-top-left-menu {
+    display: none;
+}
+
+.mobile-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid #d6e2ef;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.98);
+    color: #17579e;
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+    cursor: pointer;
+}
+
+.mobile-menu-btn:hover,
+.mobile-menu-btn[aria-expanded="true"] {
+    background: #edf5ff;
+    border-color: #397dd3;
+}
+
+.mobile-menu-drawer {
+    position: relative;
+    padding: 10px 12px;
+    border: 1px solid #dce5f0;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22);
+    max-width: calc(100vw - 2 * var(--edge) - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+}
+/*
+ * [내가 지은 클래스] .mobile-top-left-menu, .mobile-menu-btn, .mobile-menu-drawer
+ * [핵심 원리] 평소 데스크톱에서는 display: none 으로 숨겨져 있다가, 640px 이하 모바일(responsive.css)에서만 좌측 상단에 나타남.
+ */

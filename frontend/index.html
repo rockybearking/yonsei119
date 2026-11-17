@@ -1,99 +1,50 @@
 <!DOCTYPE html>
-<!--
-  ==============================================================================
-  [파일 역할]
-  연세 119 응급실 정보 시스템 (전국 응급의료기관 실시간 정보 관제 시스템) 메인 HTML 문서
-
-  [코드의 경로성 — 이 파일은 어디서 오고 어디로 연결되는가?]
-  1. [누가 이 파일을 브라우저에 보내주는가? (백엔드 → 브라우저)]
-     - 사용자가 `http://localhost:8080/` 접속
-     → `backend/src/main/java/com/yonsei119/config/WebConfig.java`의 `addViewControllers("/")`가 `/index.html`로 연결
-     → `WebConfig.addResourceHandlers()`가 바로 이 `frontend/index.html` 파일을 브라우저에 전달합니다!
-  2. [이 파일이 불러오는 프론트엔드 파일들 (HTML → CSS / JS)]
-     - 스타일시트: `frontend/style.css` (다크/라이트 테마, 반응형 바텀시트/슬라이더/모달, 모바일 안전영역 디자인)
-     - 메인 로직 : `frontend/app.js` (네이버 GL 지도 마운트, 마커 디핑 렌더링, 길찾기, 백엔드 API 통신)
-  3. [이 화면의 버튼들이 최종적으로 호출하는 백엔드 API (`EmergencyApiController.java`)]
-     - 초기 로딩 / '새로고침' 버튼(`#refresh-button`) → `app.js:loadData()` → `GET /api/hospitals`
-     - 검색창 입력/엔터(`#search-form`) → `app.js:updateSearch()` / `geocodeAndMoveOrigin()` → `GET /api/geocode`
-     - 내 위치 / 우클릭 주소 표시(`#origin-address-text`) → `app.js:updateOriginAddress()` → `GET /api/reverse-geocode`
-     - '실도로 최단시간 순위'(`#eta-rank-btn`) → `app.js:loadEtaRanking()` → `GET /api/directions/rank`
-     - '지도에 경로 표시'(`#directions-draw-btn`) / 우클릭 실시간 갱신 → `app.js:loadDirectionsForHospital()` / `refreshActiveRoute()` → `GET /api/directions`
-
-  [자주 하는 수정 예시 가이드]
-  - 예시 1) 네이버 지도 Client ID를 새 키로 교체하고 싶을 때 (`<head>` 내부 `<script>` URL):
-      변경 전: src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=xfbxloc8km&submodules=gl"
-      변경 후: src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=새클라이언트ID&submodules=gl"
-      (참고: 백엔드 `backend/src/main/resources/application.yml`의 `yonsei119.naver.client-id`도 함께 맞춰주세요.)
-  - 예시 2) 최초 접속 시 '라이트 모드'로 시작하게 바꾸고 싶을 때:
-      1) 이 파일의 `<html lang="ko" data-theme="dark">`를 `data-theme="light"`로 변경
-      2) `<body class="dark-mode" data-theme="dark">`에서 `class="dark-mode"`를 제거하고 `data-theme="light"`로 변경
-      3) `frontend/app.js` 상단 `state.darkMode = true`를 `false`로 변경하면 라이트 모드로 시작합니다.
-  - 예시 3) 최초 실행 시 '일반·기타' 병원 체크박스도 켜진 상태로 시작하고 싶을 때:
-      변경 전: <input id="filter-other" type="checkbox">
-      변경 후: <input id="filter-other" type="checkbox" checked>
-  ==============================================================================
--->
 <html lang="ko" data-theme="dark">
+<!--
+  [HTML 태그/속성]
+  - <!DOCTYPE html> : 브라우저에 HTML5 웹 표준 모드로 렌더링하라고 알리는 문서 형식 선언임 (이름 변경 불가).
+  - <html lang="ko" data-theme="dark"> : 한국어(`ko`) 문서임을 스크린 리더·번역기에 알리고 초기 테마를 다크 모드로 지정함.
+  [프로젝트 전체 연결 지도 — 식당 정문 현관문(`index.html`) 비유]
+  - 브라우저 `GET /` 접속 -> 백엔드 `WebConfig.java` -> 바로 이 `frontend/index.html` 반환
+    ├── 스타일시트 8개 병렬 로드 : `css/style.css` + 하위 `css/*.css` 7개
+    ├── 스크립트 10개 모듈 병렬 로드 : `js/theme-init.js` + `js/app.js` + 하위 `js/*.js` 8개
+    └── 백엔드 REST API 8개 연동 : `EmergencyApiController.java` (`/api/config`, `/api/hospitals`, `/api/hospitals/{hpid}`, `/api/directions`, `/api/directions/rank`, `/api/geocode`, `/api/reverse-geocode`, `/api/health`)
+-->
 <head>
     <meta charset="utf-8">
-    <!--
-      [모바일 반응형 뷰포트 핵심 설정]
-      - `width=device-width, initial-scale=1`: 아이폰/안드로이드 기기 실제 논리 해상도(320px~430px 등)에 1:1 맞춤
-      - `viewport-fit=cover`: 아이폰 노치(Notch) / 다이내믹 아일랜드 / 하단 홈 바 영역까지 지도를 꽉 채우고,
-        `style.css`의 `env(safe-area-inset-top/bottom/left/right)`로 버튼들이 가려지지 않게 여백을 확보합니다!
-    -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-
-    <!--
-      [Modern Web 최적화 — 다크/라이트 네이티브 테마 선언 및 FOUC(흰 화면 깜빡임) 원천 차단]
-      - 기본 선언은 `light dark` 양쪽 지원으로 두고, CSS 로드 직전 인라인 스크립트에서 초기 테마(`dark`)로 동기화합니다.
-      - 이후 사용자가 `#theme-toggle` 버튼을 누르면 `frontend/app.js`의 `applyTheme()`이 이 `<meta>` 태그와
-        `<html data-theme="...">` 속성을 실시간으로 함께 바꿔 브라우저 스크롤바·폼 컨트롤 색상까지 일치시킵니다.
-    -->
     <meta name="color-scheme" content="light dark">
-    <script>
-        (function () {
-            let initialTheme = 'dark';
-            try {
-                const savedTheme = localStorage.getItem('yonsei119-theme');
-                if (savedTheme === 'light' || savedTheme === 'dark') {
-                    initialTheme = savedTheme;
-                }
-            } catch {
-                // 시크릿 모드 등 스토리지 접근 제한 환경에서는 기본 다크 테마 사용
-            }
-            const meta = document.querySelector('meta[name="color-scheme"]');
-            if (meta) {
-                meta.content = initialTheme;
-            }
-            document.documentElement.dataset.theme = initialTheme;
-        })();
-    </script>
+    <meta name="theme-color" content="#0f172a">
+    <!--
+      [HTML 메타 태그]
+      - charset="utf-8" : 한글·특수기호가 깨지지 않도록 유니코드 인코딩을 선언함.
+      - viewport="width=device-width, initial-scale=1, viewport-fit=cover" : 아이폰 다이내믹 아일랜드·하단 홈 바까지 지도를 꽉 채우고 `env(safe-area-inset-*)` 여백을 활성화함 (절대 `maximum-scale=1`이나 `user-scalable=no`로 핀치 확대를 막지 않아 웹 접근성 WCAG 1.4.4를 준수함).
+      - color-scheme / theme-color : 브라우저 기본 스크롤바·폼 컨트롤과 모바일 상단 상태바 색상을 다크 관제 테마에 맞춤.
+    -->
+
+    <script src="js/theme-init.js"></script>
+    <!--
+      [내가 분리한 초기화 스크립트] `js/theme-init.js`
+      - 스타일시트가 칠해지기 직전에 `localStorage`의 테마 설정을 읽어 흰 화면 깜빡임(FOUC)을 0ms로 원천 차단함.
+    -->
 
     <title>연세 119 응급실 정보 시스템</title>
     <link rel="icon" type="image/png" href="./Assets/공공데이터포탈_logo.png">
-
+    <link rel="apple-touch-icon" href="./Assets/공공데이터포탈_logo.png">
+    <link rel="manifest" href="manifest.webmanifest">
     <!--
-      [Modern Web 성능 최적화 Phase 3 — 핵심 외부 도메인 조기 연결(preconnect)]
-      - 브라우저가 HTML을 읽는 즉시 DNS 조회 + TCP + TLS 핸드셰이크를 미리 끝내 두어
-        초기 WebGL 벡터 타일 및 스타일 JSON 수신 지연(LCP)을 단축합니다.
-      - 1) `oapi.map.naver.com`   : 네이버 지도 JS v3 메인 SDK 및 GL 서브모듈 서버
-      - 2) `nrbe.map.naver.net`   : 네이버 WebGL 벡터 지도 타일 및 다크모드 Custom Style JSON 서버
-      - 3) `map.pstatic.net`      : 네이버 지도 아이콘 스프라이트·글리프(폰트) 정적 자산 서버
-      - 4) `hangeul.pstatic.net`  : 나눔스퀘어네오 웹폰트 서버
+      [HTML 링크 태그]
+      - rel="manifest" href="manifest.webmanifest" : 스마트폰 홈 화면에 네이티브 앱처럼 설치(PWA)할 수 있게 해 주는 매니페스트 연결임.
     -->
+
     <link rel="preconnect" href="https://oapi.map.naver.com" crossorigin>
     <link rel="preconnect" href="https://nrbe.map.naver.net" crossorigin>
     <link rel="preconnect" href="https://map.pstatic.net" crossorigin>
     <link rel="preconnect" href="https://hangeul.pstatic.net" crossorigin>
-
     <!--
-      [Modern Web 성능 최적화 Phase 3 — 웹폰트 비차단(Non-Render-Blocking) 로드]
-      - 기존 `<link rel="stylesheet">`는 외부 폰트 CSS를 다 받을 때까지 지도와 첫 화면 그리기를 멈추게(Render-blocking) 만듭니다.
-      - `rel="preload" as="style"`로 백그라운드에서 먼저 내려받은 뒤 `onload`에서 스타일시트로 전환하면,
-        느린 모바일 LTE/5G 환경에서도 지도가 지체 없이 즉시 먼저 뜹니다!
+      [HTML 성능 최적화 태그] rel="preconnect" : 외부 지도 SDK·WebGL 벡터 타일·웹폰트 서버와 DNS+TLS 악수를 미리 끝내 초기 로딩 시간(LCP)을 단축함.
     -->
-    <!--suppress JSUnresolvedLibraryURL -->
+
     <link
             rel="preload"
             href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css"
@@ -101,57 +52,74 @@
             onload="this.onload=null;this.rel='stylesheet'"
     >
     <noscript>
-        <!--suppress JSUnresolvedLibraryURL -->
         <link rel="stylesheet" href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css">
     </noscript>
-
-    <!-- 메인 스타일시트 (`frontend/style.css` 참조) -->
-    <link rel="stylesheet" href="style.css">
-
     <!--
-      [네이버 지도 JS v3 SDK 로드 (+ WebGL 커스텀 스타일 서브모듈 `submodules=gl`)]
-      - 연결되는 코드: `frontend/app.js`의 `mountNaverMap()`에서 `naver.maps.Map` 생성 시 사용
-      - 주의: `maps.js`가 내부적으로 `maps-gl.js`를 동기 주입할 수 있도록 `maps.js`에는 `defer`를 붙이지 않으며,
-        핵심 앱 스크립트인 `app.js`에만 `defer`와 `fetchpriority="high"`(단 1개 핵심 스크립트 우선 다운로드)를 부여합니다.
+      [비차단 웹폰트 로드] 외부 나눔스퀘어네오 폰트 CSS가 느려도 지도와 병상 숫자가 먼저 즉시 뜨도록 `preload` 후 비동기 적용함.
     -->
-    <!--suppress JSUnresolvedLibraryURL -->
-    <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=xfbxloc8km&submodules=gl"></script>
-    <script src="app.js" defer fetchpriority="high"></script>
+
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/panels-toolbar.css">
+    <link rel="stylesheet" href="css/map-overlays.css">
+    <link rel="stylesheet" href="css/sheet-egen.css">
+    <link rel="stylesheet" href="css/directions-eta.css">
+    <link rel="stylesheet" href="css/dialogs-toast.css">
+    <link rel="stylesheet" href="css/dark-theme.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <!--
+      [내가 병렬 분리한 8개 CSS 모듈]
+      - 느린 직렬 `@import` 대신 HTML `<link>` 8개를 나란히 선언해 브라우저가 `css/*.css` 모든 스타일 파일을 동시에 병렬 다운로드함.
+    -->
+
+    <link rel="modulepreload" href="js/constants.js">
+    <link rel="modulepreload" href="js/state.js">
+    <link rel="modulepreload" href="js/utils.js">
+    <link rel="modulepreload" href="js/map-engine.js">
+    <link rel="modulepreload" href="js/markers-cluster.js">
+    <link rel="modulepreload" href="js/directions-eta.js">
+    <link rel="modulepreload" href="js/hospital-sheet.js">
+    <link rel="modulepreload" href="js/search-controls.js">
+    <!--
+      [HTML 표준 모듈 프리로드] rel="modulepreload" : `js/app.js`가 하위 `import`를 해석하기를 기다리지 않고, 8개 병렬 ES 모듈을 처음부터 한꺼번에 내려받게 함.
+    -->
+
+    <script
+            id="naver-maps-sdk"
+            data-client-id="xfbxloc8km"
+            src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=xfbxloc8km&submodules=gl"
+    ></script>
+    <script type="module" src="js/app.js" fetchpriority="high"></script>
+    <!--
+      [스크립트 로드 구성]
+      - `#naver-maps-sdk` : 네이버 지도 v3 GL 서브모듈 SDK임 (백엔드 `/api/config`에서 다른 Client ID가 내려오면 `map-engine.js`가 자동 재동기화함).
+      - `type="module" src="js/app.js"` : 표준 ES Module 모드로 메인 오케스트레이터를 구동함 (`type="module"`은 자동으로 `defer` 지연 실행과 엄격 모드 `'use strict'`가 적용됨).
+    -->
 </head>
 <body class="dark-mode" data-theme="dark">
-<!-- ==========================================================================
-     [1. 메인 지도 뷰포트 (#map)]
-     - [역할] 네이버 WebGL 벡터 지도(`naver.maps.Map`)가 그려지는 최하단 전체화면 도화지입니다.
-     - [연결 경로]
-       · CSS 스타일 : `frontend/style.css`의 `#map` (`100dvh` 전체 화면 채움)
-       · JS 마운트  : `frontend/app.js`의 `mountNaverMap()`이 `byId('map')`을 찾아 지도를 생성하고,
-                     지도 위 병원 카드(`createNaverDomOverlay`)와 단일 GeoJSON 경로 레이어를 올립니다.
-     - [수정 시 주의] `id="map"`을 다른 이름으로 바꾸면 `app.js`가 지도를 띄울 요소를 찾지 못하므로 유지하세요!
-     ========================================================================== -->
 <main id="map" aria-label="응급의료기관 네이버 지도"></main>
+<!--
+  [HTML 시맨틱 태그] <main> : 문서의 핵심 본문 영역임을 나타내는 랜드마크 태그임 (형제 태그: `<header>`, `<nav>`, `<aside>`, `<section>`, `<footer>`).
+  [내가 지은 ID] #map : `js/map-engine.js:mountNaverMap()`이 WebGL 벡터 지도와 병원 카드 오버레이를 띄우는 전체화면 도화지임.
+-->
 
-<!-- ==========================================================================
-     [2. 지도 상단 활성 자동차 경로 안내 알약 배너 (#active-route-banner)]
-     - [역할] 병원을 선택해 '지도에 경로 표시'를 누르면 화면 상단에 나타나는 실시간 경로 요약 알약 메뉴입니다.
-       지도에서 다른 지점을 우클릭(모바일은 길게 터치)하면 출발지가 바뀌면서 이 배너의 시간·거리도 실시간 갱신됩니다!
-     - [연결 경로]
-       · CSS 스타일 : `frontend/style.css`의 `.active-route-banner` (데스크톱 중앙 알약형 / 모바일 ☰ 버튼 우측 반응형 배치)
-       · JS 제어    : `frontend/app.js`의 `showActiveRouteBanner()`, `refreshActiveRoute()`,
-                     `#active-route-clear` → `clearRouteFromMap()` (경로선만 삭제, 출발점은 유지),
-                     `#active-route-reset` → `resetOriginAndRoute()` (우클릭 출발점 + 경로선 모두 초기화!)
-     - [수정 예시] '초기화' 버튼 글자를 '전체 초기화'로 바꾸고 싶다면 아래 `<button id="active-route-reset">` 안의 텍스트만 고치면 됩니다.
-     ========================================================================== -->
 <aside id="active-route-banner" class="active-route-banner" aria-live="polite" hidden>
     <div class="active-route-summary">
         <span id="active-route-api" class="active-route-api">Directions 5</span>
-        <strong id="active-route-name" class="active-route-name">병원 경로</strong>
+        <button
+                id="active-route-name"
+                class="active-route-name-btn"
+                type="button"
+                title="클릭하면 목적지 병원 상세 시트를 다시 엽니다"
+        >
+            병원 경로
+        </button>
     </div>
     <div class="active-route-footer">
         <span id="active-route-meta" class="active-route-meta">약 -분 · -km</span>
         <div class="active-route-actions">
-            <button id="active-route-clear" class="active-route-clear" type="button">
-                경로 지우기
-            </button>
+            <a id="active-route-call" class="active-route-call" hidden>응급실 전화</a>
+            <button id="active-route-open" class="active-route-open" type="button">상세</button>
+            <button id="active-route-clear" class="active-route-clear" type="button">경로 지우기</button>
             <button
                     id="active-route-reset"
                     class="active-route-reset"
@@ -164,13 +132,11 @@
         </div>
     </div>
 </aside>
+<!--
+  [내가 지은 ID] #active-route-banner : 자동차 경로 표시 중 화면 상단에 뜨는 실시간 요약 배너임.
+  [UX 개선 포인트] 시트를 닫고 경로를 넓게 보는 중에도 즉시 응급실 전화(`#active-route-call`)를 걸거나 병원 상세(`#active-route-open` / `#active-route-name`)를 다시 열 수 있음.
+-->
 
-<!-- ==========================================================================
-     [2-1. 비침투형 상태·오류 알림 토스트 (#status-toast / #status) 및 스크린 리더 라이브 영역]
-     - [역할] GPS 권한 안내, 우클릭 출발지 변경, 주소 검색 결과, 네트워크 오류 등을 Top Layer에 표시합니다.
-     - [연결 경로] `frontend/app.js`의 `setStatus(message)`가 `popover="manual"` API로 제어하며,
-       외부 지도 클릭 시 실수로 닫히지 않고 자동 타이머 또는 닫기(`×`) 버튼으로 해제됩니다.
-     ========================================================================== -->
 <div id="status-toast" class="status-toast" popover="manual" data-open="false">
     <span id="status" class="status-toast-text"></span>
     <button
@@ -186,16 +152,12 @@
 </div>
 <div id="status-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="alert-announcer" class="sr-only" role="alert" aria-atomic="true"></div>
+<!--
+  [HTML5 Popover & 접근성 라이브 영역]
+  - `popover="manual"` : 지도 클릭으로 실수로 닫히지 않는 Top-Layer 비침투형 알림 토스트임 (형제 옵션: 바깥 클릭 시 자동 닫히는 `popover="auto"`).
+  - `#status-announcer` / `#alert-announcer` : 시각장애인 스크린 리더에 일반 안내(`polite`)와 긴급 오류(`alert`)를 구분해 읽어 주는 숨김 공지판임.
+-->
 
-<!-- ==========================================================================
-     [2-2. 모바일 전용 좌측 상단 ☰(세줄 메뉴) 및 독립 도구 서랍 (#mobile-top-left-menu)]
-     - [역할] 화면 폭이 좁은 아이폰·안드로이드(640px 이하)에서 하단 검색 패널이 좁아지지 않도록,
-       지도 도구 모음(`#map-actions`: 반경·내위치·새로고침·교통·다크모드·갱신시간)을 좌측 상단 ☰ 버튼 서랍 안으로 옮겨 담습니다.
-     - [연결 경로]
-       · CSS 스타일 : `frontend/style.css`의 `.mobile-top-left-menu`, `.mobile-menu-btn`, `.mobile-menu-drawer`
-       · JS 이동 로직: `frontend/app.js`의 `syncMobileMenuPlacement()`가 화면 크기를 감지해
-                     `Element.moveBefore()`(상태 보존 원자적 DOM 이동)로 `#map-actions`를 이 서랍 안팎으로 옮깁니다!
-     ========================================================================== -->
 <aside id="mobile-top-left-menu" class="mobile-top-left-menu" aria-label="모바일 지도 도구 메뉴">
     <button
             id="mobile-menu-btn"
@@ -210,29 +172,15 @@
     </button>
     <div id="mobile-menu-drawer" class="mobile-menu-drawer" hidden></div>
 </aside>
+<!--
+  [내가 지은 ID] #mobile-top-left-menu : 640px 이하 스마트폰에서 `#map-actions` 도구 모음을 담아 두는 좌측 상단 `☰` 서랍임 (`js/search-controls.js:syncMobileMenuPlacement` 연동).
+-->
 
-<!-- ==========================================================================
-     [3. 검색·필터·출발지·실도로 최단시간 순위 통합 관제 패널 (#search-panel)]
-     - [역할] 병원/지역 검색, 종별 체크박스 필터링, 탐색 반경 조절, 테마 전환, 실도로 최단시간 병원 순위 조회를 담당합니다.
-     - [연결 경로]
-       · CSS 스타일 : `frontend/style.css`의 `.search-panel` (데스크톱 좌측 상단 또는 우측 하단 카드 / 모바일 하단 플로팅 패널)
-       · JS 이벤트  : `frontend/app.js`의 `init()`에서 각 버튼/입력창 이벤트 리스너 연결
-     ========================================================================== -->
-<section
-        id="search-panel"
-        class="search-panel"
-        aria-label="병원 검색과 필터"
->
+<section id="search-panel" class="search-panel" aria-label="병원 검색과 필터">
     <div id="search-panel-heading" class="panel-heading">
         <span class="search-heading">검색</span>
 
-        <!--
-          [지도 조작 액션 툴바 (#map-actions)]
-          - 데스크톱(>640px)에서는 여기(`#search-panel-heading` 안)에 놓이고,
-            모바일(<=640px)에서는 `app.js:syncMobileMenuPlacement()`에 의해 위 `#mobile-menu-drawer` 안으로 자동 이동합니다!
-        -->
         <nav id="map-actions" class="map-actions" aria-label="지도 조작 및 갱신 정보">
-            <!-- (1) 탐색 반경 설정 팝오버 도구 (`app.js`: `openRadius`, `closeRadius`, `#radius` change 이벤트) -->
             <div class="radius-tool">
                 <button
                         id="radius-button"
@@ -266,15 +214,8 @@
                         </button>
                     </div>
 
-                    <label class="sr-only" for="radius">
-                        탐색 반경 선택
-                    </label>
+                    <label class="sr-only" for="radius">탐색 반경 선택</label>
 
-                    <!--
-                      [수정 예시 — 기본 반경을 10km에서 20km로 바꾸고 싶을 때]
-                      1) 아래 `<option value="10" selected>`에서 `selected`를 빼고 `<option value="20" selected>`로 옮깁니다.
-                      2) `frontend/app.js` 상단 `state.radiusKm = 10`을 `20`으로 함께 바꾸면 초기 지도 줌과 원 반경이 20km로 시작합니다!
-                    -->
                     <select id="radius" aria-describedby="radius-help">
                         <option value="5">5 km</option>
                         <option value="10" selected>10 km</option>
@@ -284,13 +225,10 @@
                         <option value="all">전국</option>
                     </select>
 
-                    <p id="radius-help">
-                        기준 위치 중심 · 선택하면 바로 적용됩니다.
-                    </p>
+                    <p id="radius-help">기준 위치 중심 · 선택하면 바로 적용됩니다.</p>
                 </section>
             </div>
 
-            <!-- (2) 내 위치 이동 버튼 (`app.js:locate()` → 브라우저 Geolocation GPS → `updateOriginAddress()`) -->
             <button
                     id="location-button"
                     class="map-action"
@@ -298,18 +236,13 @@
                     title="내 위치로 이동"
                     aria-label="내 위치 확인 및 반경 맞추기"
             >
-                <svg
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                        focusable="false"
-                >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <circle cx="12" cy="12" r="7"></circle>
                     <circle cx="12" cy="12" r="2.5"></circle>
                     <path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3"></path>
                 </svg>
             </button>
 
-            <!-- (3) 전체 병원 데이터 강제 새로고침 버튼 (`app.js:loadData(true)` → 백엔드 `GET /api/hospitals?refresh=true`) -->
             <button
                     id="refresh-button"
                     class="map-action"
@@ -317,18 +250,12 @@
                     title="전체 데이터 새로고침"
                     aria-label="전체 데이터 새로고침"
             >
-                <svg
-                        class="refresh-icon"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                        focusable="false"
-                >
+                <svg class="refresh-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path d="M19 10a7.2 7.2 0 1 0 .1 4"></path>
                     <path d="M19 4v6h-6"></path>
                 </svg>
             </button>
 
-            <!-- (4) 실시간 도로 교통상황 레이어 ON/OFF 버튼 (`app.js:toggleTrafficLayer()`) -->
             <button
                     id="traffic-toggle"
                     class="map-action traffic-toggle-btn"
@@ -340,7 +267,6 @@
                 <span>교통</span>
             </button>
 
-            <!-- (5) 다크모드 / 라이트모드 전환 버튼 (`app.js:toggleTheme()` → `applyTheme()` → `mountNaverMap()`) -->
             <button
                     id="theme-toggle"
                     class="map-action theme-toggle-btn"
@@ -349,36 +275,24 @@
                     aria-label="라이트 모드로 전환 (현재 다크 모드)"
                     title="라이트 모드로 전환"
             >
-                <!-- 다크 모드일 때 보이는 달(Moon) 아이콘 -->
-                <svg
-                        id="theme-icon-moon"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                        focusable="false"
-                >
+                <svg id="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                 </svg>
-                <!-- 라이트 모드일 때 보이는 해(Sun) 아이콘 -->
-                <svg
-                        id="theme-icon-sun"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                        focusable="false"
-                        hidden
-                >
+                <svg id="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false" hidden>
                     <circle cx="12" cy="12" r="4.5"></circle>
                     <path d="M12 2v2.5 M12 19.5V22 M4.93 4.93l1.77 1.77 M17.3 17.3l1.77 1.77 M2 12h2.5 M19.5 12H22 M4.93 19.07l1.77-1.77 M17.3 6.7l1.77-1.77"></path>
                 </svg>
             </button>
 
-            <!-- (6) 공공데이터 최근 갱신 시각 표시 알약 (`app.js`가 `EmergencySnapshotDto.updatedAt` 시각을 포맷해 넣음) -->
             <div class="updated-line search-updated-pill" aria-live="polite" title="최근 공공데이터 동기화 시각">
                 <span class="updated-label">갱신 시간</span>
                 <time id="updated-time">확인 중</time>
             </div>
         </nav>
+        <!--
+          [내가 지은 ID] #map-actions : 반경, 내위치, 새로고침, 교통, 다크모드, 갱신시각을 한 줄로 모은 액션 툴바임 (우측 바로 옆에 `#search-toggle` 접기 버튼이 나란히 배치됨).
+        -->
 
-        <!-- 검색 패널 접기/펼치기 버튼 (모바일에서 지도를 넓게 보고 싶을 때 유용) -->
         <button
                 id="search-toggle"
                 class="panel-toggle"
@@ -391,9 +305,7 @@
         </button>
     </div>
 
-    <!-- 검색 입력창, 종별 필터, 출발지 주소 및 실도로 ETA 순위 영역 -->
     <div id="search-content">
-        <!-- 시맨틱 <search> 랜드마크 (`app.js`: `#keyword` input/keydown + `#search-form` submit → `GET /api/geocode`) -->
         <search class="search-row">
             <form id="search-form" autocomplete="off">
                 <label class="sr-only" for="keyword">병원 이름 또는 지역 검색</label>
@@ -411,21 +323,21 @@
                 <button type="submit">검색</button>
             </form>
         </search>
+        <!--
+          [HTML5 시맨틱 태그] <search> : 검색 폼 영역임을 보조기기에 명확히 알려주는 표준 랜드마크 태그임.
+        -->
 
-        <!-- 병원 및 지역 자동완성 드롭다운 목록 (`app.js:renderSearchResults()`가 `<li>` 항목들을 생성) -->
         <ul
                 id="search-results"
                 class="search-results"
+                role="list"
                 aria-label="검색 결과"
                 hidden
         ></ul>
-
         <!--
-          [기관 종별 필터 체크박스 4종]
-          - 연결 경로: 백엔드 `HospitalClassifier.java`가 판정한 `regional` 및 `type.group` 값과
-            `frontend/app.js`의 `visibleTypes()` / `matchesFilter()` 함수가 1:1 매칭됩니다!
-          - 초기 렌더링 쾌적성과 중증 응급의료기관 집중도를 위해 `'일반·기타'`(`#filter-other`)만 기본 해제 상태입니다.
+          [웹 접근성 보강] `list-style: none`이 적용된 `<ul>`이 iOS/macOS Safari VoiceOver에서도 목록 개수를 정상 낭독하도록 `role="list"`를 명시했음.
         -->
+
         <div class="filters">
             <label class="regional">
                 <input id="filter-regional" type="checkbox" checked>
@@ -447,16 +359,24 @@
                 일반·기타
             </label>
         </div>
+        <!--
+          [내가 지은 클래스/ID] .filters, #filter-regional/tertiary/medical/other : 지도 마커와 실도로 추천 순위 양쪽에 동시 적용되는 4대 기관 등급 필터임.
+        -->
 
-        <!-- 현재 지도 화면/반경 내 표시 중인 병원 수 안내 텍스트 (`app.js:updateMarkers()`가 갱신) -->
+        <div class="symptom-filter-wrap">
+            <div
+                    id="symptom-chips-bar"
+                    class="symptom-chips-bar"
+                    role="group"
+                    aria-label="응급 증상 및 가용 병상 빠른 필터"
+            ></div>
+        </div>
+        <!--
+          [신규 핵심 도메인 UI] #symptom-chips-bar : `js/search-controls.js:renderSymptomChips()`가 `[가용병상만]`, `[소아응급]`, `[뇌졸중·뇌출혈]`, `[흉통·심근경색]` 등 원터치 필터 칩을 채우는 가로 스크롤 바임.
+        -->
+
         <p id="map-count" class="map-count" role="status"></p>
 
-        <!--
-          [현재 출발 기준 주소 & 우클릭 초기화 버튼 & 실도로 최단시간 순위 영역 (#origin-eta-bar)]
-          - `#origin-address-text`: `app.js:updateOriginAddress()` → 백엔드 `GET /api/reverse-geocode` 결과 표시
-          - `#origin-reset-btn`   : 지도에 우클릭(롱탭)으로 임의 출발점을 찍었을 때만 나타나며, 누르면 점과 경로를 모두 지웁니다!
-          - `#eta-rank-btn`       : `app.js:loadEtaRanking()` → 백엔드 `GET /api/directions/rank` 병렬 호출 결과를 `#eta-rank-box`에 표시
-        -->
         <div id="origin-eta-bar" class="origin-eta-bar">
             <div class="origin-info-row">
                 <span id="origin-address-text" class="origin-address-text">출발 기준: 위치 확인 중…</span>
@@ -472,25 +392,21 @@
                         초기화
                     </button>
                     <button id="eta-rank-btn" class="eta-rank-btn" type="button" aria-expanded="false">
-                        실도로 최단시간 순위
+                        수용최적·최단시간 순위
                     </button>
                 </div>
             </div>
             <div id="eta-rank-box" class="eta-rank-box" hidden></div>
         </div>
+        <!--
+          [내가 지은 ID] #origin-eta-bar : 현재 출발 기준 주소와 다중 지표(수용최적 vs 순수 최단시간) 병원 추천 패널(`#eta-rank-box`)을 담는 하단 바임.
+        -->
     </div>
 </section>
+<!--
+  [내가 지은 ID] #search-panel : 검색·종별필터·증상프리셋·반경·출발지·추천순위를 하나로 묶은 우측 하단(모바일 하단) 통합 관제 패널임.
+-->
 
-<!-- ==========================================================================
-     [4. 화면 크기별 3단계 반응형 병원 상세 관제 시트 (#sheet) & 배경 딤(#sheet-dim)]
-     - [연결 경로]
-       · 열기 진입점: 지도 위 병원 카드 클릭 / 검색 결과 클릭 / ETA 순위 클릭 → `app.js:openHospital(hospital)`
-       · 닫기 진입점: `#sheet-close` 클릭 / `#sheet-dim` 클릭 / ESC 키 / 모바일 아래로 스와이프 → `app.js:closeSheet()`
-       · 레이아웃 모드 판정: `app.js:syncResponsiveSheetLayout()` + `style.css` 미디어 쿼리가 협업하여 3단계로 자동 변신:
-         1) 대화면 데스크톱 (1200×680 이상): 정중앙 모달 카드 (`body.sheet-layout-modal`)
-         2) 일반 노트북/작은 창            : 우측 슬라이드 드로어 (`body.sheet-layout-drawer`)
-         3) 아이폰/안드로이드 모바일       : 하단 바텀시트 (`body.sheet-layout-bottom`, 터치 드래그 닫기 지원)
-     ========================================================================== -->
 <div id="sheet-dim" class="sheet-dim" hidden></div>
 
 <section
@@ -502,16 +418,10 @@
         aria-hidden="true"
         inert
 >
-    <!-- 모바일 바텀시트 상단 손잡이 바 (`app.js` 터치 스와이프 제스처 연결) -->
-    <div
-            id="sheet-drag-handle"
-            class="sheet-drag-handle"
-            aria-hidden="true"
-    >
+    <div id="sheet-drag-handle" class="sheet-drag-handle" aria-hidden="true">
         <span></span>
     </div>
 
-    <!-- 상세 시트 상단 고정 헤더: 병원 종별 배지, 병원명, 주소, 직선거리, 닫기(×) 버튼 -->
     <div class="sheet-header">
         <div>
             <p id="sheet-updated" class="sheet-updated"></p>
@@ -531,24 +441,14 @@
         </button>
     </div>
 
-    <!-- 상세 시트 내부 스크롤 본문 영역 -->
     <div class="sheet-scroll">
-        <!-- 의료 안전 필수 고지 문구 -->
         <p class="safety-note">
             정보에는 갱신 시차가 있습니다.
             이송·방문 전에 병원에 수용 가능 여부를 전화로 확인하세요.
         </p>
 
-        <!-- 응급실/대표 전화 바로걸기(`tel:`) 및 네이버지도·카카오내비·티맵 딥링크 버튼 (`app.js:renderContacts()` 생성) -->
         <div id="contact-actions" class="contact-actions"></div>
 
-        <!--
-          [세부 섹션 0 — 네이버 Directions 5 / 15 자동차 경로 탐색 및 예상 소요 시간]
-          - 주의(성능 최적화): 시트를 열었을 때 가장 먼저 눈에 보이는 첫 화면(Above-the-fold) 영역이므로
-            지연 렌더링 클래스(`detail-section-deferred`)를 적용하지 않고 즉시 렌더링합니다!
-          - 연결 경로: `app.js:initDirectionsControls()` & `requestDirections()` → 백엔드 `GET /api/directions`
-            → `NaverDirectionsService.getDrivingRoute()` → `DirectionsResponseDto` JSON 수신!
-        -->
         <section class="detail-section directions-section" id="section-directions">
             <div class="section-heading directions-heading">
                 <div class="directions-title-wrap">
@@ -568,7 +468,7 @@
 
                     <label class="sr-only" for="directions-waypoint">경유 병원 선택</label>
                     <select id="directions-waypoint" class="directions-select" title="경유지(1차 병원) 선택">
-                        <option value="" selected>경유지 없음 (직통)</option>
+                        <option value="" selected>경유지 없음 (직행)</option>
                     </select>
                 </div>
 
@@ -587,7 +487,6 @@
             </div>
         </section>
 
-        <!-- [세부 섹션 1 — 실시간 긴급 진료 공지 (`HospitalDto.messages` → `app.js:renderMessages()`)] -->
         <section class="detail-section" id="section-messages">
             <div class="section-heading">
                 <h2>진료 공지</h2>
@@ -596,7 +495,6 @@
             <div id="messages" class="message-list"></div>
         </section>
 
-        <!-- [세부 섹션 2 — 응급실 가용 병상 현황 (`HospitalDto.beds` → `app.js:renderErBedsBoard()`)] -->
         <section class="detail-section" id="section-er-beds">
             <div class="section-heading">
                 <h2>응급실 병상</h2>
@@ -605,17 +503,6 @@
             <div id="er-beds-board" class="egen-board-wrapper"></div>
         </section>
 
-        <!--
-          ======================================================================
-          [Modern Web 성능 최적화 Phase 4 — 스크롤 하단 무거운 섹션 지연 렌더링(`.detail-section-deferred`)]
-          - 아래 섹션 3(입원 병상), 섹션 4(가용 장비), 섹션 5(28대 중증질환), 섹션 6(개발자모드 원본 테이블)은
-            시트를 처음 열었을 때 스크롤 아래쪽(Off-screen)에 위치하며 수십 개의 DOM 셀을 가집니다.
-          - `style.css`에서 `.detail-section-deferred`에 `content-visibility: auto; contain-intrinsic-size: auto none auto 260px;`를
-            적용하여, 병원 카드를 클릭한 첫 순간의 시트 열림 반응 속도(INP)를 대폭 높이고 스크롤 시 자연스럽게 그립니다!
-          ======================================================================
-        -->
-
-        <!-- [세부 섹션 3 — 입원 및 중환자실 병상 현황 (`HospitalDto.beds` → `app.js:renderInpatientBedsBoard()`)] -->
         <section class="detail-section detail-section-deferred" id="section-inpatient-beds">
             <div class="section-heading">
                 <h2>입원 병상</h2>
@@ -623,7 +510,6 @@
             <div id="inpatient-beds-board" class="egen-board-wrapper"></div>
         </section>
 
-        <!-- [세부 섹션 4 — 가용 의료 장비 현황 11종 (`HospitalDto.beds` & `basic` → `app.js:renderEquipment()`)] -->
         <section class="detail-section detail-section-deferred" id="section-equipment">
             <div class="section-heading">
                 <h2>가용 장비</h2>
@@ -631,7 +517,6 @@
             <div id="equipment" class="egen-board-wrapper"></div>
         </section>
 
-        <!-- [세부 섹션 5 — 중증응급질환 28종 수용 가능 여부 (`HospitalDto.severe` → `app.js:renderSevere()`)] -->
         <section class="detail-section detail-section-deferred" id="section-severe">
             <div class="section-heading">
                 <h2>중증응급질환 수용 현황</h2>
@@ -640,11 +525,8 @@
             <div id="severe" class="egen-board-wrapper"></div>
         </section>
 
-        <!-- 레거시 호환용 숨김 컨테이너 -->
-        <div id="beds-board" hidden></div>
         <p id="data-state" class="data-state"></p>
 
-        <!-- [세부 섹션 6 — 개발자 모드: 공공데이터 API 원본 태그/값 전수 검증기 (`app.js` `#developer-mode` toggle 이벤트)] -->
         <details id="developer-mode" class="developer-mode detail-section-deferred">
             <summary>
                 개발자모드
@@ -664,19 +546,16 @@
                     </span>
                 </p>
 
-                <!-- 원본 가용/기준 병상 XML 필드값 (hv1~hv61, hvs01~hvs61) -->
                 <details class="raw-details">
                     <summary>세부 병상·중환자실·시술 항목 전체 보기 (hv / hvs 원본값)</summary>
                     <div id="all-beds" class="raw-content"></div>
                 </details>
 
-                <!-- 원본 중증질환 수용성 필드값 (mkioskty 1~28 및 비고) -->
                 <details class="raw-details" open>
                     <summary>중증응급질환 수용정보 전체 보기 (mkioskty 1~28 및 비고 원본값)</summary>
                     <div id="all-severe" class="raw-content"></div>
                 </details>
 
-                <!-- 원본 실시간 진료 공지 메시지 전문 -->
                 <details class="raw-details">
                     <summary>실시간 진료 공지 원본 전체 보기 (getEmrrmSrsillDissMsgInqire)</summary>
                     <div id="all-messages" class="raw-content"></div>
@@ -687,15 +566,15 @@
         </details>
     </div>
 </section>
+<!--
+  [내가 지은 ID] #sheet : 대화면 모달 · 일반 모니터 우측 드로어 · 스마트폰 바텀시트(+ Half-Peek 2단 스냅)로 변신하는 병원 상세 관제 시트임.
+  [불필요 레거시 제거] 더 이상 참조되지 않던 구형 숨김 컨테이너(`#beds-board`)를 깔끔히 정리했음.
+-->
 
-<!-- ==========================================================================
-     [5. 클러스터 클릭 시 겹친 주변 병원 목록 모달 다이얼로그 (#cluster-dialog)]
-     - [연결 경로] 지도 축소 시 겹친 병원 카드(`+N` 배지 표시) 클릭 → `app.js:openCluster(items)`가
-       네이티브 `<dialog>.showModal()`로 띄우고 `#cluster-list` 안에 병원 선택 버튼을 채웁니다.
-     ========================================================================== -->
 <dialog
         id="cluster-dialog"
         class="cluster-dialog"
+        closedby="any"
         aria-labelledby="cluster-title"
 >
     <div class="dialog-heading">
@@ -718,76 +597,64 @@
 
     <div id="cluster-list" class="cluster-list"></div>
 
-    <button
-            id="cluster-zoom"
-            class="primary-button"
-            type="button"
-    >
+    <button id="cluster-zoom" class="primary-button" type="button">
         이 구역 확대
     </button>
 </dialog>
+<!--
+  [HTML5 네이티브 모달] <dialog id="cluster-dialog" closedby="any"> : 겹친 병원 카드 클릭 시 열리며, 어두운 배경(`::backdrop`) 클릭이나 `ESC`로 즉시 닫힘.
+-->
 
-<!-- ==========================================================================
-     [6. 최초 접속 시 법적·의료적 안전 이용 안내 다이얼로그 (#notice-dialog)]
-     - [연결 경로] `app.js:initNotice()`가 `localStorage.getItem('yonsei119-skip-notice')`를 확인하여 표시하며,
-       `'이 브라우저에서 다시 보지 않기'`(`#notice-skip`) 클릭 시 로컬 스토리지에 기억합니다.
-     ========================================================================== -->
 <dialog
         id="notice-dialog"
         class="notice-dialog"
+        closedby="any"
         aria-labelledby="notice-title"
         aria-describedby="notice-description"
 >
-    <div class="notice-card">
-        <div class="dialog-heading">
-            <h2 id="notice-title">응급의료 정보 이용 안내</h2>
-
-            <button
-                    id="notice-close"
-                    class="close-button"
-                    type="button"
-                    aria-label="이용 안내 닫기"
-            >
-                ×
-            </button>
-        </div>
-
-        <div id="notice-description" class="notice-copy">
-            <p>
-                본 서비스의 병상·진료 정보는 공공데이터 연계 및
-                기관 보고 시점에 따라 실제 병원 현황이나
-                중앙응급의료센터 E-Gen 정보와 차이가 있을 수 있습니다.
-            </p>
-
-            <p>
-                <strong>
-                    응급 상황에는 119에 연락하고,
-                    이송·방문 전 해당 기관에 전화하여
-                    진료 및 수용 가능 여부를 확인해 주세요.
-                </strong>
-            </p>
-
-            <p class="muted">
-                표시된 가용병상 수 및 예상 주행 소요 시간은 실시간 교통·현장 상황에 따라 달라질 수 있습니다.
-            </p>
-        </div>
+    <div class="dialog-heading">
+        <h2 id="notice-title">응급의료 정보 이용 안내</h2>
 
         <button
-                id="notice-confirm"
-                class="primary-button"
+                id="notice-close"
+                class="close-button"
                 type="button"
+                aria-label="이용 안내 닫기"
         >
-            확인했습니다
-        </button>
-
-        <button
-                id="notice-skip"
-                class="text-button"
-                type="button"
-        >
-            이 브라우저에서 다시 보지 않기
+            ×
         </button>
     </div>
+
+    <div id="notice-description" class="notice-copy">
+        <p>
+            본 서비스의 병상·진료 정보는 공공데이터 연계 및
+            기관 보고 시점에 따라 실제 병원 현황이나
+            중앙응급의료센터 E-Gen 정보와 차이가 있을 수 있습니다.
+        </p>
+
+        <p>
+            <strong>
+                응급 상황에는 119에 연락하고,
+                이송·방문 전 해당 기관에 전화하여
+                진료 및 수용 가능 여부를 확인해 주세요.
+            </strong>
+        </p>
+
+        <p class="muted">
+            표시된 가용병상 수 및 예상 주행 소요 시간은 실시간 교통·현장 상황에 따라 달라질 수 있습니다.
+        </p>
+    </div>
+
+    <button id="notice-confirm" class="primary-button" type="button">
+        확인했습니다
+    </button>
+
+    <button id="notice-skip" class="text-button" type="button">
+        이 브라우저에서 다시 보지 않기
+    </button>
 </dialog>
+<!--
+  [HTML5 네이티브 모달] <dialog id="notice-dialog" closedby="any"> : 최초 접속 시 공공데이터 갱신 시차 및 사전 전화 확인 안전 수칙을 고지하는 모달 다이얼로그임.
+-->
 </body>
 </html>

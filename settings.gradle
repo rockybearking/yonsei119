@@ -1,21 +1,16 @@
-/*
- * ============================================================================
- * [파일 역할]
- * 루트 모노레포(Monorepo) Gradle 설정 파일 (settings.gradle)
- *
- * [담당 기능]
- * 1. 루트 프로젝트 이름을 'yonsei119'로 정의합니다.
- * 2. 하위 모듈로 'backend' (Java Spring Boot 서버)를 포함시킵니다.
- *    (프론트엔드는 'frontend' 디렉터리에서 정적 웹 자산으로 관리되며,
- *     백엔드 빌드 시 자동으로 JAR 내부 static 리소스로 패키징됩니다.)
- *
- * [수정 시 영향 및 예시]
- * - 새로운 모듈(예: 배치 서버 'batch')을 추가하고 싶다면 아래에 include를 추가합니다.
- *   예시(변경 전):
- *     include 'backend'
- *   예시(변경 후):
- *     include 'backend', 'batch'
- * ============================================================================
- */
 rootProject.name = 'yonsei119'
+/*
+ * [Gradle 설정 문법] rootProject.name = '...' (이름 변경 불가 내장 속성)
+ * [내가 지은 이름] 'yonsei119' (모노레포 최상위 프로젝트 이름)
+ * [핵심 원리 & 비유] 아파트 단지 입구 현판에 단지 이름('yonsei119')을 적어 두는 코드임.
+ */
+
 include 'backend'
+/*
+ * [Gradle 내장 함수] include '...' (하위 모듈 등록 명령어, 이름 변경 불가 / 형제 명령어: includeBuild, project(...))
+ * [내가 지은 이름] 'backend' (실제 디스크의 backend/ 폴더 이름과 1:1 일치해야 함)
+ * [핵심 원리 & 데이터 흐름]
+ * - Gradle이 루트에서 시작할 때 backend/build.gradle을 하위 주방으로 연결함.
+ * - frontend/ 폴더는 별도 Java 모듈이 아니라 backend 빌드 시 copyFrontendToStatic 작업을 통해
+ *   단일 실행 JAR 내부 정적 리소스(classpath:/static/)로 자동 합본됨.
+ */
