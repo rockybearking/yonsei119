@@ -1,14 +1,22 @@
 <!DOCTYPE html>
 <html lang="ko" data-theme="dark">
 <!--
-  [HTML 태그/속성]
-  - <!DOCTYPE html> : 브라우저에 HTML5 웹 표준 모드로 렌더링하라고 알리는 문서 형식 선언임 (이름 변경 불가).
-  - <html lang="ko" data-theme="dark"> : 한국어(`ko`) 문서임을 스크린 리더·번역기에 알리고 초기 테마를 다크 모드로 지정함.
-  [프로젝트 전체 연결 지도 — 식당 정문 현관문(`index.html`) 비유]
-  - 브라우저 `GET /` 접속 -> 백엔드 `WebConfig.java` -> 바로 이 `frontend/index.html` 반환
-    ├── 스타일시트 8개 병렬 로드 : `css/style.css` + 하위 `css/*.css` 7개
-    ├── 스크립트 10개 모듈 병렬 로드 : `js/theme-init.js` + `js/app.js` + 하위 `js/*.js` 8개
-    └── 백엔드 REST API 8개 연동 : `EmergencyApiController.java` (`/api/config`, `/api/hospitals`, `/api/hospitals/{hpid}`, `/api/directions`, `/api/directions/rank`, `/api/geocode`, `/api/reverse-geocode`, `/api/health`)
+  [HTML 문서 선언 및 표준 속성 (이름 변경 불가)]
+  - <!DOCTYPE html> : 브라우저가 HTML5 표준 모드로 문서를 그리도록 지정하는 선언임.
+  - <html lang="ko"> : 문서 기본 언어를 한국어로 알려 스크린 리더와 번역기가 참조함.
+
+  [커스텀 데이터 속성명]
+  - data-theme="dark" : CSS 테마 선택자와 `js/theme-init.js`·`js/search-controls.js`가 참조하는 테마 상태임.
+
+  [동작 흐름]
+  - 백엔드 진입 경로 :
+    · 브라우저 `GET /` (또는 `/?hospital=...`) ──> `SecurityHeadersFilter`가 보안 헤더 5종 부여
+    · ──> `WebConfig.addViewControllers()`가 `forward:/index.html`로 포워딩
+    · ──> `WebConfig.addResourceHandlers()`가 `noCache`와 Weak ETag로 `frontend/index.html` 반환
+  - 프론트엔드·API 연동 :
+    · CSS 8개·ES 모듈 10개 로드 ──> `EmergencyApiController` 공개 REST API 호출
+    · 연동 경로 : `/api/config`, `/api/hospitals`, `/api/hospitals/{hpid}`, `/api/directions`
+    · 추가 경로 : `/api/directions/rank`, `/api/geocode`, `/api/reverse-geocode`, `/api/health`
 -->
 <head>
     <meta charset="utf-8">
@@ -16,16 +24,31 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#0f172a">
     <!--
-      [HTML 메타 태그]
-      - charset="utf-8" : 한글·특수기호가 깨지지 않도록 유니코드 인코딩을 선언함.
-      - viewport="width=device-width, initial-scale=1, viewport-fit=cover" : 아이폰 다이내믹 아일랜드·하단 홈 바까지 지도를 꽉 채우고 `env(safe-area-inset-*)` 여백을 활성화함 (절대 `maximum-scale=1`이나 `user-scalable=no`로 핀치 확대를 막지 않아 웹 접근성 WCAG 1.4.4를 준수함).
-      - color-scheme / theme-color : 브라우저 기본 스크롤바·폼 컨트롤과 모바일 상단 상태바 색상을 다크 관제 테마에 맞춤.
+      [HTML 메타 태그 및 표준 속성 (이름 변경 불가)]
+      - <head> / <meta> : 문서 메타 정보를 담는 영역과 단일 메타 태그임.
+      - charset="utf-8" : 한글과 특수문자를 UTF-8 유니코드로 인코딩하도록 선언함.
+      - name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" :
+        · 화면 너비를 기기 폭에 맞추고 모바일 노치 영역(`env(safe-area-inset-*)`)까지 확장함.
+        · `maximum-scale=1`·`user-scalable=no`를 쓰지 않아 핀치 확대(WCAG 1.4.4)를 보장함.
+      - name="color-scheme" content="light dark" : 브라우저 기본 스크롤바와 폼의 명암 모드를 지정함.
+      - name="theme-color" content="#0f172a" : 모바일 주소창과 상태바 색상을 지정함.
+
+      [동작 흐름]
+      - 테마 동적 갱신 : `js/theme-init.js` 초기 설정 ──> `js/search-controls.js:applyTheme()` 전환 시 `color-scheme` 동기화
     -->
 
     <script src="js/theme-init.js"></script>
     <!--
-      [내가 분리한 초기화 스크립트] `js/theme-init.js`
-      - 스타일시트가 칠해지기 직전에 `localStorage`의 테마 설정을 읽어 흰 화면 깜빡임(FOUC)을 0ms로 원천 차단함.
+      [HTML 스크립트 태그 및 표준 속성 (이름 변경 불가)]
+      - <script src="..."> : `defer`·`async`·`type="module"` 없이 `<head>` 파싱 중 즉시 동기 실행됨.
+
+      [연결 스크립트 파일]
+      - `js/theme-init.js` : 첫 화면 그리기 직전에 저장된 테마를 적용하는 외부 스크립트임.
+
+      [동작 흐름]
+      - 화면 깜빡임(FOUC) 방지 : `css/style.css` 적용 전 ──> `js/theme-init.js` 즉시 실행
+        ├── `localStorage`의 `'yonsei119-theme'` 읽기 ──> `<meta name="color-scheme">`·`<html data-theme>` 확정
+        └── 인라인 스크립트 대신 외부 파일 분리 ──> CSP 보안 정책과 호환됨
     -->
 
     <title>연세 119 응급실 정보 시스템</title>
@@ -33,8 +56,19 @@
     <link rel="apple-touch-icon" href="./Assets/공공데이터포탈_logo.png">
     <link rel="manifest" href="manifest.webmanifest">
     <!--
-      [HTML 링크 태그]
-      - rel="manifest" href="manifest.webmanifest" : 스마트폰 홈 화면에 네이티브 앱처럼 설치(PWA)할 수 있게 해 주는 매니페스트 연결임.
+      [HTML 제목·링크 태그 및 표준 속성 (이름 변경 불가)]
+      - <title> : 브라우저 탭과 스크린 리더가 읽는 문서 제목을 정의함.
+      - <link rel="icon" type="image/png"> / <link rel="apple-touch-icon"> : 파비콘과 iOS 홈 아이콘을 지정함.
+      - <link rel="manifest" href="..."> : 설치형 웹 앱(PWA) 매니페스트 파일을 연결함.
+
+      [연결 리소스 경로]
+      - `./Assets/공공데이터포탈_logo.png` : 파비콘 및 애플 터치 아이콘 이미지 파일 경로.
+      - `manifest.webmanifest` : 앱 이름·아이콘·화면 모드를 담은 PWA 설정 파일.
+
+      [동작 흐름]
+      - 정적 자산·매니페스트 서빙 :
+        ├── `/Assets/**` 요청 ──> `WebConfig.addResourceHandlers()`가 7일 공용 캐시로 반환
+        └── `manifest.webmanifest` ──> `WebConfig`·`SecurityHeadersFilter`가 `application/manifest+json;charset=UTF-8`로 보호
     -->
 
     <link rel="preconnect" href="https://oapi.map.naver.com" crossorigin>
@@ -42,9 +76,18 @@
     <link rel="preconnect" href="https://map.pstatic.net" crossorigin>
     <link rel="preconnect" href="https://hangeul.pstatic.net" crossorigin>
     <!--
-      [HTML 성능 최적화 태그] rel="preconnect" : 외부 지도 SDK·WebGL 벡터 타일·웹폰트 서버와 DNS+TLS 악수를 미리 끝내 초기 로딩 시간(LCP)을 단축함.
+      [HTML 성능 최적화 링크 속성 (이름 변경 불가)]
+      - <link rel="preconnect" href="..." crossorigin> : 외부 서버와 DNS·TCP·TLS 연결을 미리 여는 힌트임.
+
+      [사전 연결 외부 호스트]
+      - 지도 : 네이버 지도 SDK(`oapi.map.naver.com`), 벡터 타일(`nrbe.map.naver.net`), 지도 자산(`map.pstatic.net`).
+      - 웹폰트 : 네이버 한글 웹폰트 서버(`hangeul.pstatic.net`).
+
+      [동작 흐름]
+      - 초기 지연 단축 : HTML 파싱 단계 `preconnect` ──> 네트워크 연결 사전 수립 ──> 첫 지도·LCP 표시 단축
     -->
 
+    <!--suppress JSUnresolvedLibraryURL -->
     <link
             rel="preload"
             href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css"
@@ -52,10 +95,18 @@
             onload="this.onload=null;this.rel='stylesheet'"
     >
     <noscript>
+        <!--suppress JSUnresolvedLibraryURL -->
         <link rel="stylesheet" href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css">
     </noscript>
     <!--
-      [비차단 웹폰트 로드] 외부 나눔스퀘어네오 폰트 CSS가 느려도 지도와 병상 숫자가 먼저 즉시 뜨도록 `preload` 후 비동기 적용함.
+      [HTML 비차단 폰트 프리로드 및 표준 태그 (이름 변경 불가)]
+      - <link rel="preload" as="style" onload="..."> : 외부 CSS를 화면 차단 없이 먼저 내려받는 비동기 패턴임.
+        · 완료 시 `onload`가 `rel='stylesheet'`로 바꾸고 `this.onload=null`로 재실행을 막음.
+      - <noscript> : 자바스크립트가 꺼진 환경에서 기본 `<link rel="stylesheet">`를 적용하는 태그임.
+      - noinspection JSUnresolvedLibraryURL 주석 : 외부 CDN 웹폰트 링크에 대한 IntelliJ 로컬 라이브러리 누락 경고를 끄는 IDE 지시어임.
+
+      [동작 흐름]
+      - 렌더링 차단 회피 : `hangeul.pstatic.net` 폰트 선행 다운로드 ──> `onload`로 스타일 적용 ──> 지도·병상 표시 지연 없음
     -->
 
     <link rel="stylesheet" href="css/style.css">
@@ -67,8 +118,14 @@
     <link rel="stylesheet" href="css/dark-theme.css">
     <link rel="stylesheet" href="css/responsive.css">
     <!--
-      [내가 병렬 분리한 8개 CSS 모듈]
-      - 느린 직렬 `@import` 대신 HTML `<link>` 8개를 나란히 선언해 브라우저가 `css/*.css` 모든 스타일 파일을 동시에 병렬 다운로드함.
+      [HTML 스타일시트 태그 및 표준 속성 (이름 변경 불가)]
+      - <link rel="stylesheet" href="..."> : CSS 파일을 문서에 연결해 적용하는 표준 링크 태그임.
+
+      [모듈 및 파일 구성]
+      - 8개 기능별 CSS 병렬 선언 : 직렬 `@import` 대신 HTML `<link>`로 나란히 선언해 동시 다운로드함.
+        · 기본·지도 : `css/style.css`, `css/panels-toolbar.css`, `css/map-overlays.css`
+        · 시트·경로·알림 : `css/sheet-egen.css`, `css/directions-eta.css`, `css/dialogs-toast.css`
+        · 테마·반응형 : `css/dark-theme.css`, `css/responsive.css`
     -->
 
     <link rel="modulepreload" href="js/constants.js">
@@ -80,7 +137,16 @@
     <link rel="modulepreload" href="js/hospital-sheet.js">
     <link rel="modulepreload" href="js/search-controls.js">
     <!--
-      [HTML 표준 모듈 프리로드] rel="modulepreload" : `js/app.js`가 하위 `import`를 해석하기를 기다리지 않고, 8개 병렬 ES 모듈을 처음부터 한꺼번에 내려받게 함.
+      [HTML 표준 ES 모듈 프리로드 속성 (이름 변경 불가)]
+      - <link rel="modulepreload" href="..."> : 진입 스크립트가 `import`를 해석하기 전 하위 모듈을 미리 내려받아 컴파일하게 하는 힌트임.
+
+      [선행 로드 모듈 목록]
+      - 기초·유틸리티 : `js/constants.js`, `js/state.js`, `js/utils.js`
+      - 지도·경로·시트·제어 : `js/map-engine.js`, `js/markers-cluster.js`, `js/directions-eta.js`, `js/hospital-sheet.js`, `js/search-controls.js`
+
+      [동작 흐름]
+      - 워터폴 제거 : 브라우저 `<link rel="modulepreload">` ──> 8개 ES 모듈 병렬 다운로드·컴파일 ──> `js/app.js` 대기 단축
+      - 서빙·캐시 연결 : `WebConfig.addResourceHandlers()` 서빙 & `sw.js`의 `APP_SHELL_ASSETS` 캐시 대상 포함
     -->
 
     <script
@@ -90,16 +156,33 @@
     ></script>
     <script type="module" src="js/app.js" fetchpriority="high"></script>
     <!--
-      [스크립트 로드 구성]
-      - `#naver-maps-sdk` : 네이버 지도 v3 GL 서브모듈 SDK임 (백엔드 `/api/config`에서 다른 Client ID가 내려오면 `map-engine.js`가 자동 재동기화함).
-      - `type="module" src="js/app.js"` : 표준 ES Module 모드로 메인 오케스트레이터를 구동함 (`type="module"`은 자동으로 `defer` 지연 실행과 엄격 모드 `'use strict'`가 적용됨).
+      [HTML 스크립트 태그 및 표준 속성 (이름 변경 불가)]
+      - <script id src> : 외부 스크립트에 요소 ID를 부여해 동기 로드하는 태그임.
+      - <script type="module" src="..." fetchpriority="high"> : ES 모듈 모드로 높은 우선순위로 로드함.
+        · 특징 : `type="module"`은 자동으로 `defer`(파싱 완료 후 실행)와 `'use strict'`가 적용됨.
+
+      [요소 ID 및 커스텀 데이터 속성명]
+      - `#naver-maps-sdk` / `data-client-id="xfbxloc8km"` : 로드된 네이버 지도 Client ID를 비교하는 기준 속성임.
+      - `js/app.js` : 프론트엔드 메인 진입 모듈 파일임.
+
+      [동작 흐름]
+      - 키 재동기화 : `app.js:init()` ──> `search-controls.js:syncFrontendConfig()` (`GET /api/config`)
+        └── 응답 `naverClientId` != `data-client-id` ──> `map-engine.js:ensureNaverMapSdkLoaded()` SDK 재로드
     -->
 </head>
 <body class="dark-mode" data-theme="dark">
 <main id="map" aria-label="응급의료기관 네이버 지도"></main>
 <!--
-  [HTML 시맨틱 태그] <main> : 문서의 핵심 본문 영역임을 나타내는 랜드마크 태그임 (형제 태그: `<header>`, `<nav>`, `<aside>`, `<section>`, `<footer>`).
-  [내가 지은 ID] #map : `js/map-engine.js:mountNaverMap()`이 WebGL 벡터 지도와 병원 카드 오버레이를 띄우는 전체화면 도화지임.
+  [HTML 시맨틱 태그 및 표준 속성 (이름 변경 불가)]
+  - <body> : 브라우저 화면에 실제로 표시되는 문서 본문 컨테이너 태그임.
+  - <main> : 문서 핵심 본문 영역임을 보조기기에 알리는 시맨틱 랜드마크 태그임.
+    · 동급 랜드마크 : `<header>`, `<nav>`, `<aside>`, `<section>`, `<footer>`.
+  - aria-label="..." : 시각 텍스트가 없는 요소의 역할을 스크린 리더에 설명하는 속성임.
+
+  [요소 ID·클래스명 및 커스텀 데이터 속성명]
+  - `.dark-mode` / `data-theme="dark"` / `data-sheet-layout` : 테마와 시트 형태를 동기화하는 `<body>` 속성임.
+    · 제어 모듈 : `css/dark-theme.css`, `search-controls.js:applyTheme()`, `hospital-sheet.js:syncResponsiveSheetLayout()`.
+  - `#map` : `map-engine.js:mountNaverMap()`이 네이버 지도(`state.map`)와 병원 카드 오버레이를 올리는 컨테이너임.
 -->
 
 <aside id="active-route-banner" class="active-route-banner" aria-live="polite" hidden>
@@ -133,8 +216,21 @@
     </div>
 </aside>
 <!--
-  [내가 지은 ID] #active-route-banner : 자동차 경로 표시 중 화면 상단에 뜨는 실시간 요약 배너임.
-  [UX 개선 포인트] 시트를 닫고 경로를 넓게 보는 중에도 즉시 응급실 전화(`#active-route-call`)를 걸거나 병원 상세(`#active-route-open` / `#active-route-name`)를 다시 열 수 있음.
+  [HTML 시맨틱 태그 및 표준 속성 (이름 변경 불가)]
+  - <aside> : 핵심 본문 주변에 붙는 보조 안내 영역임을 나타내는 시맨틱 태그임.
+  - <div> / <span> / <button type="button"> / <a> : 구획, 인라인 텍스트, 폼 제출 없는 버튼, 링크 태그임.
+  - aria-live="polite" / hidden / title / aria-label : 음성 안내, 비활성 숨김, 툴팁, 접근성 라벨 속성임.
+
+  [요소 ID 및 클래스명]
+  - 배너·요약 : `#active-route-banner` (`.active-route-banner`), `#active-route-api`, `#active-route-name`, `#active-route-meta`.
+  - 조작 버튼 : `#active-route-call`, `#active-route-open`, `#active-route-clear`, `#active-route-reset`.
+
+  [동작 흐름]
+  - 배너 표시 : `GET /api/directions` ──> `directions-eta.js:drawRouteOnMap()` ──> `banner.hidden = false` & 시간·전화 채움
+  - 버튼 조작 : `directions-eta.js:initDirectionsControls()` 연결 ──>
+    ├── `#active-route-name` / `#active-route-open` ──> `reopenActiveRouteHospital()` (상세 시트 재열기)
+    ├── `#active-route-clear` ──> `clearRouteOnMap()` (경로만 삭제)
+    └── `#active-route-reset` ──> `resetOriginAndRoute()` (출발점과 경로 모두 초기화)
 -->
 
 <div id="status-toast" class="status-toast" popover="manual" data-open="false">
@@ -153,9 +249,23 @@
 <div id="status-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="alert-announcer" class="sr-only" role="alert" aria-atomic="true"></div>
 <!--
-  [HTML5 Popover & 접근성 라이브 영역]
-  - `popover="manual"` : 지도 클릭으로 실수로 닫히지 않는 Top-Layer 비침투형 알림 토스트임 (형제 옵션: 바깥 클릭 시 자동 닫히는 `popover="auto"`).
-  - `#status-announcer` / `#alert-announcer` : 시각장애인 스크린 리더에 일반 안내(`polite`)와 긴급 오류(`alert`)를 구분해 읽어 주는 숨김 공지판임.
+  [HTML5 Popover 및 WAI-ARIA 표준 속성 (이름 변경 불가)]
+  - popover="manual" : 바깥 클릭이나 ESC로 자동 닫히지 않고 스크립트·버튼으로만 닫히며 Top Layer에 표시됨.
+    · 형제 옵션 : `popover="auto"`는 바깥 클릭과 ESC 키로 자동 닫힘.
+  - popovertarget / popovertargetaction="hide" : JS 없이 선언적으로 대상 Popover를 닫는 버튼 속성임.
+  - role="status" / aria-live="polite" / aria-atomic="true" : 일반 상태 변경 시 문장 전체를 순차 낭독함.
+  - role="alert" / aria-atomic="true" : 오류·경고 발생 시 즉시 음성으로 알리는 긴급 영역 속성임.
+
+  [요소 ID·클래스명 및 커스텀 데이터 속성명]
+  - 토스트 UI : `#status-toast` (`.status-toast`), `#status` (`.status-toast-text`), `#status-toast-close`.
+  - 음성 안내·숨김 : `#status-announcer`, `#alert-announcer`, `.sr-only` (화면 숨김·스크린 리더 전용).
+  - `data-open` / `data-tone` : `js/utils.js:setStatus()`가 열림 여부(`"true"`/`"false"`)와 성격(`"info"`/`"error"`)을 기록함.
+
+  [동작 흐름]
+  - 토스트 제어 : `utils.js:setStatus(message)` ──> `showPopover()`/`hidePopover()` & 타이머(`4.2초`/`6.5초`)
+  - 음성 안내 및 닫기 :
+    ├── 확정 결과 문구(`…` 제외) ──> `#status-announcer` 또는 `#alert-announcer` 기록
+    └── `#status-toast-close` 클릭 ──> 선언적 닫기 + `app.js`가 `setStatus('')` 호출
 -->
 
 <aside id="mobile-top-left-menu" class="mobile-top-left-menu" aria-label="모바일 지도 도구 메뉴">
@@ -173,7 +283,18 @@
     <div id="mobile-menu-drawer" class="mobile-menu-drawer" hidden></div>
 </aside>
 <!--
-  [내가 지은 ID] #mobile-top-left-menu : 640px 이하 스마트폰에서 `#map-actions` 도구 모음을 담아 두는 좌측 상단 `☰` 서랍임 (`js/search-controls.js:syncMobileMenuPlacement` 연동).
+  [HTML 태그 및 표준 접근성 속성 (이름 변경 불가)]
+  - <aside> / <button type="button"> / <div> / <span> : 메뉴 영역과 토글 버튼·서랍 컨테이너 태그임.
+  - aria-expanded / aria-controls : 메뉴 펼침 상태와 제어할 서랍 요소 ID를 보조기기에 알림.
+  - aria-hidden="true" / hidden : 장식용 기호를 음성 낭독에서 제외하고 초기 상태를 숨김.
+
+  [요소 ID 및 클래스명]
+  - `#mobile-top-left-menu` (`.mobile-top-left-menu`), `#mobile-menu-btn` (`.mobile-menu-btn`), `#mobile-menu-drawer` (`.mobile-menu-drawer`).
+
+  [동작 흐름]
+  - 반응형 DOM 이동 : 뷰포트 `640px` 이하(`MOBILE_MAX_WIDTH`) ──> `search-controls.js:syncMobileMenuPlacement()`
+    └── `#map-actions` 툴바를 `#mobile-menu-drawer` 내부로 이동해 하단 검색 패널 공간 확보
+  - 열기·닫기 : `#mobile-menu-btn` 클릭 ──> `app.js`가 `toggleMobileMenu()` 호출
 -->
 
 <section id="search-panel" class="search-panel" aria-label="병원 검색과 필터">
@@ -290,7 +411,26 @@
             </div>
         </nav>
         <!--
-          [내가 지은 ID] #map-actions : 반경, 내위치, 새로고침, 교통, 다크모드, 갱신시각을 한 줄로 모은 액션 툴바임 (우측 바로 옆에 `#search-toggle` 접기 버튼이 나란히 배치됨).
+          [HTML 시맨틱·SVG·폼 태그 및 표준 속성 (이름 변경 불가)]
+          - <nav> : 지도 조작 버튼들이 모인 내비게이션 영역 태그임.
+          - <section> / <h2> / <p> / <time> : 반경 설정 팝오버, 제목, 도움말, 갱신 시각 표기 태그임.
+          - <label for> / <select aria-describedby> / <option value selected> :
+            · 화면에는 숨기되 스크린 리더에 연결되는 라벨과 도움말 연결 속성을 지정함.
+            · 6단계 반경 드롭다운에서 `selected`로 초기 선택 항목을 지정함.
+          - <button type="button" aria-pressed> : 켜짐·꺼짐 상태를 보조기기에 전달하는 토글 버튼 속성임.
+          - <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> : 장식용 벡터 아이콘의 초점·낭독 제외임.
+
+          [요소 ID 및 클래스명]
+          - 툴바·반경 : `#map-actions` (`.map-actions`), `#radius-button`, `#radius-value`, `#radius-popover`, `#radius-title`.
+          - 반경 입력 : `#radius-close`, `#radius`, `#radius-help`.
+          - 조작·시각 : `#location-button`, `#refresh-button`, `#traffic-toggle`, `#theme-toggle`, `#theme-icon-moon`, `#theme-icon-sun`, `#updated-time`.
+
+          [동작 흐름]
+          - 반경·도구 버튼 연동 :
+            ├── `#radius` 변경 ──> `search-controls.js:initRadius()` ──> 마커·반경 원·순위 갱신
+            ├── `#location-button` ──> `locate()` / `#traffic-toggle` ──> `map-engine.js:toggleTrafficLayer()`
+            ├── `#theme-toggle` ──> `initThemeToggle()` (다크·라이트 전환)
+            └── `#refresh-button` ──> `loadData(true)` ──> `GET /api/hospitals?refresh=true&compact=true` ──> `updateSummary()` ──> `#updated-time` 반영
         -->
 
         <button
@@ -324,7 +464,19 @@
             </form>
         </search>
         <!--
-          [HTML5 시맨틱 태그] <search> : 검색 폼 영역임을 보조기기에 명확히 알려주는 표준 랜드마크 태그임.
+          [HTML5 시맨틱 태그 및 표준 폼 속성 (이름 변경 불가)]
+          - <search> : 검색 입력창과 결과 제어를 감싸는 HTML 시맨틱 랜드마크 태그임.
+          - <form autocomplete="off"> : 브라우저 기본 자동완성 팝업이 화면을 가리지 않게 끔.
+          - <input type="search"> : 검색 입력용 필드이며 `enterkeyhint="search"`로 모바일 키보드에 검색 버튼을 띄움.
+          - autocapitalize="off" / spellcheck="false" / aria-controls : 자동 대문자·맞춤법 밑줄을 끄고 결과 목록을 연결함.
+          - <button type="submit"> : 엔터 키나 버튼 클릭 시 폼의 `submit` 이벤트를 발생시킴.
+
+          [요소 ID 및 클래스명]
+          - `.search-row`, `#search-form`, `#keyword`.
+
+          [동작 흐름]
+          - 검색·지오코딩 흐름 : `#keyword` (`input`·`focus`) 또는 `#search-form` (`submit`) ──> `app.js` ──> `search-controls.js:updateSearch()`
+            └── 병원명 매칭 목록 + `GET /api/geocode` 주소 출발점 이동 버튼 표시
         -->
 
         <ul
@@ -335,7 +487,16 @@
                 hidden
         ></ul>
         <!--
-          [웹 접근성 보강] `list-style: none`이 적용된 `<ul>`이 iOS/macOS Safari VoiceOver에서도 목록 개수를 정상 낭독하도록 `role="list"`를 명시했음.
+          [HTML 태그 및 표준 접근성 속성 (이름 변경 불가)]
+          - <ul> / role="list" / aria-label / hidden : 목록 태그, 역할 명시, 접근성 이름, 초기 숨김임.
+            · CSS `list-style: none` 적용 시 Safari VoiceOver가 목록 역할을 잃지 않도록 `role="list"`를 둠.
+
+          [요소 ID 및 클래스명]
+          - `#search-results` (`.search-results`).
+
+          [동작 흐름]
+          - 동적 렌더링 : `search-controls.js:updateSearch()` ──> 병원 결과(최대 8건) & 주소 지오코딩 버튼 생성
+            └── `geocodeAndMoveOrigin()` ──> `GET /api/geocode?query=...` ──> `<li>` 항목 채움
         -->
 
         <div class="filters">
@@ -360,7 +521,17 @@
             </label>
         </div>
         <!--
-          [내가 지은 클래스/ID] .filters, #filter-regional/tertiary/medical/other : 지도 마커와 실도로 추천 순위 양쪽에 동시 적용되는 4대 기관 등급 필터임.
+          [HTML 폼 체크박스 및 표준 속성 (이름 변경 불가)]
+          - <label> / <input type="checkbox" checked> : 라벨이 체크박스를 감싸 클릭 영역을 넓히고 초기 선택 상태를 줌.
+
+          [요소 ID 및 클래스명]
+          - 그룹·종별 클래스 : `.filters`, `.regional`(권역응급), `.tertiary`(상급종합), `.medical`(의료원), `.other`(일반·기타).
+          - 체크박스 ID : `#filter-regional`, `#filter-tertiary`, `#filter-medical`, `#filter-other`.
+
+          [동작 흐름]
+          - 양방향 필터 연동 : 4개 체크박스 `change` 이벤트 ──> `app.js` 핸들러 실행
+            ├── `markers-cluster.js:updateMarkers()` ──> 지도 마커 즉시 필터링
+            └── `directions-eta.js:loadEtaRanking()` ──> `GET /api/directions/rank` (`includeRegional`~`includeOther`) 전송
         -->
 
         <div class="symptom-filter-wrap">
@@ -372,7 +543,15 @@
             ></div>
         </div>
         <!--
-          [신규 핵심 도메인 UI] #symptom-chips-bar : `js/search-controls.js:renderSymptomChips()`가 `[가용병상만]`, `[소아응급]`, `[뇌졸중·뇌출혈]`, `[흉통·심근경색]` 등 원터치 필터 칩을 채우는 가로 스크롤 바임.
+          [HTML 표준 접근성 그룹 속성 (이름 변경 불가)]
+          - role="group" / aria-label : 동적 생성되는 버튼 묶음을 하나의 논리 그룹으로 보조기기에 알림.
+
+          [요소 ID 및 클래스명]
+          - `.symptom-filter-wrap`, `#symptom-chips-bar` (`.symptom-chips-bar`).
+
+          [동작 흐름]
+          - 칩 생성 : `constants.js:SYMPTOM_PRESETS` ──> `search-controls.js:renderSymptomChips()` ──> '가용병상만' + 8개 버튼
+          - 필터 정합성 : 칩 선택 ──> `utils.js:matchesSymptomPresetClient()` & `HospitalRecommendationScorer` 동일 규칙 선별
         -->
 
         <p id="map-count" class="map-count" role="status"></p>
@@ -399,15 +578,48 @@
             <div id="eta-rank-box" class="eta-rank-box" hidden></div>
         </div>
         <!--
-          [내가 지은 ID] #origin-eta-bar : 현재 출발 기준 주소와 다중 지표(수용최적 vs 순수 최단시간) 병원 추천 패널(`#eta-rank-box`)을 담는 하단 바임.
+          [HTML 태그 및 표준 접근성 속성 (이름 변경 불가)]
+          - <p role="status"> : 반경 내 병원 수 변화를 보조기기에 알리는 상태 영역 태그임.
+          - <button type="button" aria-expanded="false" hidden> : 펼침 상태와 초기 숨김 여부를 제어함.
+
+          [요소 ID 및 클래스명]
+          - 카운트·바 : `#map-count` (`.map-count`), `#origin-eta-bar` (`.origin-eta-bar`), `#origin-address-text` (`.origin-address-text`).
+          - 버튼·결과 : `#origin-reset-btn` (`.origin-reset-btn`), `#eta-rank-btn` (`.eta-rank-btn`), `#eta-rank-box` (`.eta-rank-box`).
+
+          [동작 흐름]
+          - 카운트·주소 갱신 :
+            ├── `markers-cluster.js:updateMarkers()` ──> `#map-count` 병원 수 갱신
+            └── `search-controls.js:updateOriginAddress()` ──> `GET /api/reverse-geocode` ──> `#origin-address-text` 표시
+          - 순위·초기화 :
+            ├── `#eta-rank-btn` 클릭 ──> `directions-eta.js:loadEtaRanking()` ──> `GET /api/directions/rank` ──> `#eta-rank-box` 렌더링
+            └── `#origin-reset-btn` 클릭 ──> `directions-eta.js:resetOriginAndRoute()` 실행
         -->
     </div>
 </section>
 <!--
-  [내가 지은 ID] #search-panel : 검색·종별필터·증상프리셋·반경·출발지·추천순위를 하나로 묶은 우측 하단(모바일 하단) 통합 관제 패널임.
+  [HTML 시맨틱 태그 및 표준 접근성 속성 (이름 변경 불가)]
+  - <section aria-label> : 독립된 주제 영역을 묶고 보조기기에 영역 제목을 알림.
+  - <button aria-expanded aria-controls> : 접기·펼치기 상태와 제어 대상 요소 ID를 연결함.
+
+  [요소 ID 및 클래스명]
+  - `#search-panel` (`.search-panel`), `#search-panel-heading` (`.panel-heading`), `#search-toggle` (`.panel-toggle`), `#search-content`.
+
+  [동작 흐름]
+  - 접기·펼치기 : `#search-toggle` 클릭 ──> `search-controls.js:initPanels()` ──> `#search-content` 접기·`.is-collapsed` 토글
+  - 지도 여백 동기화 : `ResizeObserver`·크기 측정 ──> CSS 변수 `--search-panel-height` 갱신
 -->
 
 <div id="sheet-dim" class="sheet-dim" hidden></div>
+<!--
+  [HTML 표준 속성 (이름 변경 불가)]
+  - <div hidden> : `hidden`은 요소가 비활성 상태일 때 렌더링과 접근성 트리에서 숨기는 불리언 속성임.
+
+  [요소 ID 및 클래스명]
+  - `#sheet-dim` (`.sheet-dim`) : 상세 시트가 열릴 때 배경 지도를 어둡게 가리는 반투명 배경 막임.
+
+  [동작 흐름]
+  - 배경 클릭 닫기 : `#sheet` 열림 ──> `#sheet-dim` 표시 ──> 사용자 클릭 ──> `app.js` ──> `hospital-sheet.js:closeSheet()`
+-->
 
 <section
         id="sheet"
@@ -440,6 +652,19 @@
             ×
         </button>
     </div>
+    <!--
+      [HTML 태그 및 표준 접근성 속성 (이름 변경 불가)]
+      - <div aria-hidden="true"> / <span> / <p> / <h1> / <button type="button" aria-label> :
+        · 상단 스와이프 손잡이(음성 낭독 제외)와 병원 이름·종별·주소를 담는 헤더 태그 구성임.
+
+      [요소 ID 및 클래스명]
+      - 핸들·헤더 : `#sheet-drag-handle`, `.sheet-header`, `#sheet-updated`, `#hospital-type`.
+      - 정보·닫기 : `#hospital-name`, `#hospital-address`, `#hospital-distance`, `#sheet-close`.
+
+      [동작 흐름]
+      - 정보 채움 : `hospital-sheet.js:openHospital()` ──> 이름·종별·주소·거리·동기화 시각 표시
+      - 스와이프 전환 : `#sheet-drag-handle` 드래그 ──> `initSheetDrag()` ──> 전체 펼침 <-> Half-Peek(`268px`) <-> 닫힘
+    -->
 
     <div class="sheet-scroll">
         <p class="safety-note">
@@ -448,6 +673,16 @@
         </p>
 
         <div id="contact-actions" class="contact-actions"></div>
+        <!--
+          [요소 ID 및 클래스명]
+          - `.sheet-scroll`, `.safety-note`, `#contact-actions` (`.contact-actions`).
+
+          [동작 흐름]
+          - 버튼 동적 생성 : `hospital-sheet.js:renderContacts()` ──> `#contact-actions` 내부 채움
+            ├── 응급실·대표 전화 `tel:` 발신 링크
+            ├── 네이버 지도·카카오맵·티맵 길안내 버튼
+            └── `?hospital={hpid}` 공유 버튼 (Web Share API / 클립보드 복사)
+        -->
 
         <section class="detail-section directions-section" id="section-directions">
             <div class="section-heading directions-heading">
@@ -486,6 +721,22 @@
                 <p class="empty-state">자동차 예상 소요 시간과 최적 경로를 계산하고 있습니다…</p>
             </div>
         </section>
+        <!--
+          [HTML 태그 및 표준 속성 (이름 변경 불가)]
+          - <section> / <h2> / <label class="sr-only" for> : 구획, 제목, 스크린 리더 전용 라벨임.
+          - <select> / <option value selected> / <button type="button"> / <div aria-live="polite"> :
+            · 드롭다운 선택, 기본 선택값, 일반 버튼, 갱신 시 순차 낭독 영역임.
+
+          [요소 ID 및 클래스명]
+          - `#section-directions`, `#directions-status-badge`, `#directions-api`, `#directions-waypoint`.
+          - `#directions-draw-btn`, `#directions-clear-btn`, `#directions-result`.
+
+          [동작 흐름]
+          - 경유지·경로 조회 : `directions-eta.js:populateWaypointSelect()` ──> `loadDirectionsForHospital()` ──> `GET /api/directions`
+          - 화면 표시·지도 선 :
+            ├── 4대 옵션(`trafast`, `traoptimal`, `tracomfort`, `traavoidtoll`)·혼잡 칩·회전 안내 ──> `#directions-result`
+            └── `#directions-draw-btn` 클릭 ──> 지도에 WebGL GeoJSON 경로선 표시
+        -->
 
         <section class="detail-section" id="section-messages">
             <div class="section-heading">
@@ -526,6 +777,21 @@
         </section>
 
         <p id="data-state" class="data-state"></p>
+        <!--
+          [HTML 태그]
+          - <section> / <h2> / <span> / <div> / <p> : 5개 상세 보드 구획과 상태 문단 태그임.
+
+          [요소 ID 및 클래스명]
+          - 공지·응급실 : `#section-messages` (`#message-count`, `#messages`), `#section-er-beds` (`#bed-time`, `#er-beds-board`).
+          - 입원·장비 : `#section-inpatient-beds` (`#inpatient-beds-board`), `#section-equipment` (`#equipment`).
+          - 중증·상태·성능 : `#section-severe` (`#severe-time`, `#severe`), `#data-state`, `.detail-section-deferred`.
+
+          [동작 흐름]
+          - 5대 보드 렌더링 : `hospital-sheet.js` 렌더러 ──> `constants.js` 스키마 매핑 ──> 각 DOM 채움
+            ├── `renderMessages()`, `renderBeds()` (`EMERGENCY_BED_ITEMS`·`INPATIENT_BED_SECTIONS`)
+            ├── `renderEquipment()` (`EQUIPMENT_TABLE_ITEMS`), `renderSevere()` (`SEVERE_DISEASE_GROUPS`)
+            └── `openHospital()` ──> 누락된 데이터 소스 안내를 `#data-state`에 표기
+        -->
 
         <details id="developer-mode" class="developer-mode detail-section-deferred">
             <summary>
@@ -564,11 +830,36 @@
                 <div id="basic-info" class="basic-info"></div>
             </div>
         </details>
+        <!--
+          [HTML5 네이티브 접기·펼치기 태그 및 표준 속성 (이름 변경 불가)]
+          - <details> / <summary> / <small> / open : JS 없이도 아코디언 펼침·접기와 `toggle` 이벤트를 제공함.
+            · `open` 속성을 붙인 항목은 페이지 로드 시 기본 펼침 상태로 시작함.
+
+          [요소 ID 및 클래스명]
+          - 제어·상태 : `#developer-mode`, `#developer-spinner`, `#developer-status`, `.raw-details`.
+          - 원본 영역 : `#all-beds`, `#all-severe`(기본 펼침), `#all-messages`, `#basic-info`.
+
+          [동작 흐름]
+          - 온디맨드 단건 상세 조회 : `#developer-mode` `toggle` 이벤트 ──> `app.js` ──> `renderDeveloperInspector()`
+            ├── 미보강 기관 (`!_detailHydrated`) ──> `GET /api/hospitals/{hpid}` ──> `state.detailCache` 저장
+            └── `API_FIELD_LABELS`·`MKIOSKTY_METADATA` 대조 ──> `#all-beds`·`#all-severe`·`#all-messages`·`#basic-info` 출력
+        -->
     </div>
 </section>
 <!--
-  [내가 지은 ID] #sheet : 대화면 모달 · 일반 모니터 우측 드로어 · 스마트폰 바텀시트(+ Half-Peek 2단 스냅)로 변신하는 병원 상세 관제 시트임.
-  [불필요 레거시 제거] 더 이상 참조되지 않던 구형 숨김 컨테이너(`#beds-board`)를 깔끔히 정리했음.
+  [HTML 시맨틱·표준 접근성 속성 (이름 변경 불가)]
+  - role="dialog" / aria-modal="true" / aria-labelledby : 제목이 연결된 모달 대화창임을 보조기기에 알림.
+  - aria-hidden="true" / inert : 닫힌 동안 내부 버튼의 포커스 이동과 스크린 리더 탐색을 막는 속성임.
+
+  [요소 ID 및 클래스명]
+  - `#sheet` (`.sheet`, `.open`, `.half-peek`).
+
+  [동작 흐름]
+  - 열림·접근성 전환 : `hospital-sheet.js:openHospital()` ──> `inert = false`, `aria-hidden = "false"` & `app.js` 포커스 트랩
+  - 반응형 레이아웃 : `syncResponsiveSheetLayout()` & `css/responsive.css`
+    ├── `1200×680` 이상 대화면 ──> 중앙 모달(`modal`)
+    ├── 중형 데스크톱 화면 ──> 우측 드로어(`slider`)
+    └── `640px` 이하·터치 기기 ──> 하단 바텀시트(`mobile`)
 -->
 
 <dialog
@@ -602,7 +893,17 @@
     </button>
 </dialog>
 <!--
-  [HTML5 네이티브 모달] <dialog id="cluster-dialog" closedby="any"> : 겹친 병원 카드 클릭 시 열리며, 어두운 배경(`::backdrop`) 클릭이나 `ESC`로 즉시 닫힘.
+  [HTML5 네이티브 모달 태그 및 표준 속성 (이름 변경 불가)]
+  - <dialog closedby="any" aria-labelledby="..."> : `showModal()` 호출 시 Top Layer와 `::backdrop`을 자동 생성함.
+    · `closedby="any"` 속성으로 백드롭 클릭과 ESC 키 닫기를 네이티브 지원함.
+
+  [요소 ID 및 클래스명]
+  - `#cluster-dialog` (`.cluster-dialog`), `#cluster-title`, `#cluster-close`, `#cluster-list`, `#cluster-zoom`.
+
+  [동작 흐름]
+  - 클러스터 열기 : 겹친 카드 클릭 ──> `markers-cluster.js:openCluster()` ──> `state.clusterItems` 채움 ──> `showModal()`
+  - 구역 확대 : `#cluster-zoom` 클릭 ──> `app.js` ──> `naver.maps.LatLngBounds` & `map-engine.js:fitBounds()` 실행
+  - 구형 브라우저 폴백 : `closedby` 미지원 환경 ──> `utils.js:installDialogLightDismiss()` 백드롭 닫기 처리
 -->
 
 <dialog
@@ -654,7 +955,18 @@
     </button>
 </dialog>
 <!--
-  [HTML5 네이티브 모달] <dialog id="notice-dialog" closedby="any"> : 최초 접속 시 공공데이터 갱신 시차 및 사전 전화 확인 안전 수칙을 고지하는 모달 다이얼로그임.
+  [HTML5 네이티브 모달 태그 및 표준 속성 (이름 변경 불가)]
+  - <dialog closedby="any" aria-labelledby="..." aria-describedby="..."> : 제목과 설명 본문을 스크린 리더에 연결함.
+  - <strong> : 중요한 경고나 필수 확인 사항을 의미론적으로 강조하는 표준 태그임.
+
+  [요소 ID 및 클래스명]
+  - 모달·본문 : `#notice-dialog` (`.notice-dialog`), `#notice-title`, `#notice-close`, `#notice-description` (`.notice-copy`).
+  - 버튼 : `#notice-confirm`, `#notice-skip`.
+
+  [동작 흐름]
+  - 최초 안내 및 다시 보지 않기 : `search-controls.js:initNotice()` ──> `localStorage`에서 `NOTICE_KEY` 조회
+    ├── `'1'` 아님(딥링크·비공지 프리뷰 제외) ──> `showModal()`로 이용 안내 모달 열기
+    └── `#notice-skip` 클릭 ──> `NOTICE_KEY`에 `'1'` 저장 후 모달 닫기
 -->
 </body>
 </html>

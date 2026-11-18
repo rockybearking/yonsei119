@@ -17,20 +17,36 @@
 })();
 /*
  * [JS 문법]
- * - (function 함수명() { ... })() : 선언과 동시에 딱 1번 즉시 실행되고 전역 변수 오염을 남기지 않는 즉시 실행 함수 표현식(IIFE)임.
- * - let / const : 값 재할당이 필요한 변수는 `let`, 한 번 담으면 바뀌지 않는 상자 참조는 `const`로 선언함.
- * - try { ... } catch (...) { ... } : 사파리 시크릿 모드나 서드파티 쿠키 차단 환경에서 스토리지 접근 시 발생할 수 있는 보안 예외를 안전하게 흡수함.
- * - void : 표현식을 평가하되 반환값은 사용하지 않음을 명시하는 자바스크립트 예약어임.
- * [브라우저 내장 도구(API) & 내장 함수]
- * - localStorage.getItem('키') : 브라우저 영구 로컬 저장소에서 문자열 설정값을 꺼내는 내장 함수임 (이름 변경 불가).
- *   (형제 저장소 비교: 탭을 닫으면 사라지는 `sessionStorage`, 대용량 구조화 DB인 `IndexedDB`, 서비스 워커용 `CacheStorage`)
- * - document.querySelector(...) : CSS 선택자로 HTML 요소를 1개 찾는 내장 DOM 함수임 (형제 함수: `getElementById`, `querySelectorAll`).
- * - document.documentElement.dataset.theme : `<html>` 루트 태그의 `data-theme="..."` 사용자 정의 속성을 읽고 쓰는 내장 프로퍼티임.
- * [내가 지은 이름]
- * - applyInitialThemeBeforePaint(초기 테마 동기화 함수명), initialTheme(초기 테마 상자), savedTheme(저장된 테마값), colorSchemeMeta(메타 태그 참조)
- * [핵심 원리 — 왜 이 파일만 `defer`나 `type="module"` 없이 `<head>` 최상단에서 실행하는 이유]
- * - 비유하자면 '연극 막이 오르기 전에 무대 조명(암전/주간)을 먼저 세팅하는 스태프'임.
- * - 스타일시트(`css/style.css`)가 화면을 칠하기 직전에 `<html data-theme="dark|light">`와 `<meta name="color-scheme">`를 먼저 확정해 두어야,
- *   야간 응급 상황에서 다크 모드로 접속했을 때 순간적으로 하얀 화면이 번쩍이는 현상(FOUC, Flash of Unstyled Content)을 0ms로 원천 차단할 수 있음.
- * - 또한 인라인 `<script>` 대신 외부 파일(`js/theme-init.js`)로 분리하여 콘텐츠 보안 정책(CSP) 호환성과 코드 모듈성을 함께 확보했음.
+ * - (function 이름() { ... })() : 선언과 동시에 1회 실행되는 즉시 실행 함수(IIFE)임.
+ *   · 내부 변수가 전역 스코프로 새어 나가지 않게 격리함.
+ * - let / const : 값이 바뀌는 변수는 `let`, 참조가 고정된 변수는 `const`로 선언함.
+ * - try { ... } catch (err) { ... } : 저장소 접근이 차단된 환경의 예외를 흡수해 중단을 막음.
+ * - === / || / if : 엄격 동등 비교(`===`)와 논리합(`||`)으로 허용된 값만 걸러냄.
+ * - void : 표현식을 평가하되 반환값을 버려 미사용 변수 경고를 피하는 연산자임.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - localStorage.getItem(key) : 브라우저 영구 저장소에서 문자열 설정값을 동기 조회하는 메서드임.
+ *   · 비교 : 탭 종료 시 비워지는 `sessionStorage`, 비동기 DB인 `IndexedDB`와 구분됨.
+ * - document.querySelector(selector) : CSS 선택자와 일치하는 첫 번째 DOM 요소를 반환함.
+ *   · 형제 메서드 : ID 전용 `getElementById()`, 다건 조회 `querySelectorAll()`.
+ * - HTMLMetaElement.prototype.content : `<meta>` 태그의 `content` 속성값을 읽고 쓰는 프로퍼티임.
+ * - document.documentElement : 문서 최상위 루트 요소(`<html>`)를 가리키는 읽기 전용 프로퍼티임.
+ * - HTMLElement.prototype.dataset : 요소의 `data-*` 속성을 카멜 표기 키로 다루는 표준 프로퍼티임.
+ *
+ * [함수명 및 지역 변수명]
+ * - 함수명 : `applyInitialThemeBeforePaint` (초기 화면 그리기 전 테마 확정 IIFE).
+ * - 지역 변수명 :
+ *   · `initialTheme` : 기본값 `'dark'`로 시작해 최종 적용할 테마 문자열을 담는 변수.
+ *   · `savedTheme` : `localStorage`에서 꺼낸 `'yonsei119-theme'` 저장값.
+ *   · `storageErr` : 저장소 접근 거부 시 `catch` 블록이 받는 예외 객체.
+ *   · `colorSchemeMeta` : `<meta name="color-scheme">` 요소 참조.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `index.html` `<head>` 안에서 CSS 파일보다 먼저 동기 `<script>`로 실행됨.
+ * - 흐름 :
+ *   ├── `localStorage`에서 `'yonsei119-theme'` 조회 ──> `'light'`/`'dark'`면 `initialTheme` 갱신
+ *   ├── 저장소 차단·오류 발생 ──> `catch`로 예외 무시 후 기본 `'dark'` 유지
+ *   └── `<meta name="color-scheme">`와 `<html data-theme>`에 `initialTheme` 즉시 반영
+ * - 효과 : 첫 프레임부터 선택된 색상이 적용되어 초기 화면 깜빡임(FOUC)을 막음.
+ * - 연동 : 외부 JS 파일로 분리해 CSP 보안 정책과 맞고 `search-controls.js`와 같은 키를 공유함.
  */

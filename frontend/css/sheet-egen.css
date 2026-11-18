@@ -29,8 +29,35 @@
     visibility: visible;
 }
 /*
- * [내가 지은 클래스] .sheet-dim(배경 반투명 딤), .sheet(병원 상세 정보 관제 시트), .sheet.open(열림 상태)
- * [핵심 원리] 기본(노트북/중형 모니터)은 우측 슬라이드 드로어로 열리며, 대화면(>=1200px)은 중앙 모달, 모바일(<=640px/터치)은 바텀시트로 자동 전환됨.
+ * [CSS 문법]
+ * - 복합 클래스 선택자 (.a.b) : 두 클래스를 공백 없이 이어 두 클래스를 모두 가진 요소만 선택함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - position: fixed / inset: 0 / top / right / bottom : 화면 기준 고정 배치와 상하좌우 좌표 속성임.
+ * - z-index : 요소의 쌓임 순서를 정수로 지정하는 속성임 (배경 딤 20 위에 시트 30을 배치함).
+ * - display: flex / flex-direction: column : 자식 요소를 위에서 아래로 쌓는 세로 배치 속성임.
+ * - width: min(1060px, 100vw) / max-width: 100% : min() 함수로 최대 1060px과 화면 폭 중 작은 값 선택함.
+ * - overflow-x: hidden : 가로 방향 넘침과 가로 스크롤바를 숨기는 속성임.
+ * - background / rgba() / box-shadow : 반투명 배경색과 좌측 그림자를 지정하는 속성·함수임.
+ * - transform: translateX(...) : 레이아웃 재계산 없이 GPU에서 요소를 좌우로 미는 이동 함수임.
+ * - visibility: hidden | visible : 숨김 시 화면 표시와 키보드 탭 초점을 함께 차단하는 속성임.
+ * - transition / transition-delay : 닫힐 때는 220ms 이동 뒤 숨기고, 열릴 때는 지연 0s로 즉시 표시함.
+ *
+ * [CSS 선택자명]
+ * - .sheet-dim : 상세 시트 뒤쪽 지도를 어둡게 가리고 클릭 시 닫는 배경 딤 클래스명임.
+ * - .sheet : 병원 상세 정보 패널의 기본 우측 슬라이드 드로어 컨테이너 클래스명임.
+ * - .sheet.open : 상세 시트가 열려 화면 안으로 이동한 활성 상태 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : #sheet-dim(.sheet-dim)과 #sheet(.sheet) 다이얼로그 요소에 적용됨.
+ * - frontend/js/hospital-sheet.js : openHospital()이 .open을 추가하고 inert = false로 전환함.
+ * - frontend/js/hospital-sheet.js : closeSheet()가 .open과 .half-peek를 제거하고 inert = true로 복원함.
+ *
+ * [동작 흐름]
+ * - 지도 마커·검색 결과 클릭 -> openHospital() 호출 -> .sheet.open 적용
+ *   ├── 열림 : transition-delay: 0s로 즉시 visible 전환 ──> translateX(0) 220ms 이동
+ *   ├── 기본 PC : 우측 드로어 표시 (1200x680 이상 비터치 PC는 중앙 모달 전환)
+ *   └── 모바일·터치 : 640px 이하 또는 터치 기기에서 하단 바텀시트로 전환
  */
 
 .sheet-drag-handle {
@@ -51,7 +78,28 @@
     background: #b9c6d5;
 }
 /*
- * [내가 지은 클래스] .sheet-drag-handle (모바일 터치 기기에서 위·아래 스와이프로 전체 펼침 ↔ 반열림(Half-peek) ↔ 닫기를 조작하는 손잡이 바)
+ * [CSS 문법]
+ * - 자손 결합자 (A B) : 상위 요소 내부에 있는 모든 하위 태그를 선택하는 표준 결합자 문법임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: none | flex | block : 화면에서 숨기거나 플렉스·블록 배치를 전환하는 속성임.
+ * - flex: 0 0 auto : 영역이 늘거나 줄지 않도록 지정된 고정 높이(26px)를 유지하는 속성임.
+ * - justify-content: center / align-items: center : 내부 막대 요소를 가로·세로 정중앙에 맞춤.
+ * - width / height / border-radius / background / cursor: grab : 손잡이 크기·모서리·잡기 커서임.
+ * - touch-action: none : 드래그 중 브라우저 기본 스크롤과 당겨서 새로고침 동작을 끄는 속성임.
+ *
+ * [CSS 선택자명]
+ * - .sheet-drag-handle : 모바일 바텀시트 상단의 터치 드래그 손잡이 영역 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : <div id="sheet-drag-handle" class="sheet-drag-handle"><span></span></div>와 연결됨.
+ * - frontend/js/hospital-sheet.js : initSheetDrag()가 터치 시작·이동·종료 이벤트를 연결함.
+ *
+ * [동작 흐름]
+ * - 손잡이 터치 드래그 -> touch-action: none으로 기본 스크롤 차단 -> 실시간 위치 이동
+ *   ├── 위로 당김 ──> expandSheetFromHalfPeek()로 전체 펼침
+ *   ├── 적당히 내림 ──> snapSheetToHalfPeek()로 반열림(.half-peek) 스냅
+ *   └── 끝까지 내림 ──> closeSheet()로 시트 닫힘
  */
 
 .sheet-header {
@@ -122,7 +170,36 @@
     background: #dfe7f0;
 }
 /*
- * [타이포그래피 & 반응형 규칙] clamp(1.18rem, 1rem + 1.5vw, 1.45rem) (rem과 vw를 결합해 OS 글자 확대 설정 WCAG 1.4.4를 존중하면서 화면 크기에 비례 조절)
+ * [CSS 문법]
+ * - 직계 자식 결합자 (>) : 바로 아래 단계에 있는 직계 자식 요소만 선택하는 문법임.
+ * - 의사 클래스 (:hover) : 마우스 포인터를 요소 위에 올렸을 때만 스타일을 바꾸는 문법임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - flex: 1 1 auto / min-width: 0 : 제목 영역이 유연하게 줄어들어 우측 닫기 버튼 밀림을 막음.
+ * - flex: 0 0 38px / justify-content: space-between / align-items: flex-start / gap : 양끝 정렬 속성임.
+ * - calc() / env(safe-area-inset-top, 0px) : 상단 노치·상태바 안전 여백을 계산에 더하는 함수임.
+ * - linear-gradient(135deg, ...) : 135도 대각선 방향의 색상 그라데이션 배경을 그리는 함수임.
+ * - font-size: clamp(1.18rem, 1rem + 1.5vw, 1.45rem) : 최소·선호·최대 글자 크기를 제한하는 함수임.
+ *   · 효과 : 사용자 글자 크기 설정(rem)과 화면 너비(vw)를 함께 반영해 가독성을 유지함.
+ * - word-break: keep-all / overflow-wrap: break-word : 한글은 어절 단위로, 긴 영문은 칸 안에서 줄바꿈함.
+ * - display: grid / place-items: center / border-radius: 50% : 닫기 기호를 원형 버튼 정중앙에 배치함.
+ * - margin / padding / border / border-bottom / color / font-weight / line-height / cursor: pointer : 외곽·글꼴 속성임.
+ *
+ * [CSS 선택자명]
+ * - .sheet-header : 종별 배지, 병원명, 주소, 거리, 닫기 버튼을 감싸는 상단 고정 헤더 클래스명임.
+ * - .type-badge : 권역응급의료센터 등 응급의료기관 종별 배지 클래스명임.
+ * - .sheet-updated / .muted : 최종 새로고침 시각 문구와 주소·거리 보조 문구 클래스명임.
+ * - .close-button : 상세 시트와 주변 병원·이용 안내 다이얼로그가 공통 사용하는 닫기 버튼임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : #sheet-updated, #hospital-type, #hospital-name, #hospital-address, #sheet-close에 적용됨.
+ * - frontend/index.html : #hospital-distance 및 다이얼로그 닫기 버튼(#cluster-close, #notice-close)과 매칭됨.
+ * - frontend/js/hospital-sheet.js : openHospital()이 문구를 채우고 initSheetDrag()가 헤더 탭 복원을 연결함.
+ *
+ * [동작 흐름]
+ * - 시트 열림 -> .sheet-header가 flex: 0 0 auto로 상단 고정
+ *   ├── 본문 스크롤 중에도 병원명과 닫기 버튼이 화면 상단에 항상 유지됨
+ *   └── .half-peek 반열림 상태에서 헤더 탭 -> 전체 시트 펼침으로 복귀
  */
 
 .sheet-scroll {
@@ -147,7 +224,25 @@
     word-break: keep-all;
 }
 /*
- * [브라우저 내장 CSS 속성] overscroll-behavior: contain (상세 시트를 끝까지 스크롤했을 때 뒤쪽 페이지나 지도가 흔들리는 스크롤 체이닝 방지)
+ * [표준 CSS 속성·단위·함수]
+ * - flex: 1 1 auto / min-height: 0 : 남은 세로 높이를 채우면서 내부 스크롤이 동작하게 제약을 푸는 속성임.
+ * - padding / calc() / env(safe-area-inset-bottom, 0px) : 하단 홈 바 안전 여백만큼 바닥 안쪽 여백을 더함.
+ * - overflow-x: hidden / overflow-y: auto : 가로 스크롤은 막고 내용 초과 시 세로 스크롤만 생성함.
+ * - overscroll-behavior: contain : 시트 끝까지 스크롤해도 뒤쪽 지도나 문서로 전파되지 않게 막음.
+ * - -webkit-overflow-scrolling: touch : 구형 iOS WebKit에서 관성 터치 스크롤을 유지하는 접두 속성임.
+ * - margin / border / border-radius / background / color / font-size / line-height / word-break: keep-all : 배너 스타일임.
+ *
+ * [CSS 선택자명]
+ * - .sheet-scroll : 시트 헤더 아래쪽 전체 상세 섹션을 감싸는 독립 스크롤 영역 클래스명임.
+ * - .safety-note : 시트 최상단에서 데이터 시차 안내와 사전 전화 확인을 당부하는 배너 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : <div class="sheet-scroll"> 내부 맨 위에 <p class="safety-note">가 위치함.
+ * - frontend/js/hospital-sheet.js : openHospital()과 snapSheetToHalfPeek() 시 scrollTop을 0으로 초기화함.
+ *
+ * [동작 흐름]
+ * - 시트 본문을 끝까지 올리거나 내림 -> overscroll-behavior: contain 작동
+ *   └── 스크롤 전파(체이닝) 차단 ──> 배경 지도의 의도치 않은 줌·이동 방지
  */
 
 .contact-actions {
@@ -231,8 +326,36 @@
     color: #ffffff;
 }
 /*
- * [신규 UX 개선 — 내비게이션 3사 + 병원 직통 공유하기 버튼 (.share-hospital-btn)]
- * - 보호자·가족 간 ?hospital=A2200001 딥링크를 카카오톡·문자로 즉시 공유할 수 있으며 모든 버튼이 최소 터치 규격(44px)을 충족함.
+ * [CSS 문법]
+ * - 그룹 선택자 (,) : 쉼표로 여러 선택자를 묶어 공통 버튼 스타일을 한 번에 적용하는 문법임.
+ * - 복합 클래스 선택자 (.a.b) / 의사 클래스 (:active) : 누르는 순간 크기·밝기 피드백을 주는 문법임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: flex / flex-direction: column / gap : 전화 행과 내비 행을 세로로 쌓고 간격을 두는 속성임.
+ * - display: grid / grid-template-columns: repeat(N, minmax(0, 1fr)) : 2열·4열을 균등 분할하는 격자 함수·단위임.
+ * - display: inline-flex / align-items: center / justify-content: center / place-items: center : 버튼 글자 중앙 정렬임.
+ * - min-width: 0 / min-height: 44px : 긴 번호에도 열 깨짐을 막고 모바일 권장 터치 높이(44px)를 지킴.
+ * - touch-action: manipulation : 더블탭 확대 대기(약 300ms)를 건너뛰어 터치 즉시 실행되게 하는 속성임.
+ * - transition / transform: scale(0.97) / filter: brightness(0.95) : 눌림 순간 시각적 축소·명암 함수임.
+ * - text-decoration: none / overflow-wrap: break-word / cursor: pointer / text-align: center : 링크·버튼 정렬임.
+ * - padding / border / border-radius / background / color / font-size / font-weight : 여백·색상·글꼴 속성임.
+ *
+ * [CSS 선택자명]
+ * - .contact-actions : 직통 전화 행과 내비·공유 버튼 행을 묶는 상위 컨테이너 클래스명임.
+ * - .phone-actions / .phone-button / .phone-missing : 2열 전화 그리드, 발신 링크 버튼, 번호 없음 안내임.
+ * - .navigation-actions : 내비게이션 앱·공유 버튼 4열 그리드 클래스명임.
+ * - .map-button (.naver, .kakao, .tmap, .share-hospital-btn) : 3사 내비 딥링크 및 병원 공유 버튼임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : <div id="contact-actions" class="contact-actions"></div> 컨테이너와 매칭됨.
+ * - frontend/js/hospital-sheet.js : renderContacts(hospital)가 전화 유효성 검사 후 .phone-button/.phone-missing 생성함.
+ * - frontend/js/hospital-sheet.js : 내비 버튼 클릭 시 launchNavigation(), 공유 클릭 시 shareHospital()을 실행함.
+ * - frontend/css/responsive.css : 720px 이하에서 .navigation-actions를 2열, 360px 이하에서 .phone-actions를 1열로 줄임.
+ *
+ * [동작 흐름]
+ * - 병원 열기 -> renderContacts() 실행 -> 2열 전화 버튼 + 4열 내비·공유 버튼 DOM 배치
+ *   ├── 화면 폭 720px 이하 ──> 내비·공유 버튼이 2x2 격자로 자동 전환
+ *   └── 화면 폭 360px 이하 ──> 전화 버튼이 1열로 전환되어 세로 겹침 방지
  */
 
 .detail-section {
@@ -258,7 +381,28 @@
     }
 }
 /*
- * [Modern Web 성능 최적화] content-visibility: auto (초기 화면 아래쪽에 숨겨진 입원병상·장비·28대 중증질환·개발자모드의 레이아웃 연산을 스크롤 시점까지 지연시켜 시트 열림 속도 INP를 극대화)
+ * [CSS 문법]
+ * - @supports not (조건) : 기능 쿼리에 부정(not)을 붙여 content-visibility 속성을 미지원하는 브라우저에만 폴백 적용함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - content-visibility: auto : 화면 밖 섹션의 레이아웃·그리기를 스크롤 진입 전까지 미루는 성능 속성임.
+ * - contain-intrinsic-size: auto none auto 260px : 지연 섹션의 추정 높이(260px)를 예약해 스크롤 튐을 막음.
+ * - contain: layout style paint : 구형 브라우저에서 내부 변화가 외부 레이아웃으로 번지지 않게 격리하는 폴백임.
+ * - margin-top / padding / width / max-width / min-width: 0 : 섹션 카드 크기 제한과 여백 속성임.
+ * - border / border-radius / background / box-shadow / rgba() : 섹션 카드 외곽선·배경·그림자 속성임.
+ *
+ * [CSS 선택자명]
+ * - .detail-section : 길찾기·진료공지·병상·장비·중증질환 각 정보 카드의 공통 컨테이너 클래스명임.
+ * - .detail-section-deferred : 초기 스크롤 아래쪽에 있는 섹션에 지연 렌더링을 켜는 보조 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : 상단 #section-directions, #section-messages, #section-er-beds는 즉시 렌더링함.
+ * - frontend/index.html : 하단 #section-inpatient-beds, #section-equipment, #section-severe, #developer-mode에 지연 적용함.
+ *
+ * [동작 흐름]
+ * - 시트 열림 -> 상단 3개 섹션만 즉시 페인트 -> 많은 병상·질환 셀 렌더링 지연 단축
+ *   ├── 최신 브라우저 : content-visibility: auto로 하단 섹션 스크롤 시점 점진 렌더링
+ *   └── 미지원 구형 브라우저 : @supports not 분기 ──> contain: layout style paint 폴백 적용
  */
 
 .section-heading {
@@ -368,6 +512,34 @@
 .egen-subgroup-header:first-child {
     border-top: none;
 }
+/*
+ * [CSS 문법]
+ * - 의사 요소 (::before) : HTML 마크업 없이 CSS만으로 제목 앞에 가상 세로 막대 장식을 생성함.
+ * - 의사 클래스 (:first-child) : 첫 번째 소그룹 헤더의 상단 선만 없애 이중 테두리 겹침을 막음.
+ * - 복합 클래스 선택자 (.a.b) : 공통 헤더 바 클래스 위에 도메인별 색상 클래스를 겹쳐 덮어씀.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - content: "" : ::before 가상 요소가 화면에 생성되도록 빈 내용을 지정하는 필수 속성임.
+ * - display: flex / flex-wrap: wrap / justify-content: space-between / align-items: center : 제목과 시각 줄바꿈 정렬임.
+ * - flex-shrink: 0 / min-width: 0 / gap : 우측 시각 텍스트 축소를 막고 제목은 칸 안에서 줄바꿈되게 함.
+ * - overflow: hidden : 둥근 카드 모서리 바깥으로 자식 배경색이 튀어나오지 않도록 잘라내는 속성임.
+ * - border / border-top / border-bottom / border-bottom-color / border-radius / box-shadow : 카드 외곽선·모서리임.
+ * - margin / padding / font-size / font-weight / line-height / color / background / word-break: keep-all : 여백·색상임.
+ *
+ * [CSS 선택자명]
+ * - .section-heading : 각 상세 섹션의 제목(h2)과 보고 시각(span)을 감싸는 헤더 행 클래스명임.
+ * - .egen-board-wrapper / .egen-table-card / .egen-scroll-area : 현황판 외곽 래퍼와 테이블 카드 클래스명임.
+ * - .egen-header-bar / .egen-header-icon : 카테고리 제목 바(.emergency, .inpatient, .severe, .equipment)임.
+ * - .egen-subgroup-header : 입원병상 섹션 내부의 중환자실·외상 등 소그룹 구분 헤더 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : #er-beds-board, #inpatient-beds-board, #equipment, #severe에 .egen-board-wrapper 적용됨.
+ * - frontend/js/hospital-sheet.js : renderErBeds(), renderInpatientBeds(), renderEquipment(), renderSevere()가 카드 조립함.
+ *
+ * [동작 흐름]
+ * - 섹션 렌더 함수 호출 -> .egen-table-card 생성 -> 도메인별 색상의 .egen-header-bar 부착
+ *   └── 소그룹 구분 필요 시 .egen-subgroup-header 삽입 ──> 하단 격자 컨테이너·셀 목록 순차 배치
+ */
 
 .egen-matrix-grid,
 .equipment-matrix-grid,
@@ -380,7 +552,29 @@
     background: #ffffff;
 }
 /*
- * [CSS Grid 자동 반응형 공식] repeat(auto-fill, minmax(245px, 1fr)) (가로 폭이 넓은 창에서는 3~4열, 좁은 창에서는 1~2열로 미디어 쿼리 없이도 스스로 칸 수를 조절)
+ * [CSS 문법]
+ * - 그룹 선택자 (,) : 3개 현황판 그리드 클래스에 동일한 자동 반응형 열 규칙을 한 번에 적용하는 문법임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: grid : 행과 열을 갖춘 2차원 격자 레이아웃을 활성화하는 속성임.
+ * - grid-template-columns: repeat(auto-fill, minmax(245px, 1fr)) : 최소 245px 열을 가능한 수만큼 자동 생성함.
+ * - repeat() / auto-fill / minmax() / fr : 미디어 쿼리 없이 창 폭에 따라 1~4열을 유동 계산하는 함수·단위임.
+ * - gap / padding / width: 100% / background : 격자 셀 간격, 내부 여백, 배경색 속성임.
+ *
+ * [CSS 선택자명]
+ * - .egen-matrix-grid : 응급실·입원 병상 항목 셀들을 배치하는 그리드 클래스명임.
+ * - .equipment-matrix-grid : 특수 의료 장비 가용 셀들을 배치하는 그리드 클래스명임.
+ * - .severe-matrix-grid : 16개 중증응급질환 분류 카드(.severe-cat-box)를 배치하는 그리드 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/js/hospital-sheet.js : renderErBeds(), renderInpatientBeds(), renderEquipment(), renderSevere()가 생성함.
+ * - frontend/css/responsive.css : 640px 이하에서는 .egen-matrix-grid·.equipment-matrix-grid·.severe-matrix-grid를 1열로 덮어씀.
+ *
+ * [동작 흐름]
+ * - 시트 컨테이너 폭 결정 -> repeat(auto-fill, minmax(245px, 1fr))가 열 개수 자동 계산
+ *   ├── 대화면 모달(1080px) ──> 3~4열 자동 배치
+ *   ├── 중간 드로어 ──> 2~3열 자동 배치
+ *   └── 스마트폰(640px 이하) ──> responsive.css 규칙으로 1열 전환
  */
 
 .egen-cell,
@@ -472,7 +666,37 @@
     }
 }
 /*
- * [성능 개선 디테일] will-change: transform 을 모든 셀이 아니라 실제 텍스트가 넘쳐 흐르는 .is-marquee 셀에만 한정 부여하여 모바일 GPU 메모리를 절약함.
+ * [CSS 문법]
+ * - @keyframes : 진행률(0%~100%)별 키프레임 상태 변화를 정의하는 표준 애니메이션 규칙임.
+ * - 의사 클래스 (:hover, :active) : 마우스를 올리거나 터치하는 동안 스크롤 애니메이션을 멈추게 함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - will-change: transform : GPU 합성기에 이동 예고를 알려 끊김을 줄이며 넘침 셀에만 한정해 메모리를 아낌.
+ * - animation / animation-play-state: paused : 키프레임 재생 시간 설정 및 호버·터치 일시 정지 속성임.
+ * - transform: translateX(...) / calc() / var() : 변수로 받은 이동 거리만큼 글자를 좌우로 미는 함수임.
+ * - display: flex | block | inline-block / flex-direction: column / justify-content: space-between : 상하 배치 속성임.
+ * - white-space: nowrap / overflow: hidden : 수신값 문자열을 한 줄로 유지해 넘침 폭을 정밀 측정하게 함.
+ * - letter-spacing / position: relative / word-break: keep-all / overflow-wrap: break-word / transition : 정렬·전환임.
+ * - padding / margin-top / border / border-radius / background / box-shadow / color / font-size / font-weight : 셀 외형임.
+ *
+ * [CSS 커스텀 속성명 (변수명) 및 키프레임명]
+ * - --ticker-duration (기본 8s) / --ticker-diff (기본 40px) : 전광판 재생 시간과 이동 거리를 받는 CSS 변수임.
+ * - egen-ticker : 0%~20% 정지 -> 75%~90% 좌측 끝 이동 -> 100% 복귀를 반복하는 키프레임 이름임.
+ *
+ * [CSS 선택자명]
+ * - .egen-cell / .equipment-cell / .egen-cell-top / .egen-cell-label : 개별 병상·장비 셀과 상단 라벨 행임.
+ * - .egen-cell-param / .severe-remark-box : 하단의 API 코드·수신값과 영유아 가능연령 비고 표시 줄임.
+ * - .marquee-inner / .is-marquee : 전광판 텍스트 래퍼와 가로 넘침 감지 시 동적 부착되는 활성 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/js/hospital-sheet.js : createBedCell(), createEquipmentCell(), renderSevere()가 마키 요소를 만듦.
+ * - frontend/js/utils.js : updateMarquees()가 Read-Write 2단계 분리로 Layout Thrashing 없이 .is-marquee를 켬.
+ * - frontend/css/responsive.css : prefers-reduced-motion: reduce 환경에서는 전광판 애니메이션을 정지함.
+ *
+ * [동작 흐름]
+ * - openHospital() 100ms·350ms 뒤 및 창 리사이즈 -> updateMarquees() 실행
+ *   ├── 1단계(Read) : inner.scrollWidth - container.clientWidth로 넘침 픽셀 일괄 측정
+ *   └── 2단계(Write) : overflow > 2인 셀에만 .is-marquee와 --ticker-diff·--ticker-duration 기록 ──> 슬라이드 시작
  */
 
 .egen-badge-pill-red,
@@ -535,7 +759,31 @@
     border: 1px solid #e2e8f0;
 }
 /*
- * [내가 지은 배지 클래스] 결측치('-': .egen-badge-dash) vs 만실('혼잡 0': .egen-badge-pill-red) vs 초과수용('초과수용 N': .egen-badge-overflow)을 시각적으로 엄격히 분리함.
+ * [CSS 문법]
+ * - 그룹 선택자 (,) : 8개 상태 배지에 공통 크기·정렬·둥근 모서리 규칙을 한 번에 묶어 적용하는 문법임.
+ * - 복합 클래스 선택자 (.a.b) : 빨강 배지 위에 초과수용 클래스를 겹쳐 글자 굵기(800)와 대비를 높임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: inline-flex / align-items: center / justify-content: center : 배지 내부 텍스트 중앙 정렬임.
+ * - white-space: nowrap / flex-shrink: 0 : 옆 라벨이 길어도 배지가 줄바꿈되거나 축소되지 않게 막음.
+ * - padding / font-size / font-weight / border-radius / line-height / color / background / border : 등급별 배지 외형임.
+ *
+ * [CSS 선택자명]
+ * - .egen-badge-pill-green / .egen-badge-pill-orange / .egen-badge-pill-red : 가용률 원활·보통·혼잡 배지임.
+ * - .egen-badge-overflow : 음수 병상(초과수용) 상태를 더 진하게 강조하는 보조 클래스명임.
+ * - .egen-badge-box-green : 분만실·특수 장비 가용(Y) 표시용 초록 배지 클래스명임.
+ * - .egen-badge-avail-green / .egen-badge-avail-yellow / .egen-badge-avail-red : 28대 중증질환 상태 배지임.
+ * - .egen-badge-dash : API 미보고 결측치(-)를 실제 만실(0)과 시각적으로 구분하는 회색 배지임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/js/hospital-sheet.js : getBedStatusBadge()가 가용률(>=70%, 36~69%, <=35%/0, 음수)로 배지를 고름.
+ * - frontend/js/hospital-sheet.js : createEquipmentCell()과 renderSevere()가 장비·중증질환 배지 클래스를 부여함.
+ *
+ * [동작 흐름]
+ * - 병상·장비 원시값 판별 -> 상태 등급별 배지 클래스 부여
+ *   ├── 미보고 결측치(-) ──> 회색 .egen-badge-dash
+ *   ├── 실제 만실(0석) ──> 빨강 .egen-badge-pill-red (혼잡 0)
+ *   └── 초과수용(음수) ──> 굵은 .egen-badge-pill-red.egen-badge-overflow (초과수용 N)
  */
 
 .severe-cat-box {
@@ -590,6 +838,28 @@
     gap: 4px;
     flex-shrink: 0;
 }
+/*
+ * [CSS 문법]
+ * - 의사 클래스 (:last-child) : 카드 안 마지막 세부 질환 행의 하단 선을 0으로 없애 외곽선 겹침을 막음.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: flex / flex-direction: column / justify-content: center | space-between : 수직·수평 행 정렬 속성임.
+ * - align-items: center / flex-shrink: 0 / width: 100% / gap / min-height: 52px : 배지 축소 방지와 균일 높이임.
+ * - overflow: hidden / white-space: nowrap / word-break: keep-all : 모서리 넘침 차단 및 한글 줄바꿈 속성임.
+ * - padding / font-size / font-weight / color / background / border / border-radius / border-bottom : 카드 스타일임.
+ *
+ * [CSS 선택자명]
+ * - .severe-cat-box / .severe-cat-header : 28대 중증질환을 16개 진료군으로 묶는 카드·제목 클래스명임.
+ * - .severe-sub-item / .severe-sub-top / .severe-sub-label / .severe-sub-val : 세부 질환 행과 배지 래퍼임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/js/constants.js : SEVERE_DISEASE_GROUPS(16개 진료군과 mkioskty1~28 매핑) 스키마를 제공함.
+ * - frontend/js/hospital-sheet.js : renderSevere()가 카드 DOM과 isDiseaseSpecificallyBlocked() 검증 배지를 채움.
+ *
+ * [동작 흐름]
+ * - SEVERE_DISEASE_GROUPS 순회 -> 진료군별 .severe-cat-box 생성 -> 세부 질환(.severe-sub-item) 세로 배치
+ *   └── 마지막 행(:last-child) 하단 테두리 제거 ──> 카드 외곽 테두리와 이중선 겹침 없이 깔끔히 마감
+ */
 
 .message-list {
     display: grid;
@@ -680,7 +950,31 @@
     color: #64748b;
 }
 /*
- * [내가 지은 클래스] .message-card.critical([중증] 빨강 테두리), .message-card.urgent([응급] 주황 테두리) — 구형 미사용 CSS(.severe-row, .bed-ring 등 350줄)를 완전히 제거해 스타일시트를 경량화했음.
+ * [CSS 문법]
+ * - 복합 클래스 선택자 (.a.b) / 자손 결합자 (A B) : 긴급도 등급에 따라 카드 배경·선과 배지 색을 함께 바꿈.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: grid / display: flex / flex-wrap: wrap / align-items: center / flex-shrink: 0 / gap : 목록·머리글 배치임.
+ * - border / border-left: 4px solid ... / border-color / border-left-color / border-radius : 좌측 4px 강조선임.
+ * - white-space: pre-wrap : 공공데이터 공지 본문의 줄바꿈은 보존하면서 카드 폭 안에서 자동 줄바꿈함.
+ * - overflow-wrap: break-word / word-break: keep-all : 긴 영문이나 URL이 카드 폭을 넘치지 않게 줄바꿈함.
+ * - margin / padding / font-size / font-weight / line-height / color / background : 여백·글꼴·배경 속성임.
+ *
+ * [CSS 선택자명]
+ * - .message-list / .message-card : 실시간 진료 제한 공지 카드 목록과 개별 카드 클래스명임.
+ * - .critical / .urgent : 공지 긴급도 구분(중증, 응급)에 따라 붙는 강조 등급 클래스명임.
+ * - .message-heading / .message-badge / .message-dept / .message-subtag : 공지 머리글, 배지, 진료과명, 태그임.
+ * - .message-text / .message-meta : 공지 본문 단락과 등록·종료 예정 시각 표시 줄 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : <div id="messages" class="message-list"></div> 컨테이너와 연결됨.
+ * - frontend/js/hospital-sheet.js : renderMessages(hospital)가 getActiveMessages()로 유효 공지를 걸러 정렬·표시함.
+ *
+ * [동작 흐름]
+ * - 유효 진료 공지 존재 -> renderMessages()가 긴급도순 정렬 후 카드 생성
+ *   ├── 중증(.critical) ──> 빨강 강조 카드 최상단 배치
+ *   ├── 응급(.urgent) ──> 주황 강조 카드 중간 배치
+ *   └── 일반 ──> 회색 기본 카드 배치 + 전체 건수를 #message-count에 표시
  */
 
 .raw-grid {
@@ -814,7 +1108,31 @@
     color: #1e293b;
 }
 /*
- * [내가 지은 클래스] .developer-mode, .raw-grid, .raw-pair (GET /api/hospitals/{hpid} 원본 전체 데이터를 1:1 대조하는 개발자 인스펙터 스타일)
+ * [CSS 문법]
+ * - 직계 자식 결합자 (>) / 자손 결합자 (A B) / 그룹 선택자 (,) : 아코디언 요약과 내부 목록 스타일을 구분함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: grid / grid-template-columns: repeat(2, minmax(0, 1fr)) / gap : 원본 키-값 쌍을 2열로 배치함.
+ * - overflow-wrap: anywhere : 공백 없는 긴 API 코드나 문자열도 임의 위치에서 줄바꿈해 넘침을 막음.
+ * - display: flex / align-items: center / justify-content: space-between / min-width: 0 : 키·값 좌우 정렬 속성임.
+ * - max-width: 48% / flex-shrink: 0 / text-align: right : 우측 값 영역 폭을 48% 이내로 고정해 정렬함.
+ * - display: block / cursor: pointer / text-align: center / margin / padding : 아코디언 요약·안내 배치임.
+ * - font-size / font-weight / line-height / color / background / border / border-top / border-radius : 카드·선 속성임.
+ *
+ * [CSS 선택자명]
+ * - .raw-grid / .raw-pair / .field-code / .raw-group / .raw-msg-card / .raw-msg-title : 원본 대조표 클래스명임.
+ * - .empty-state / .data-state : 데이터 없음 안내와 시트 맨 아래 보고 시차 고지 문구 클래스명임.
+ * - .developer-mode / .developer-content / .developer-status / .raw-details / .raw-content : 개발자 모드 아코디언임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : #developer-mode 및 #all-beds, #all-severe, #all-messages, #basic-info, #data-state와 매칭됨.
+ * - frontend/js/app.js : #developer-mode 열림(toggle) 시 hospital-sheet.js:renderDeveloperInspector()를 호출함.
+ * - frontend/js/hospital-sheet.js : hydrateHospitalDetailIfNeeded()가 단건 상세 API 조회 후 원본 표를 그림.
+ * - frontend/js/utils.js / responsive.css : empty()가 .empty-state를 만들고, 360px 이하에서 .raw-grid가 1열이 됨.
+ *
+ * [동작 흐름]
+ * - 평소에는 #developer-mode가 접혀 있어 무거운 단건 상세 API 요청을 생략함
+ *   └── 사용자가 <summary> 클릭(펼침) -> toggle 이벤트 ──> 단건 상세 조회 후 2열 원본 대조표 렌더링
  */
 
 .touch-device .sheet {
@@ -853,9 +1171,30 @@
     padding-top: 6px;
 }
 /*
- * [신규 핵심 모바일 UX — 바텀시트 2단 스냅 Half-Peek (.sheet.open.half-peek)]
- * - 모바일에서 '지도에 경로 표시'를 누르면 시트가 완전히 사라지지 않고 하단 268px 요약 높이(병원명 + 응급실 전화 + 3사 내비 버튼 노출)에 걸치며,
- *   배경 지도는 가리지 않고 그대로 드래그·확대할 수 있음. 손잡이를 위로 올리면 전체 펼침, 아래로 내리면 완전히 닫힘.
+ * [CSS 문법]
+ * - @supports (height: 100dvh) : 동적 뷰포트 단위(dvh)를 지원하는 브라우저에서만 내부 높이 규칙을 적용함.
+ * - 복합 클래스 선택자 (.a .b.c.d) : 터치 기기의 열린 시트에 반열림 클래스가 붙은 상태만 선택함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - dvh 단위 : 모바일 주소창 표시·숨김 변화를 실시간으로 반영하는 동적 뷰포트 높이 단위임.
+ * - top: auto / left: 0 / right: 0 / width: min(720px, 100%) / margin: 0 auto : 하단 시트 폭 제한·중앙 정렬임.
+ * - border-radius: 24px 24px 0 0 : 바텀시트 위쪽 좌우 모서리만 24px로 둥글게 깎는 속성임.
+ * - transform: translate3d(...) / calc() / env(safe-area-inset-bottom, 0px) : 3축 GPU 이동으로 하단 268px만 남김.
+ * - will-change: transform : 터치 드래그·반열림 전환 동안 GPU 합성 레이어를 유지해 끊김을 방지함.
+ * - display: flex / padding-top / box-shadow : 상단 드래그 손잡이를 노출하고 위쪽 여백·그림자를 맞춤.
+ *
+ * [CSS 선택자명]
+ * - .touch-device : 스마트폰·태블릿 등 터치 환경임을 식별해 <body>에 동적 부여되는 상태 클래스명임.
+ * - .half-peek : 모바일에서 경로 표시 뒤 시트를 하단 268px 높이로 절반만 열어 두는 스냅 상태 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/js/hospital-sheet.js : syncResponsiveSheetLayout()이 .touch-device를 켜거나 끔.
+ * - frontend/js/hospital-sheet.js : snapSheetToHalfPeek()과 expandSheetFromHalfPeek()가 반열림·전체 펼침을 전환함.
+ * - frontend/js/directions-eta.js : settleSheetAfterRouteDraw()가 모바일 경로 표시 직후 onSnapSheetHalfPeek() 호출함.
+ *
+ * [동작 흐름]
+ * - 터치 기기에서 "지도에 경로 표시" 클릭 -> snapSheetToHalfPeek() 실행 -> .sheet.open.half-peek 적용
+ *   └── 시트가 하단 268px만 남기고 내려감 ──> 상단 지도 경로선과 하단 전화·내비 버튼 동시 조작 가능
  */
 
 @media (min-width: 641px) and (hover: hover) and (pointer: fine) {
@@ -906,5 +1245,28 @@
     }
 }
 /*
- * [대화면 데스크톱 반응형 모드] 1200x680 이상 비터치 PC 모니터에서는 화면 정중앙 둥근 모달 카드로 전환됨.
+ * [CSS 문법]
+ * - @media (min-width: 641px) and (hover: hover) and (pointer: fine) : 마우스·정밀 포인터가 있는 PC 환경 조건문임.
+ * - @media (min-width: 1200px) and (min-height: 680px) : 가로 1200px 이상·세로 680px 이상 대화면 조건문임.
+ * - 부정 의사 클래스 (:not(...)) : 특정 클래스가 없는 일반 비터치 데스크톱 요소만 골라내는 문법임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - scrollbar-width: thin / scrollbar-color : 데스크톱 스크롤바를 얇게 줄이고 색상을 지정하는 표준 속성임.
+ * - top: 50% / left: 50% / right: auto / bottom: auto : 우측 고정 좌표를 풀고 화면 정중앙 기준을 잡음.
+ * - width: min(1080px, calc(100vw - 88px)) / height: min(86dvh, 900px) / max-height : 중앙 모달 크기 계산임.
+ * - opacity / transform: translate(...) scale(...) : 투명도와 96% -> 100% 확대 전환을 조합함.
+ * - cubic-bezier(0.22, 1, 0.36, 1) / transition / transition-delay / visibility : 감속 곡선 모달 전환임.
+ * - border / border-radius / overflow: hidden / padding / background / rgba() : 모달 외곽·내부 여백 속성임.
+ *
+ * [CSS 선택자명]
+ * - body:not(.touch-device) .sheet-dim / .sheet / .sheet.open : 비터치 대화면 중앙 모달 오버레이·틀 클래스명임.
+ * - body:not(.touch-device) .sheet-header / .sheet-scroll : 모달용 넓은 내부 여백과 둥근 상단 모서리 규칙임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/js/hospital-sheet.js : syncResponsiveSheetLayout()이 1200x680 이상 비터치 PC에서 .touch-device를 끔.
+ * - frontend/js/hospital-sheet.js : 같은 조건에서 body.dataset.sheetLayout = "modal"을 기록함.
+ *
+ * [동작 흐름]
+ * - 1200x680 이상 비터치 PC에서 병원 선택 -> body:not(.touch-device) .sheet.open 매칭
+ *   └── 우측 슬라이드 대신 중앙 모달(scale 0.96 -> 1)로 열림 ──> 3~4열 병상·질환 전광판 한눈에 표시
  */

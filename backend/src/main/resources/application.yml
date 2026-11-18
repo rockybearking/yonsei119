@@ -10,10 +10,27 @@ spring:
     resources:
       cache:
         period: 0
-# [스프링 내장 설정 키] spring.application.name, spring.config.import, spring.web.resources.cache.period (이름 변경 불가)
-# [내가 지은 값] yonsei119-backend (서버 식별 이름), optional:file:.env[.properties] (로컬 .env 파일이 있으면 읽고 없어도 에러 없이 통과)
-# [핵심 원리] 정적 파일 캐시 시간(period)을 0으로 두고 WebConfig의 ETag 재검증(304 Not Modified)과 결합하여,
-# 프론트엔드 코드를 고치면 옛날 캐시에 묶이지 않고 즉시 최신 화면이 반영되면서도 전송량은 절약함.
+# [Spring Boot 내장 설정 키 및 YAML 문법]
+# - spring.application.name : 스프링 애플리케이션 식별 이름을 정하는 내장 키임.
+# - 형제 키 : 실행 환경을 나누는 spring.profiles.active가 있음.
+# - spring.config.import : 외부 설정 파일을 순서대로 불러오는 내장 배열 키임.
+# - '-' 기호 : YAML에서 배열(목록)의 한 항목을 뜻하는 표기임.
+# - optional: 접두사 : 지정한 .env 또는 application-local.yml 파일이 없어도 부팅 오류 없이 건너뛰게 하는 키워드임.
+# - [.properties] 힌트 : 확장자가 없는 설정 파일을 Properties(KEY=VALUE) 형식으로 읽게 함.
+# - file: vs classpath: : 디스크 파일 경로와 JAR 내부 리소스 경로를 구분하는 접두사임.
+# - spring.web.resources.cache.period : 정적 파일 HTTP 캐시 유지 시간(초) 기본 설정 키임.
+# - 형제 키 : 정적 폴더를 지정하는 spring.web.resources.static-locations가 있음.
+#
+# [설정 값 및 경로]
+# - yonsei119-backend : 앱 식별 이름임 (EmergencyApiController.health()에서도 같은 이름을 반환함).
+# - optional:file:.env[.properties] : 루트 폴더에서 실행할 때 .env를 읽는 경로임.
+# - optional:file:../.env[.properties] : backend/ 폴더에서 실행할 때 상위 .env를 읽는 경로임.
+# - optional:classpath:application-local.yml : 로컬 전용 추가 설정 파일이 있으면 읽는 경로임.
+#
+# [동작 흐름]
+# - period: 0 적용 -> 고정 장기 캐시 비활성화 -> WebConfig.addResourceHandlers(...)와 함께 동작함.
+#   ├── 브라우저가 매 요청마다 Weak ETag(computeWeakMetadataEtag)로 변경 여부를 재확인함.
+#   └── 파일 수정 시 바로 최신본을 받고, 안 바뀌었으면 HTTP 304로 데이터 전송을 줄임.
 
 server:
   port: ${PORT:8080}
@@ -21,9 +38,23 @@ server:
     enabled: true
     mime-types: application/json,application/javascript,text/javascript,text/css,text/html,text/xml,application/manifest+json
     min-response-size: 1024
-# [스프링 내장 설정 키] server.port, server.compression.* (내장 Tomcat 포트 및 GZIP 압축 설정, 이름 변경 불가)
-# [환경변수 치환 문법] ${PORT:8080} -> 운영체제에 PORT 환경변수가 있으면 그 값을 쓰고, 없으면 기본값 8080 포트로 엶.
-# [성능 핵심 원리] 1KB(1024바이트) 이상인 JSON·JS·CSS·웹매니페스트 응답을 GZIP으로 압축해 모바일 초기 데이터 전송량을 약 75~85% 줄임.
+# [Spring Boot 내장 설정 키 및 치환 문법]
+# - server.port : 내장 Tomcat 웹 서버가 열 TCP 포트 번호를 정하는 내장 키임.
+# - 형제 키 : 바인딩 IP를 정하는 server.address, 기본 경로 server.servlet.context-path가 있음.
+# - server.compression.enabled : HTTP 응답 GZIP 압축 기능을 켜거나 끄는 내장 키임.
+# - server.compression.mime-types : GZIP으로 압축할 응답 콘텐츠 종류(MIME) 목록 키임.
+# - server.compression.min-response-size : 압축을 시작할 최소 응답 크기(바이트) 기준 키임.
+# - ${ENV_VAR:default} : 환경변수가 없으면 콜론 뒤 기본값(default)을 쓰는 치환 문법임.
+#
+# [동작 흐름]
+# - 포트 결정 순서 : JVM -Dserver.port -> OS PORT 환경변수 -> 기본값 8080 순으로 선택함.
+#   └── Yonsei119Application.main(...) -> SpringApplication.run(...) -> 결정된 server.port 값으로 Tomcat 기동함.
+# - GZIP 압축 흐름 : 응답 크기가 1024바이트(1KB) 이상이고 지정 MIME에 속하면 압축해 전송함.
+#   └── /api/hospitals 등 큰 JSON과 HTML/CSS/JS 전송 크기를 줄여 로딩 속도를 높임.
+#
+# [실행 방법]
+# - 로컬 실행 : .\gradlew.bat bootRun (또는 java -jar backend/build/libs/yonsei119-backend.jar)
+# - 기본 접속 : http://localhost:8080 및 헬스체크 http://localhost:8080/api/health
 
 yonsei119:
   nemc:
@@ -34,12 +65,22 @@ yonsei119:
     request-timeout-ms: ${NEMC_REQUEST_TIMEOUT_MS:25000}
     auto-refresh-enabled: ${NEMC_AUTO_REFRESH_ENABLED:true}
     refresh-interval-ms: ${NEMC_REFRESH_INTERVAL_MS:180000}
-  # [내가 지은 설정 계층] yonsei119.nemc.* -> config/Yonsei119Properties.java의 Nemc record로 1:1 자동 바인딩됨.
-  #   (케밥 표기법 cache-ttl-seconds -> 자바 카멜 표기법 cacheTtlSeconds로 스프링이 자동 변환)
-  # [Hot / Cold 이원화 아키텍처 핵심 원리]
-  # - Hot 데이터 (실시간 병상·공지·28대 중증질환 3종 API): cache-ttl-seconds=180(3분), refresh-interval-ms=180000(3분마다 자동 갱신)
-  # - Cold 데이터 (주소·좌표·기본정보·외상센터 마스터 4종 API): cold-cache-ttl-seconds=21600(6시간 유지)
-  # -> 일일 공공데이터 트래픽 소모량은 줄이면서도 응급실 병상 실시간성은 기존(20분) 대비 약 7배 향상됨.
+  # [설정 키 이름]
+  # - yonsei119 : Yonsei119Properties의 @ConfigurationProperties(prefix = "yonsei119")에 연결되는 루트 키임.
+  # - yonsei119.nemc.* : Yonsei119Properties.Nemc 레코드 필드에 자동 연결되는 사용자 정의 키임.
+  #   ├── base-url, service-key, request-timeout-ms : NEMC API 기본 주소, 인증키, 타임아웃(ms)임.
+  #   ├── cache-ttl-seconds, cold-cache-ttl-seconds : Hot 캐시(3분)와 Cold 캐시(6시간) 수명(초)임.
+  #   └── auto-refresh-enabled, refresh-interval-ms : 자동 사전·주기 갱신 여부와 주기(ms)임.
+  # - ${NEMC_API_SERVICE_KEY:} : 기본값이 비어 있어 환경변수 미설정 시 빈 문자열 ""이 들어감.
+  #
+  # [동작 흐름]
+  # - @ConfigurationPropertiesScan -> 하이픈(-) 표기 키를 자바 카멜 표기 필드로 자동 변환해 주입함.
+  # - base-url, service-key, request-timeout-ms -> NmcOpenApiClient.fetchSinglePage(...)가 7종 API 호출 시 씀.
+  # - auto-refresh-enabled, refresh-interval-ms -> EmergencyDataService 기동 예열 및 주기 갱신을 제어함.
+  #   ├── warmUpCacheOnStartup()(@EventListener) : 서버 시작 직후 초기 캐시를 미리 채움.
+  #   └── scheduledBackgroundRefresh()(@Scheduled) : 3분(180000ms)마다 백그라운드 갱신을 돌림.
+  # - cache-ttl-seconds(180초) -> EmergencyDataService.getSnapshot(...)의 Hot 3종(병상·공지·중증질환) TTL로 씀.
+  # - cold-cache-ttl-seconds(21600초) -> EmergencyDataService.buildFreshSnapshot(...)의 Cold 4종(마스터) TTL로 씀.
 
   naver:
     client-id: ${NAVER_MAP_CLIENT_ID:xfbxloc8km}
@@ -47,19 +88,39 @@ yonsei119:
     client-secret: ${NAVER_MAP_CLIENT_SECRET:}
     directions5-url: ${NAVER_DIRECTIONS5_URL:https://maps.apigw.ntruss.com/map-direction/v1/driving}
     directions15-url: ${NAVER_DIRECTIONS15_URL:https://maps.apigw.ntruss.com/map-direction-15/v1/driving}
-  # [내가 지은 설정 계층] yonsei119.naver.* -> Yonsei119Properties.Naver record로 자동 주입됨.
-  # [보안 핵심 원리]
-  # - client-id, dark-style-id : 공개 설정 API(/api/config)를 통해 프론트엔드 지도 로더로 전달되어 단일 키로 통일 관리됨.
-  # - client-secret : 오직 백엔드(NaverDirectionsService, NaverGeocodingService) 내부 서버 통신 헤더에만 실리며 브라우저로 절대 유출되지 않음.
+  # [설정 키 이름]
+  # - yonsei119.naver.* : Yonsei119Properties.Naver 레코드 필드에 자동 연결되는 사용자 정의 키임.
+  #   ├── client-id, dark-style-id : 네이버 지도 공개 클라이언트 ID와 다크 테마 스타일 ID임.
+  #   ├── client-secret : 네이버 클라우드 API 서버 인증용 비밀 키임.
+  #   └── directions5-url, directions15-url : Directions 5 / Directions 15 HTTP 엔드포인트 주소임.
+  #
+  # [동작 흐름]
+  # - client-id, dark-style-id -> EmergencyApiController.getConfig() -> FrontendConfigDto로 프론트에 전달됨.
+  # - client-id, client-secret -> NaverDirectionsService·NaverGeocodingService API 인증 헤더에 쓰임.
+  #   ├── hasNaverApiCredentials()가 두 값 존재 여부를 검사한 뒤 네이버 API를 호출함.
+  #   └── client-secret은 FrontendConfigDto에서 제외되어 브라우저에 노출되지 않음.
+  # - directions5-url, directions15-url -> NaverDirectionsService.getDrivingRoute(...) 등이 apiType에 따라 씀.
+  #   └── getDrivingEtaSummary(...)는 경량 ETA 계산을 위해 directions5-url만 호출함.
 
   default-origin:
     lat: 37.5666805
     lng: 126.9784147
     label: 서울시청
-  # [내가 지은 설정 계층] yonsei119.default-origin.* -> Yonsei119Properties.DefaultOrigin record로 주입됨.
-  # [역할] GPS 신호가 없는 데스크톱 PC 환경이나 GPS 미수신·'초기화' 시 기준점으로 삼는 기본 좌표(서울시청)임.
+  # [설정 키 이름]
+  # - yonsei119.default-origin.* : Yonsei119Properties.DefaultOrigin 레코드 필드로 연결되는 키임.
+  #   └── lat(위도), lng(경도), label(장소명)이 기본 출발 좌표 설정으로 바인딩됨.
+  #
+  # [동작 흐름]
+  # - default-origin(서울시청) -> EmergencyApiController.getConfig() -> FrontendConfigDto로 전달됨.
+  #   └── GPS 미지원 PC나 위치 권한 거부·초기화 시 프론트엔드 지도의 기본 기준 좌표로 씀.
 
   cors:
     allowed-origin-patterns: ${YONSEI119_CORS_ORIGINS:*}
-  # [내가 지은 설정 계층] yonsei119.cors.allowed-origin-patterns -> WebConfig.java의 CORS 허용 출처 패턴으로 연결됨.
-  # [역할] 개발 중에는 Live Server 등 다양한 로컬 포트를 허용(*)하고, 상용 폐쇄망 운영 시 환경변수로 특정 도메인만 제한할 수 있음.
+  # [설정 키 이름]
+  # - yonsei119.cors.allowed-origin-patterns : Yonsei119Properties.Cors.allowedOriginPatterns에 연결되는 키임.
+  #   └── YONSEI119_CORS_ORIGINS 환경변수가 없으면 기본값 '*'를 사용함.
+  #
+  # [동작 흐름]
+  # - allowed-origin-patterns -> WebConfig.addCorsMappings(...)가 콤마(,)로 잘라 배열로 만듦.
+  #   └── /api/** 엔드포인트의 GET, OPTIONS 교차 출처(CORS) 허용 도메인 규칙에 적용함.
+  # - 로컬 개발 시 다른 포트 접근을 허용하고, 운영 시 환경변수로 특정 도메인만 제한할 수 있음.

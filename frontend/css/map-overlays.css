@@ -39,11 +39,35 @@
     box-shadow: 0 6px 20px rgba(21, 55, 87, 0.24);
 }
 /*
- * [내가 지은 클래스] .hospital-card (네이버 지도 위에 띄우는 알약형 병원 오버레이 카드)
- * [GPU 성능 최적화 원리]
- * 1) contain: layout style : 카드 안의 병상 숫자가 바뀔 때 전체 페이지 리플로우(Global Reflow)를 완벽히 차단함.
- * 2) translate: 0 : JS(map-engine.js)가 지도 드래그 시 style.translate="Xpx Ypx"를 덮어써도 100% GPU 합성 스레드에서만 60fps 이동함.
- * 3) 모바일 지도 팬(Pan) 제스처 방해를 막기 위해 불필요한 touch-action: none 잠금을 제거했음.
+ * [CSS 문법]
+ * - ::after : 요소의 마지막 자식 뒤에 좌표 도트 같은 가상 요소를 붙이는 표준 의사 요소임.
+ * - :hover / :focus-visible : 마우스 올림 및 키보드 초점 이동 시 테두리와 그림자를 강조함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: flex / flex-direction: column / justify-content: center / gap : 내부 2행 정렬임.
+ * - width: 174px / height: 62px / padding / border-radius : 고정 카드 크기와 모서리 둥글기임.
+ * - border / border-left / background / box-shadow / cursor: pointer : 좌측 강조 선과 외형임.
+ * - user-select: none : .hospital-card 오버레이를 드래그할 때 내부 글자가 블록 선택되지 않게 막음.
+ * - contain: layout style : 내부 내용이 바뀌어도 바깥 문서 전체 레이아웃 재계산을 막아 줌.
+ * - translate: 0 : 위치 이동만 따로 GPU 합성으로 처리하기 위한 개별 이동 초기값임.
+ * - content: "" / position: absolute / left: calc(50% - 4px) / bottom: -5px : 하단 도트 위치임.
+ *
+ * [브라우저 확장 CSS 속성]
+ * - -webkit-user-select: none : Safari·WebKit 환경에서 글자 드래그 선택을 막는 확장 속성임.
+ *
+ * [CSS 선택자명 및 커스텀 속성명]
+ * - .hospital-card : 네이버 지도 오버레이에 올라가는 개별 병원·클러스터 카드 버튼 클래스임.
+ * - --hospital-color : style.css의 종별 색상을 왼쪽 강조 선·하단 도트·호버 테두리에 공유함.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - js/markers-cluster.js : updateMarkers()가 <button class="hospital-card ...">를 생성함.
+ * - js/constants.js : CARD_WIDTH(174), CARD_HEIGHT(62)가 .hospital-card 크기(174×62px)와 같아 겹침을 묶음.
+ * - js/map-engine.js : createNaverDomOverlay()가 픽셀 좌표를 style.translate에 갱신함.
+ *
+ * [동작 흐름]
+ * - updateMarkers() 실행 -> groupCards()로 겹치는 병원을 묶어 .hospital-card를 배치함.
+ * - 지도 팬·줌 이동 -> NaverDomOverlay.draw()가 위경도를 투영해 style.translate 값을 덮어씀.
+ * - 카드 탭(이동 6px 이하) -> bindHospitalCard()가 openHospital() 또는 openCluster()를 엶.
  */
 
 .hospital-card-head {
@@ -73,7 +97,19 @@
     color: #62758d;
 }
 /*
- * [내가 지은 클래스] .hospital-card-head (병원 이름 우측에 '병상 여유 신호등' 도트를 나란히 배치하는 상단 행)
+ * [표준 CSS 속성·단위·함수]
+ * - display: flex / align-items: center / justify-content: space-between / gap : 좌우 양끝 정렬임.
+ * - flex: 1 1 auto / min-width: 0 : 긴 제목이 부모 폭을 넘지 않고 줄어들게 최소 폭을 0으로 품.
+ * - display: block / overflow: hidden / white-space: nowrap : 한 줄로 잇고 넘친 부분을 자름.
+ * - text-overflow: ellipsis : 잘린 텍스트 끝에 말줄임표(...)를 자동으로 붙이는 속성임.
+ * - font-size / color : 상단 제목(12px)과 하단 요약(10.5px)의 크기·색상을 구분함.
+ *
+ * [CSS 선택자명]
+ * - .hospital-card-head : 기관명(<strong>)과 병상 상태 도트(.bed-traffic-dot)를 묶는 행임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - js/markers-cluster.js : 지도 마커(updateMarkers())와 클러스터 목록(openCluster())에서 생성함.
+ * - js/search-controls.js : 검색 자동완성 목록(updateSearch())의 .result-button 안에서도 사용함.
  */
 
 .bed-traffic-dot {
@@ -104,12 +140,24 @@
     background: #94a3b8;
 }
 /*
- * [신규 핵심 시각화 — 지도 마커 카드 '병상 여유 신호등' (.bed-traffic-dot)]
- * - 좌측 컬러 바는 병원 종별(권역·상급·의료원·기타)을 나타내고, 우측 상단 도트는 실시간 병상 여유도를 즉시 알려줌.
- *   ├── .avail-plenty (초록): 응급실 가용 3석 이상 여유
- *   ├── .avail-low    (주황): 잔여 1~2석 혼잡 임박
- *   ├── .avail-full   (빨강): 만실(0석) 또는 초과수용(음수)
- *   └── .avail-unknown(회색): 병상 미보고
+ * [CSS 문법]
+ * - .클래스1.클래스2 : 기본 크기 클래스와 상태 색상 클래스를 함께 가진 요소만 선택하는 복합 구문임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - flex: 0 0 9px / width: 9px / height: 9px / border-radius: 50% : 9×9px 정원을 유지함.
+ * - background / box-shadow / rgba(...) : 중심 원 색상과 2px 반투명 바깥 테두리 링을 그림.
+ *
+ * [CSS 선택자명]
+ * - .bed-traffic-dot : 응급실 병상 여유 상태를 색깔 점으로 표시하는 공통 인디케이터 클래스임.
+ * - .avail-plenty : 가용 병상 3석 이상 여유 상태 클래스(녹색 #16a34a)임.
+ * - .avail-low : 잔여 1~2석 혼잡 임박 상태 클래스(주황색 #f59e0b)임.
+ * - .avail-full : 0석 만실 또는 초과 수용 상태 클래스(빨간색 #ef4444)임.
+ * - .avail-unknown : 병상 미보고·결측 상태 클래스(회색 #94a3b8)임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - js/utils.js : getBedTrafficInfo(rawErBeds)가 단일 병원 병상 수를 판별해 클래스를 반환함.
+ * - js/markers-cluster.js : computeClusterTraffic(items)가 묶음 내 가용 병원 비율을 계산함.
+ * - 부착 대상 : updateMarkers(), openCluster(), updateSearch()가 span.bed-traffic-dot에 적용함.
  */
 
 .location-marker {
@@ -166,7 +214,30 @@
     }
 }
 /*
- * [내가 지은 클래스] .location-marker, .location-dot (내 현재 GPS 위치 또는 우클릭 지정 출발점을 나타내는 파란색 맥동 마커)
+ * [CSS 문법]
+ * - ::before / ::after : HTML 태그 추가 없이 동심원 파동 2개를 그리는 표준 가상 의사 요소임.
+ * - @keyframes / 0%, 50%, 100% : 진행률 구간별 크기·투명도 변화를 정의하는 애니메이션 규칙임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - position: relative / position: absolute / inset / z-index: 1 : 중심 점과 파동을 겹쳐 배치함.
+ * - pointer-events: none : 마커 위 터치·드래그를 막지 않고 아래 지도 레이어로 통과시킴.
+ * - content: "" / border-radius: 50% / box-shadow : 원형 파동 테두리와 중심 점 그림자임.
+ * - animation / animation-delay: -1.2s : 2.4초 파동의 절반을 앞당겨 두 파동을 교차 재생함.
+ * - transform: scale(...) / opacity : 크기 배율과 투명도만 움직여 GPU 합성 성능을 높임.
+ *
+ * [CSS 선택자명 및 키프레임명]
+ * - .location-marker / .location-dot : 현재 GPS 또는 지정 출발 위치 마커와 파란 중심 점임.
+ * - location-wave : 0.5배에서 1.7배로 퍼지며 투명해지는 바깥 파동 키프레임 이름임.
+ * - location-beat : 0.93배와 1.1배 사이를 1.2초 주기로 반복하는 맥동 키프레임 이름임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - js/map-engine.js : updateLocationMarker()가 state.locationKnown 참일 때 지도에 올림.
+ * - responsive.css : prefers-reduced-motion: reduce 환경에서 애니메이션을 끄고 링 하나만 남김.
+ *
+ * [동작 흐름]
+ * - GPS 측위(locate()), 우클릭(setCustomOrigin()), 주소 이동(geocodeAndMoveOrigin()) 실행
+ *   ──> state.locationKnown = true 설정 -> updateLocationMarker()가 지도에 마커를 생성함.
+ * - 출발지 초기화(resetOriginAndRoute()) -> state.locationKnown = false -> 마커를 지도에서 지움.
  */
 
 .waypoint-marker {
@@ -182,5 +253,15 @@
     pointer-events: none;
 }
 /*
- * [내가 지은 클래스] .waypoint-marker (다중 경유 길찾기 시 1차 경유 병원 위에 표시되는 하늘색 테두리 안내 배지)
+ * [표준 CSS 속성·단위·함수]
+ * - padding / border-radius / border / background / color / box-shadow : 남색·하늘색 배지 외형임.
+ * - font-size: 0.72rem / font-weight: 800 / white-space: nowrap : 1줄 고정 굵은 글씨와 rem 단위임.
+ * - pointer-events: none : 배지 위를 클릭·드래그해도 아래 지도 레이어로 이벤트를 그대로 넘김.
+ *
+ * [CSS 선택자명]
+ * - .waypoint-marker : 다중 경유 자동차 길찾기 시 1차 경유 병원 위치 위에 표시되는 배지 클래스임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - js/directions-eta.js : drawRouteOnMap()이 경유지 선택 시 '경유 · 병원명' 배지를 지도에 올림.
+ * - js/directions-eta.js : removeRouteOverlays() 및 resetOriginAndRoute() 실행 시 함께 제거됨.
  */

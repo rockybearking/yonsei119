@@ -25,12 +25,41 @@
     background: var(--bg-page);
 }
 /*
- * [CSS 문법] :root(문서 최상위 html 선택자), --변수명(CSS 커스텀 프로퍼티 선언), var(--변수명)(선언한 디자인 토큰 불러쓰기)
- * [브라우저 내장 속성] color-scheme: light dark (스크롤바·폼 컨트롤을 OS/페이지 테마에 자동 일치시키는 표준 속성, 이름 변경 불가)
- * [내가 지은 이름] --edge(화면 여백), --action-size(원형 도구 버튼 크기), --search-panel-height(검색 패널 동적 높이), --primary-blue 등
- * [병렬 스타일시트 아키텍처 안내]
- * - 이 css/style.css 파일은 전체 공통 디자인 토큰과 기본 리셋, 지도 캔버스(#map)만 가볍게 담당함.
- * - 세부 UI는 역할별로 frontend/css/*.css 7개 모듈 파일로 병렬 분리되어 브라우저가 동시에 다운로드함.
+ * [CSS 문법]
+ * - :root : 문서 최상위 요소(<html>)를 선택하는 표준 의사 클래스임.
+ * - --변수명: 값 : 전역 CSS 변수(커스텀 속성)를 선언하는 표준 문법임.
+ * - var(--변수명) : 선언한 CSS 변수 값을 읽어 대입하는 표준 함수임.
+ * - rgba(r, g, b, alpha) : 적·녹·청 색상에 불투명도(0~1)를 더하는 표준 색상 함수임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - color-scheme: light dark : 스크롤바·폼 위젯이 라이트/다크 테마를 따르게 함.
+ * - font-family / sans-serif : 우선 적용할 글꼴 목록과 기본 고딕 대체 글꼴 키워드임.
+ * - text-size-adjust: 100% : 모바일 화면 회전 시 글자 자동 확대를 막는 표준 속성임.
+ * - color / background : 전경 글자색과 배경을 지정하는 표준 속성임.
+ * - px / s / % : 픽셀 크기(px), 초 단위 시간(s), 백분율(%) 단위임.
+ *
+ * [브라우저 확장 CSS 속성]
+ * - -webkit-text-size-adjust: 100% : Safari·WebKit 계열에서 글자 자동 확대를 막는 확장 속성임.
+ *
+ * [CSS 커스텀 속성명 (변수명)]
+ * - --font-ui / --font-bold : 일반 UI용과 굵은 제목용 웹폰트 스택 변수임.
+ * - --edge / --panel-padding / --action-size / --ui-gap : 외곽 여백·버튼 크기·간격 변수임.
+ * - --search-panel-height : 우측 하단 검색 패널의 초기 기준 높이(176px) 변수임.
+ * - --ticker-duration / --ticker-diff : 전광판 텍스트 스크롤 시간(8s)과 이동 거리(40px) 변수임.
+ * - --primary-blue / --primary-dark : 강조 파란색과 짙은 남색 브랜드 토큰 변수임.
+ * - --text-primary / --text-secondary : 기본 본문 글자색과 보조 설명 글자색 변수임.
+ * - --bg-page / --bg-panel : 페이지 바탕 배경색과 반투명 패널 배경색 변수임.
+ * - --border-subtle / --shadow-soft : 연한 테두리 선색과 부드러운 그림자 변수임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html : <html> 요소에 기본 적용되며 로드된 8개 CSS 파일 전체가 :root 커스텀 CSS 변수를 참조함.
+ * - js/search-controls.js : initPanels()가 #search-panel 높이를 재어 --search-panel-height를 갱신함.
+ * - js/utils.js : updateMarquees()가 넘치는 글자 폭에 맞춰 --ticker-diff·--ticker-duration을 설정함.
+ *
+ * [동작 흐름]
+ * - 브라우저가 style.css 파싱 -> :root 전역 CSS 변수 초기값을 메모리에 등록함.
+ * - 다른 CSS 모듈 렌더링 -> var(--edge), var(--panel-padding) 등을 읽어 좌표를 계산함.
+ * - 패널 접기·창 리사이즈 발생 -> initPanels()가 --search-panel-height 값을 실시간 갱신함.
  */
 
 :root:has(> head > meta[name="color-scheme"][content="dark"]),
@@ -45,15 +74,40 @@ html[data-theme="light"] {
     background: #f6f8fc;
 }
 /*
- * [CSS 최신 선택자] :has(> head > meta[...]) 및 속성 선택자([data-theme="dark"])
- * [핵심 원리] JS 본문이 다 실행되기도 전에 첫 프레임부터 어두운 배경(#0b1120)을 확정하여 눈부신 흰 화면 깜빡임(FOUC)을 원천 차단함.
+ * [CSS 문법]
+ * - 선택자:has(조건) : 내부 조건을 만족하는 바깥 요소를 선택하는 표준 관계형 의사 클래스임.
+ * - 부모 > 자식 : 바로 아래 직계 자식 요소만 선택하는 표준 자식 결합자임.
+ * - [속성="값"] : 지정한 속성과 값이 정확히 일치하는 요소를 고르는 속성 선택자임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - color-scheme: dark / light : 브라우저 기본 스크롤바와 폼 위젯의 명암 모드를 고정함.
+ * - background : 페이지 최하층 루트 배경색(#0b1120 또는 #f6f8fc)을 지정하는 표준 속성임.
+ *
+ * [CSS 선택자명]
+ * - html[data-theme="dark"] / html[data-theme="light"] : 현재 테마 속성으로 루트를 선택함.
+ * - :root:has(> head > meta[name="color-scheme"][content="dark|light"]) : 메타 태그와 연동됨.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html : <html lang="ko" data-theme="dark">와 <meta name="color-scheme">에 연동됨.
+ * - js/theme-init.js : 첫 페인트 전에 저장된 테마를 읽어 두 속성을 먼저 동기화함.
+ * - js/search-controls.js : applyTheme()가 테마 버튼 클릭 시 두 속성을 함께 교체함.
+ *
+ * [동작 흐름]
+ * - <head> 내 theme-init.js 실행 -> CSS 파싱 전에 html[data-theme]와 meta[content]를 확정함.
+ * - style.css 적용 직후 -> dark-theme.css 적용 전에도 첫 프레임 배경색이 즉시 확정됨.
+ * - 결과 -> 다크 모드 접속 시 초기 흰 화면 깜빡임(FOUC)을 차단함.
  */
 
 * {
     box-sizing: border-box;
 }
 /*
- * [CSS 문법] *(전체 요소 선택자), box-sizing: border-box (테두리와 안쪽 여백 padding을 너비 계산에 포함시켜 레이아웃 넘침을 방지)
+ * [CSS 문법]
+ * - * : 문서 내 모든 HTML 요소를 선택하는 표준 전체 선택자임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - box-sizing: border-box : width·height 안에 padding과 border 두께까지 포함해 계산함.
+ * - 효과 : 안쪽 여백이나 테두리를 추가해도 요소 전체 크기가 바깥으로 넘치지 않게 함.
  */
 
 html,
@@ -72,8 +126,24 @@ body {
     }
 }
 /*
- * [CSS 조건부 문법] @supports (height: 100dvh) (형제 조건문: @media, @container)
- * [브라우저 내장 단위] 100dvh (Dynamic Viewport Height : 아이폰 Safari·안드로이드 Chrome 상하단 주소창이 숨거나 나타날 때 실시간 높이에 딱 맞춤)
+ * [CSS 문법]
+ * - 선택자1, 선택자2 : 쉼표로 여러 선택자를 묶어 같은 규칙을 주는 표준 그룹 문법임.
+ * - @supports (조건) : 브라우저가 괄호 안의 속성·단위를 지원할 때만 내부 규칙을 적용함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - width: 100% / height: 100% : 뷰포트 전체 너비와 높이를 백분율로 채움.
+ * - 100dvh : 모바일 주소창 접힘·펼침에 따라 실시간으로 변하는 동적 뷰포트 높이 단위임.
+ * - margin: 0 : 브라우저가 body에 기본으로 부여하는 바깥 여백을 제거함.
+ * - overflow: hidden : 문서 전체 스크롤을 막아 내부 패널 영역만 따로 스크롤되게 제한함.
+ * - overscroll-behavior: none : 스크롤 끝에 닿아도 당겨서 새로고침이나 바운스 전파를 막음.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html : 최상위 <html> 및 <body class="dark-mode" data-theme="dark"> 요소에 적용됨.
+ *
+ * [동작 흐름]
+ * - 기본 규칙 height: 100% 적용 -> 구형 브라우저에서도 전체 화면 높이를 확보함.
+ * - 100dvh 지원 브라우저 -> @supports 조건을 통과해 height: 100dvh로 덮어씀.
+ * - 모바일 주소창 높이 변동 -> 하단 고정 패널이 뷰포트 밖으로 밀리지 않고 화면 안에 머무름.
  */
 
 button,
@@ -87,6 +157,17 @@ select,
 a {
     -webkit-tap-highlight-color: transparent;
 }
+/*
+ * [CSS 문법]
+ * - 선택자1, 선택자2 : 대화형 폼 요소와 링크 태그를 쉼표로 묶은 표준 그룹 선택자임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - font: inherit : 폼 요소가 시스템 기본 글꼴을 쓰지 않고 부모의 글꼴·크기를 물려받게 함.
+ * - transparent : 완전 투명 색상을 의미하는 표준 CSS 색상 키워드임.
+ *
+ * [브라우저 확장 CSS 속성]
+ * - -webkit-tap-highlight-color : 모바일 터치 시 잠깐 뜨는 반투명 강조 배경을 없애는 확장 속성임.
+ */
 
 button:focus-visible,
 input:focus-visible,
@@ -97,12 +178,34 @@ summary:focus-visible {
     outline-offset: 2px;
 }
 /*
- * [CSS 의사 클래스] :focus-visible (마우스 클릭 때는 숨기고 키보드 Tab 이동 시에만 선명한 파란 포커스 링을 표시하여 웹 접근성 WCAG 2.4.7 충족)
+ * [CSS 문법]
+ * - :focus-visible : 마우스 클릭은 건너뛰고 키보드 Tab 등 초점 표시가 필요할 때만 적용됨.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - outline: 3px solid #3778d7 : 레이아웃 크기를 밀지 않고 바깥에 3px 파란 실선 테두리를 그림.
+ * - outline-offset: 2px : 요소 경계와 포커스 테두리 사이 간격을 2px 띄우는 표준 속성임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html 및 동적 DOM : 화면의 모든 button·input·select·a·summary 요소에 적용됨.
+ * - js/app.js : bindGlobalKeyboardNavigation()의 Tab 이동 시 현재 초점 위치를 표시함.
  */
 
 [hidden] {
     display: none !important;
 }
+/*
+ * [CSS 문법]
+ * - [hidden] : HTML5 표준 hidden 속성이 선언된 모든 요소를 고르는 속성 선택자임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - display: none : 요소를 화면과 레이아웃 계산에서 완전히 빼고 공간도 남기지 않음.
+ * - !important : 다른 선택자의 display: flex/grid보다 항상 우선 적용되도록 강제하는 키워드임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html : #active-route-banner, #mobile-menu-drawer, #radius-popover, #sheet-dim에 적용됨.
+ * - index.html : #theme-icon-sun, #search-results, #origin-reset-btn, #eta-rank-box에도 적용됨.
+ * - js/search-controls.js / js/directions-eta.js / js/hospital-sheet.js : .hidden 토글로 즉시 숨김.
+ */
 
 .sr-only {
     position: absolute;
@@ -115,8 +218,18 @@ summary:focus-visible {
     border: 0;
 }
 /*
- * [내가 지은 클래스 이름] .sr-only (Screen Reader Only)
- * [핵심 원리] 눈에는 보이지 않지만 시각장애인용 스크린 리더(VoiceOver, TalkBack)는 정확히 읽어 주는 접근성 전용 숨김 상자임.
+ * [표준 CSS 속성·단위·함수]
+ * - position: absolute : 일반 문서 흐름에서 분리해 주변 요소 배치에 영향을 주지 않게 함.
+ * - width: 1px / height: 1px / padding: 0 / border: 0 : 물리 크기를 1px 최소 영역으로 줄임.
+ * - overflow: hidden / white-space: nowrap : 1px 밖으로 넘치는 글자를 자르고 줄바꿈을 막음.
+ * - clip-path: inset(50%) : 보이는 영역을 사방 50%씩 안쪽으로 잘라 화면에서 가림.
+ *
+ * [CSS 선택자명]
+ * - .sr-only : 눈에는 보이지 않지만 스크린 리더에는 텍스트를 읽히게 하는 접근성 클래스임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html : #status-announcer, #alert-announcer와 입력창용 숨김 <label> 4곳에 적용됨.
+ * - js/utils.js : setStatus()가 안내 요소 내용을 바꾸면 스크린 리더가 상태 알림을 낭독함.
  */
 
 strong,
@@ -133,7 +246,15 @@ h3 {
     text-wrap: balance;
 }
 /*
- * [CSS 최신 타이포그래피] text-wrap: balance (제목이 두 줄로 넘어갈 때 한 글자만 외롭게 떨어지지 않도록 줄 길이를 균형 있게 배분, 구형 브라우저는 자동 무시)
+ * [CSS 문법]
+ * - 선택자1, 선택자2 : 강조 인라인 태그와 제목 태그를 묶은 표준 그룹 선택자임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - font-family / var(...) / sans-serif : 지정한 글꼴 변수와 대체 고딕 글꼴을 적용함.
+ * - text-wrap: balance : 제목이 여러 줄로 나뉠 때 각 줄의 글자 길이를 고르게 배분함.
+ *
+ * [CSS 커스텀 속성명 (변수명)]
+ * - --font-bold : :root에 정의한 굵은 제목용 웹폰트(NanumSquareNeoBold) 변수임.
  */
 
 #map {
@@ -151,8 +272,22 @@ h3 {
     }
 }
 /*
- * [CSS ID 선택자] #map (index.html의 <main id="map"> 요소와 1:1 매칭)
- * [핵심 원리] position: fixed; inset: 0; 으로 화면 전체를 빈틈없이 덮는 네이버 WebGL 벡터 지도 도화지임.
+ * [CSS 문법]
+ * - @supports (height: 100dvh) : 동적 높이 단위 지원 시에만 내부 높이 규칙을 적용함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - position: fixed / inset: 0 : 상하좌우 네 모서리(0)에 맞춰 뷰포트 전체에 고정함.
+ * - z-index: 0 : 쌓임 순서를 맨 아래(0)로 두어 다른 UI 패널들이 항상 위에 올라오게 함.
+ * - width: 100% / height: 100% / 100dvh : 화면 가로·세로를 꽉 채우는 크기와 동적 높이 단위임.
+ * - background : 지도 타일이 그려지기 전에 먼저 보이는 초기 바탕 배경색을 지정함.
+ *
+ * [CSS 선택자명]
+ * - #map : 화면 전체 배경으로 고정되는 지도 컨테이너 ID 선택자임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html : <main id="map" aria-label="응급의료기관 네이버 지도"> 요소와 매칭됨.
+ * - js/map-engine.js : mountNaverMap()이 내부에 .naver-map-canvas를 삽입하고 지도를 그림.
+ * - dark-theme.css : body.dark-mode #map 규칙이 다크 모드 배경을 #0b1120으로 덮어씀.
  */
 
 .regional {
@@ -171,8 +306,19 @@ h3 {
     --hospital-color: #738295;
 }
 /*
- * [내가 지은 종별 클래스 & 변수] .regional(권역응급 보라), .tertiary(상급종합 빨강), .medical(의료원 파랑), .other(일반기타 슬레이트)
- * [핵심 원리] 필터 체크박스와 지도 마커 카드(.hospital-card), 클러스터 목록이 모두 이 --hospital-color 변수 하나를 공유해 색상을 자동 일치시킴.
+ * [CSS 커스텀 속성명 (변수명)]
+ * - --hospital-color : 하위 요소들이 var(--hospital-color)로 참조하는 기관 종별 색상 변수임.
+ *
+ * [CSS 선택자명]
+ * - .regional : 권역응급의료센터 계열 색상(보라색 #8049bd) 클래스임.
+ * - .tertiary : 상급종합병원 계열 색상(빨간색 #d34458) 클래스임.
+ * - .medical : 의료원 계열 색상(파란색 #2879ce) 클래스임.
+ * - .other : 일반·기타 응급의료기관 계열 색상(회색 #738295) 클래스임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html : .filters 안 4개 체크박스 <label>의 글자색과 체크 강조색에 적용됨.
+ * - js/markers-cluster.js : visualGroup() 결과를 .hospital-card와 .cluster-item에 동적 부여함.
+ * - dark-theme.css : 어두운 배경 대비에 맞춘 밝은 색조로 각 변수를 재정의함.
  */
 
 .spinner {
@@ -195,6 +341,30 @@ h3 {
     }
 }
 /*
- * [CSS 애니메이션 문법] @keyframes spin, transform: rotate(360deg)
- * [핵심 원리] 데이터 새로고침 중일 때 GPU 합성 속성(transform)만으로 아이콘을 부드럽게 회전시켜 레이아웃 재계산(Reflow) 부하가 없음.
+ * [CSS 문법]
+ * - 조상 자손 : 공백 결합자로 부모 안에 있는 특정 자손 요소를 선택함.
+ * - @keyframes 이름 { to { ... } } : 시작 상태(0%)에서 끝 상태(to = 100%)까지의 애니메이션을 정의함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - flex: 0 0 14px : Flex 컨테이너 안에서 크기가 늘거나 줄지 않게 너비를 14px로 고정함.
+ * - width / height / border-radius: 50% : 정사각 영역의 모서리를 50% 깎아 원형을 만듦.
+ * - border / border-top-color : 원형 테두리 중 위쪽 한 면만 진한 파란색으로 칠해 회전을 보임.
+ * - animation: ... linear infinite : 이름·주기·일정 속도(linear)·무한 반복(infinite)을 지정함.
+ * - transform: rotate(360deg) : 요소를 2D 평면에서 360도 회전시키는 표준 변환 함수임.
+ *
+ * [CSS 선택자명 및 키프레임명]
+ * - .spinner : 개발자모드 상태 안내 줄의 원형 로딩 인디케이터 클래스임.
+ * - .is-loading .refresh-icon : 데이터 로딩 중 새로고침 SVG 아이콘을 회전시키는 선택자임.
+ * - spin : 0도에서 360도까지 연속 회전하는 키프레임 애니메이션 이름임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - index.html : #developer-spinner(.spinner) 및 #refresh-button 내 .refresh-icon에 적용됨.
+ * - js/search-controls.js : fetchData() 시작·종료 시 body.is-loading과 스피너를 전환함.
+ * - js/hospital-sheet.js : hydrateHospitalDetailIfNeeded() 조회 중에도 스피너를 노출함.
+ * - responsive.css : prefers-reduced-motion: reduce 환경에서 animation: none으로 정지함.
+ *
+ * [동작 흐름]
+ * - 초기 조회·새로고침 시작 -> fetchData()가 body.is-loading 추가 및 #developer-spinner 표시함.
+ * - 브라우저 렌더링 -> transform: rotate(360deg)로 레이아웃 재계산 없이 부드럽게 회전함.
+ * - 요청 완료·중단 -> finally 블록이 .is-loading과 스피너를 즉시 해제함.
  */

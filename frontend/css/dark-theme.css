@@ -24,8 +24,31 @@ body.dark-mode .other {
     --hospital-color: #94a3b8;
 }
 /*
- * [야간 응급 관제 다크 테마 토큰 보정]
- * - 어두운 남색 지도(#0b1120) 위에서도 WCAG 명도 대비가 뚜렷하게 확보되도록 종별 강조색 채도·명도를 밝게 자동 보정함.
+ * [CSS 문법]
+ * - 복합·자손 결합자 (body.클래스 .자손 / #아이디) : 단일 선택자보다 명시도를 높여 로드 순서와 무관하게 우선 적용됨.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - color-scheme: dark : 브라우저 기본 스크롤바와 폼 컨트롤의 렌더링 테마를 어두운 모드에 맞추는 속성임.
+ * - color / background : 문서 전체 기본 글자색(#e2e8f0)과 야간 남색 배경(#0b1120)을 지정하는 속성임.
+ *
+ * [CSS 커스텀 속성명 (변수명)]
+ * - --hospital-color : 어두운 지도(#0b1120) 위 명도 대비를 확보하기 위해 밝게 재정의한 종별 색상 변수임.
+ *   · 권역(#c084fc) / 상급(#fb7185) / 의료원(#60a5fa) / 기타(#94a3b8) 4단계 밝은 색조로 덮어씀.
+ *
+ * [CSS 선택자명]
+ * - body.dark-mode : 다크 테마 활성 시 <body>에 유지·부여되는 상태 클래스명임.
+ * - #map / .regional / .tertiary / .medical / .other : 지도 캔버스와 4대 응급의료기관 종별 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : <html lang="ko" data-theme="dark"> 및 <body class="dark-mode" data-theme="dark">로 초기 렌더링됨.
+ * - frontend/js/theme-init.js : 첫 페인트 직전 localStorage("yonsei119-theme")를 읽어 html[data-theme]를 동기화함.
+ * - frontend/js/search-controls.js : applyTheme(isDark, remountMap)가 .dark-mode와 data-theme 속성을 일괄 전환함.
+ * - frontend/js/search-controls.js : 테마 전환 직후 네이버 WebGL 커스텀 다크 지도를 다시 마운트함.
+ *
+ * [동작 흐름]
+ * - 다크 테마 토글 버튼 클릭 -> applyTheme() 실행
+ *   ├── <body>의 .dark-mode 클래스와 data-theme="dark|light" 속성 동시 전환
+ *   └── 하위 모든 다크 색상 규칙과 재정의된 --hospital-color가 한 번에 켜지거나 꺼짐
  */
 
 body.dark-mode .search-panel,
@@ -166,7 +189,31 @@ body.dark-mode .symptom-chip.avail-only-chip[aria-pressed="true"] {
     color: #ffffff;
 }
 /*
- * [검색 패널·증상 칩 다크 테마 스타일] 야간 구급차·상황실 환경에서도 눈부심 없이 증상 프리셋 칩이 선명하게 구분됨.
+ * [CSS 문법]
+ * - 그룹 선택자 (,) : 여러 패널·버튼에 동일한 다크 배경과 테두리 규칙을 한 번에 묶어 적용하는 문법임.
+ * - 의사 요소 (::placeholder) : 검색 입력창 안쪽 안내 문구의 글자색을 어두운 배경에 맞게 낮추는 문법임.
+ * - 의사 클래스 (:hover, :focus-visible) : 마우스 올림과 키보드 포커스 시 배경 변화를 지정함.
+ * - 속성 선택자 ([aria-expanded="true"], [aria-pressed="true"]) : ARIA 토글 속성이 켜진 활성 버튼 색상을 바꿈.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - background / rgba() : 어두운 슬레이트 계층(#0f172a -> #1e293b -> #273549)과 반투명 배경색을 지정함.
+ * - border-color / border-top-color / box-shadow / color : 다크 모드 테두리, 그림자, 밝은 글자색 속성임.
+ *
+ * [CSS 선택자명]
+ * - 패널·목록 : .search-panel, .radius-popover, .search-results, .mobile-menu-drawer
+ * - 도구 버튼 : .map-action, .mobile-menu-btn, .theme-toggle-btn, .traffic-toggle-btn
+ * - 상단 보조 : .search-updated-pill, .panel-toggle, .text-button, #radius-help, .map-count
+ * - 입력·자동완성 : #keyword, #radius, .result-button, .search-geocode-li, .search-geocode-btn
+ * - 필터·증상칩 : .filters, .symptom-chip, .avail-only-chip
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/css/panels-toolbar.css : .search-panel·.map-action·#keyword·.filters 등 라이트 기본 스타일을 다크로 덮어씀.
+ * - frontend/js/search-controls.js : initRadius(), renderSymptomChips(), toggleMobileMenu() 등이 ARIA 속성을 갱신함.
+ * - frontend/js/map-engine.js : toggleTrafficLayer()가 #traffic-toggle의 aria-pressed="true|false"를 전환함.
+ *
+ * [동작 흐름]
+ * - 다크 모드에서 교통 버튼·증상 필터 칩 클릭 -> JS가 aria-pressed="true"로 전환
+ *   └── 속성 선택자 규칙 매칭 ──> 초록·파랑 고대비 강조 배경 즉시 적용
  */
 
 body.dark-mode .hospital-card {
@@ -234,7 +281,33 @@ body.dark-mode .status-toast-close {
     background: rgba(255, 255, 255, 0.12);
 }
 /*
- * [지도 마커·경로 배너·상태 토스트 다크 테마 스타일]
+ * [CSS 문법]
+ * - 의사 요소 (::after) : 요소 내용 뒤쪽에 가상 장식 도형을 생성하는 표준 문법임.
+ * - 속성 선택자 ([data-*="..."]) : HTML data-* 사용자 정의 속성 값에 따라 스타일을 분기함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - border-left / var() : 좌측 강조선에 CSS 커스텀 색상 변수를 연결하는 속성·함수임.
+ * - background / rgba() / border-color / color / box-shadow : 카드·배너·토스트의 야간 배경과 그림자 속성임.
+ *
+ * [CSS 커스텀 속성명 (변수명)]
+ * - --hospital-color : body.dark-mode 상위 규칙에서 밝게 재정의된 기관 분류 색상 변수임.
+ *
+ * [CSS 선택자명]
+ * - 지도 오버레이 카드 : .hospital-card
+ * - 상단 경로 배너 : .active-route-banner, .active-route-name-btn, .active-route-meta
+ * - 배너·출발점 버튼 : .active-route-open, .active-route-clear, .active-route-reset, .origin-reset-btn
+ * - 상태 알림 토스트 : .status-toast, .status-toast[data-tone="error"], .status-toast-close
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/css/map-overlays.css / dialogs-toast.css : 지도 카드·토스트의 라이트 기본 규칙을 다크로 재정의함.
+ * - frontend/js/markers-cluster.js : updateMarkers()가 .hospital-card와 종별 클래스(.regional 등)를 부여함.
+ * - frontend/js/directions-eta.js : drawRouteOnMap()이 .active-route-banner를 화면에 표시함.
+ * - frontend/js/utils.js : setStatus()가 오류 문구 감지 시 toastEl.dataset.tone = "error"를 기록함.
+ *
+ * [동작 흐름]
+ * - 다크 지도 위 오버레이 요소 표시 -> body.dark-mode 규칙 일괄 적용
+ *   ├── 병원 카드·배너 ──> 어두운 반투명 배경 + 밝은 강조선으로 눈부심 없이 시인성 유지
+ *   └── 오류 토스트 ──> dataset.tone = "error" 설정 ──> 짙은 적색 경고 토스트로 즉시 전환
  */
 
 body.dark-mode .sheet-dim {
@@ -311,7 +384,24 @@ body.dark-mode .field-code {
     color: #94a3b8;
 }
 /*
- * [상세 시트 본문 다크 테마 스타일]
+ * [표준 CSS 속성·단위·함수]
+ * - linear-gradient() / rgba() : 상세 시트 헤더의 어두운 남색 그라데이션과 반투명 딤·배지·경고 색상을 만듦.
+ * - background / border / border-color / border-bottom-color / color / box-shadow : 시트 기본 톤을 다크로 전환함.
+ *
+ * [CSS 선택자명]
+ * - 시트 뼈대 : .sheet-dim, .sheet, .sheet-drag-handle, .sheet-header, .close-button
+ * - 상단·안내 : .sheet-updated, .muted, .type-badge, .safety-note, .phone-missing
+ * - 섹션·제목 : .detail-section, .developer-mode, .section-heading
+ * - 공지·개발자 제목 : .message-dept, .message-heading, .raw-msg-title
+ * - 상태·원본 보조 : .empty-state, .data-state, .developer-status, .raw-group, .field-code
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/css/sheet-egen.css : 시트 본문 라이트 기본 규칙의 다크 테마 오버라이드 쌍을 이룸.
+ * - frontend/index.html / frontend/js/hospital-sheet.js : 병원 선택 시 열리는 #sheet와 내부 요소에 적용됨.
+ *
+ * [동작 흐름]
+ * - 다크 모드에서 병원 선택 -> #sheet.open 전환 -> 명도 단계별 다크 톤 적용
+ *   └── 배경 딤(rgba(2, 6, 23, 0.68)) ──> 시트 프레임(#0b1120) ──> 섹션 카드(#111827) 순으로 계층 구분
  */
 
 body.dark-mode .directions-section {
@@ -404,7 +494,28 @@ body.dark-mode .directions-guide-details summary {
     color: #6ee7b7;
 }
 /*
- * [자동차 경로 탐색·혼잡도 다크 테마 스타일]
+ * [CSS 문법]
+ * - 부정 의사 클래스 (:not(...)) : 기본 초록 강조 버튼은 제외하고 보조 버튼만 어두운 슬레이트 색으로 바꿈.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - background-image: url("data:image/svg+xml,...") : 어두운 선택창 위에서 보이도록 SVG 화살표 선 색을 변경함.
+ * - linear-gradient() / rgba() : 길찾기 카드 배경 그라데이션과 반투명 혼잡도 칩 색상을 지정함.
+ * - background / background-color / border-color / border-top-color / color : 다크 카드 명암 대비를 맞춤.
+ *
+ * [CSS 선택자명]
+ * - 길찾기 카드·툴바 : .directions-section, .directions-status-badge, .directions-select, .directions-action-btn
+ * - 경로 옵션 카드 : .directions-alt-btn, .is-active, .directions-alt-title, .directions-alt-eta, .directions-alt-meta
+ * - KPI 지표 카드 : .directions-kpi-card, .directions-kpi-label, .directions-kpi-value, .highlight, .directions-kpi-sub
+ * - 소통 범례·안내 : .directions-traffic-summary, .directions-traffic-legend, .traffic-legend-title
+ * - 구간 칩·안내 : .directions-section-chip(.congestion-smooth|slow|jam), .directions-guide-details, .directions-guide-list
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/css/directions-eta.css : 길찾기 UI 라이트 기본 규칙을 다크 모드로 덮어씀.
+ * - frontend/js/directions-eta.js : loadDirectionsForHospital()이 생성한 옵션 카드와 혼잡 칩에 다크 색상이 적용됨.
+ *
+ * [동작 흐름]
+ * - 다크 모드에서 경로 조회 완료 -> 선택된 옵션 카드(.is-active) 강조
+ *   └── 반투명 에메랄드 배경 + 연두 테두리(#4ade80) 표시 ──> 어두운 시트에서도 현재 경로 즉시 식별
  */
 
 body.dark-mode .origin-info-row {
@@ -492,7 +603,27 @@ body.dark-mode .eta-rank-er.is-plenty {
     color: #86efac;
 }
 /*
- * [추천 순위 박스 다크 테마 스타일]
+ * [CSS 문법]
+ * - 속성 선택자 ([aria-expanded="true"], [aria-pressed="true"]) : 순위 패널 열림·정렬 모드 활성 상태를 스타일과 연결함.
+ * - 복합 클래스 선택자 (.a.b) : 1위 배지와 병상 포화·여유 상태 배지에 다크 배경용 강조 색을 덧씌움.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - rgba() / background / border-color / border-bottom-color / color : 반투명 틴트로 어두운 카드와 자연스럽게 맞춤.
+ *
+ * [CSS 선택자명]
+ * - 출발지 표시줄 : .origin-info-row, .origin-address-text
+ * - 순위 패널·모드 : .eta-rank-btn, .eta-rank-box, .eta-rank-header, .eta-mode-btn, .eta-rank-close
+ * - 순위 행·배지 : .eta-rank-item, .rank-1, .eta-rank-badge, .eta-rank-main
+ * - 병상 상태 배지 : .eta-rank-er, .is-saturated, .is-plenty
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/css/directions-eta.css : 추천 순위 UI 라이트 기본 규칙의 다크 테마 쌍을 이룸.
+ * - frontend/js/directions-eta.js : loadEtaRanking()이 부여하는 .rank-1, .is-saturated, .is-plenty를 다크 색으로 표현함.
+ *
+ * [동작 흐름]
+ * - 다크 모드에서 수용최적·최단시간 순위 목록 펼침 -> loadEtaRanking() 렌더링
+ *   ├── 포화·차단 병원 ──> 어두운 적색 반투명 배지(.is-saturated) 경고
+ *   └── 3석 이상 여유 병원 ──> 어두운 녹색 반투명 배지(.is-plenty) 표시
  */
 
 body.dark-mode .egen-table-card,
@@ -656,5 +787,34 @@ body.dark-mode .notice-copy strong {
     color: #fb7185;
 }
 /*
- * [E-Gen 보드·공지·다이얼로그 다크 테마 스타일]
+ * [CSS 문법]
+ * - 그룹 선택자 (,) / 직계 자식 결합자 (>) / 복합 클래스 선택자 (.a.b) : 현황판·공지·모달 다크 색상을 묶어 적용함.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - rgba() / var() : 반투명 배경색 생성 함수와 CSS 커스텀 색상 변수 참조 함수임.
+ * - background / border-color / border-bottom-color / border-left : 카드 배경과 방향별 테두리 속성임.
+ * - border-left-color / color / box-shadow : 좌측 강조선 색, 글자색, 모달 그림자 속성임.
+ *
+ * [CSS 커스텀 속성명 (변수명)]
+ * - --hospital-color : body.dark-mode에서 밝게 재정의된 종별 강조색 변수로 .cluster-item 좌측 테두리에 쓰임.
+ *
+ * [CSS 선택자명]
+ * - 현황판 틀 : .egen-table-card, .egen-header-bar(.emergency|.inpatient|.severe|.equipment)
+ * - 소그룹·그리드 : .egen-subgroup-header, .egen-matrix-grid, .equipment-matrix-grid, .severe-matrix-grid
+ * - 항목 셀 : .egen-cell, .equipment-cell, .egen-cell-label, .severe-sub-label
+ * - 질환·파라미터 : .severe-cat-box, .severe-cat-header, .severe-sub-item, .egen-cell-param, .severe-remark-box
+ * - 배지·공지 : .egen-badge-* (.egen-badge-overflow 포함), .message-card(.critical|.urgent)
+ * - 공지 내부 : .message-text, .message-subtag, .message-badge
+ * - 개발자 원본 : .raw-pair, .raw-msg-card, .raw-details, .developer-mode
+ * - 모달 창 : .cluster-dialog, .cluster-item, .notice-dialog, .notice-copy
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/css/sheet-egen.css / dialogs-toast.css : 전광판·공지·다이얼로그 라이트 기본 규칙을 다크로 덮어씀.
+ * - frontend/js/hospital-sheet.js : 병상·장비·중증질환 보드, 공지 카드, 개발자 모드 원본 표에 다크 색상이 적용됨.
+ * - frontend/js/markers-cluster.js : openCluster()가 생성하는 .cluster-item 버튼에 종별 클래스와 다크 색이 적용됨.
+ * - frontend/js/search-controls.js : initNotice()가 띄우는 #notice-dialog에 다크 배경과 강조 텍스트(#fb7185)가 적용됨.
+ *
+ * [동작 흐름]
+ * - 야간 다크 모드에서 시트·모달 열기 -> body.dark-mode 규칙 일괄 매칭
+ *   └── 모든 동적 카드·배지·다이얼로그가 밝은 흰 배경 노출 없이 다크 관제 톤으로 일관 렌더링됨
  */

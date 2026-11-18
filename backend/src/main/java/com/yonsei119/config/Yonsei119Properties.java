@@ -2,9 +2,12 @@ package com.yonsei119.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 /*
- * [자바 문법] package, import : 환경설정 전용 패키지(com.yonsei119.config)를 선언하고 프로퍼티 바인딩 어노테이션을 가져옴.
- * [스프링/라이브러리 내장 어노테이션] @ConfigurationProperties (출처: org.springframework.boot.context.properties) :
- *   application.yml의 계층형 설정값들을 자바 객체 필드에 통째로 자동 매핑해 줌 (형제 어노테이션: 단일 값만 하나씩 뽑아 쓰는 @Value("${...}")).
+ * [자바 문법]
+ * - package : 환경설정, 웹 MVC 설정, 보안 필터를 모아 두는 패키지(com.yonsei119.config) 선언문임.
+ * - import : 스프링 부트 설정 바인딩 타입을 Yonsei119Properties.java로 불러오는 선언문임.
+ *
+ * [패키지명]
+ * - com.yonsei119.config : 설정 모델, MVC 설정, 보안 필터가 위치하는 패키지명임.
  */
 
 @ConfigurationProperties(prefix = "yonsei119")
@@ -15,19 +18,35 @@ public record Yonsei119Properties(
         Cors cors
 ) {
 /*
- * [스프링/라이브러리 내장 어노테이션] @ConfigurationProperties(prefix = "yonsei119") : application.yml에서 'yonsei119:' 아래에 적힌 모든 설정을 이 상자로 연결함.
- * [자바 문법] public record : 한 번 값이 채워지면 절대 중간에 바뀌지 않는(불변, Immutable) 데이터 전용 설계도를 만드는 Java 16+ 핵심 예약어임 (getter, equals, toString 자동 생성 / 형제 문법: class, interface, enum).
- * [내가 지은 이름]
- * - 대문자 타입명: Yonsei119Properties, Nemc, Naver, DefaultOrigin, Cors (설계도 이름)
- * - 소문자 변수(상자)명: nemc, naver, defaultOrigin, cors (실제 설정값이 담기는 칸 이름 — YAML의 키 이름과 매칭)
- * [핵심 원리 & 데이터 변환 예시]
- *   [application.yml]                        [Yonsei119Properties record 객체]
- *   yonsei119:
- *     nemc:
- *       cache-ttl-seconds: 180        ───>   properties.nemc().cacheTtlSeconds() == 180L
- *       cold-cache-ttl-seconds: 21600 ───>   properties.nemc().coldCacheTtlSeconds() == 21600L
- *     naver:
- *       client-id: "xfbxloc8km"       ───>   properties.naver().clientId() == "xfbxloc8km"
+ * [스프링 내장 어노테이션]
+ * - @ConfigurationProperties 정의 (출처: org.springframework.boot.context.properties.ConfigurationProperties, 이름 변경 불가)
+ *   · 역할 : application.yml이나 환경변수의 외부 설정값들을 지정한 접두사(prefix) 기준으로 객체·레코드 필드에 자동 바인딩하는 어노테이션임.
+ * - @ConfigurationProperties(prefix = "yonsei119") 현재 코드 적용
+ *   · 적용 대상 : 바로 위 선언된 Yonsei119Properties record
+ *   · 작동 원리 : application.yml과 환경변수의 yonsei119.* 하이픈 표기를 카멜 표기로 변환해 생성자에 일괄 바인딩함.
+ *   · 비교 : 단일 설정값을 주입하는 @Value("${...}"), 빈 정의 클래스를 표시하는 @Configuration이 있음.
+ *
+ * [자바 문법]
+ * - public : 다른 패키지(controller, service 등)에서도 Yonsei119Properties record를 주입받아 읽도록 공개함.
+ * - record : Java 16+ 불변 데이터 전용 타입 예약어임 (형제 문법: class, interface, enum).
+ *   · 자동 생성 : private final 필드, 전체 생성자, 필드명과 같은 조회 메서드(nemc() 등), equals·hashCode·toString이 자동 생성됨.
+ *
+ * [레코드명 및 필드명]
+ * - 레코드명 : Yonsei119Properties (루트 설정), Nemc·Naver·DefaultOrigin·Cors (내부 중첩 record 타입명).
+ * - 필드명 :
+ *   · nemc : NEMC 공공데이터 설정 (nemc = 국립중앙의료원).
+ *   · naver : 네이버 클라우드 API 설정.
+ *   · defaultOrigin : 기본 출발 좌표 설정.
+ *   · cors : CORS 허용 출처 설정.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : 서버 부팅 시 스프링 부트 설정 바인더가 application.yml과 환경변수를 읽어 생성자를 호출함.
+ * - 흐름 :
+ *   ├── yonsei119.nemc.* ──> Nemc 생성 후 nemc 필드에 연결
+ *   ├── yonsei119.naver.* ──> Naver 생성 후 naver 필드에 연결
+ *   ├── yonsei119.default-origin.* ──> DefaultOrigin 생성 후 defaultOrigin 필드에 연결
+ *   └── yonsei119.cors.* ──> Cors 생성 후 cors 필드에 연결
+ * - 전달 대상 : 생성된 단일 Yonsei119Properties 빈이 WebConfig, EmergencyApiController 및 각 서비스 빈으로 주입됨.
  */
 
     public record Nemc(
@@ -40,20 +59,56 @@ public record Yonsei119Properties(
             long refreshIntervalMs
     ) {
     /*
-     * [자바 문법] public record, long(큰 정수 기본형), boolean(참/거짓 기본형)
-     * [자바/스프링/라이브러리 내장 도구(타입)] String : 자바 표준 문자열 타입임 (이름 변경 불가).
-     * [내가 지은 이름] Nemc(대문자 타입명) / baseUrl, serviceKey, cacheTtlSeconds, coldCacheTtlSeconds, requestTimeoutMs, autoRefreshEnabled, refreshIntervalMs(소문자 필드명)
-     * [핵심 원리] 국립중앙의료원(NEMC) OpenAPI 주소, 인증키, Hot 캐시 수명(기본 180초=3분), Cold 마스터 캐시 수명(기본 21600초=6시간)을 안전하게 보관하는 금고임.
+     * [자바 문법]
+     * - public record : 외부에서 접근 가능한 중첩 불변 record 선언임 (중첩 record는 자동으로 static 특성을 가짐).
+     * - long : 64비트 정수 기본형임 (밀리초·초처럼 큰 숫자에 사용하며, 형제 타입은 int·short·byte임).
+     * - boolean : true 또는 false 논리값을 저장하는 기본형임.
+     *
+     * [자바 표준 내장 타입 (이름 변경 불가)]
+     * - String (출처: java.lang 패키지) : 문자열을 표현하는 자바 표준 불변 클래스임.
+     *
+     * [레코드명 및 필드명]
+     * - 레코드명 : Nemc (국립중앙의료원 응급의료 OpenAPI 연동 설정 record).
+     * - 필드명 :
+     *   · baseUrl : yonsei119.nemc.base-url (NEMC OpenAPI 기본 URL).
+     *   · serviceKey : yonsei119.nemc.service-key (공공데이터포털 인증키).
+     *   · cacheTtlSeconds : yonsei119.nemc.cache-ttl-seconds (실시간 Hot 데이터 3종 캐시 유지 시간, 기본 180초).
+     *   · coldCacheTtlSeconds : yonsei119.nemc.cold-cache-ttl-seconds (마스터 Cold 데이터 4종 캐시 유지 시간, 기본 21600초).
+     *   · requestTimeoutMs : yonsei119.nemc.request-timeout-ms (외부 API 요청 제한 시간 밀리초).
+     *   · autoRefreshEnabled : yonsei119.nemc.auto-refresh-enabled (기동 사전 캐싱 및 주기적 갱신 사용 여부).
+     *   · refreshIntervalMs : yonsei119.nemc.refresh-interval-ms (스케줄러 자동 갱신 주기 밀리초).
+     *
+     * [동작 흐름]
+     * - 호출 출처 : Yonsei119Properties 생성 시 application.yml의 yonsei119.nemc.* 값이 주입됨.
+     * - 흐름 : 생성 후 불변 상태로 보관 ──> baseUrl(), cacheTtlSeconds() 등 조회 메서드로 읽기 전용 제공.
+     * - 전달 대상 :
+     *   ├── NmcOpenApiClient ──> baseUrl, serviceKey, requestTimeoutMs 사용
+     *   └── EmergencyDataService ──> cacheTtlSeconds, autoRefreshEnabled, effectiveColdCacheTtlSeconds() 사용
      */
         public long effectiveColdCacheTtlSeconds() {
         /*
-         * [자바 문법] public long : 외부에서 호출 가능하며 초 단위 큰 정수(long)를 돌려주는 메서드 선언부임.
-         * [내가 지은 이름] effectiveColdCacheTtlSeconds : 테스트 환경 등에서 cold-cache-ttl-seconds가 생략되어 0으로 들어왔을 때도 안전한 기본값(6시간)을 보장하는 보조 함수임.
+         * [자바 문법]
+         * - public : 다른 패키지(service 등)에서 호출할 수 있도록 공개함.
+         * - long : 64비트 정수 기본형 반환 타입임.
+         *
+         * [메서드명 및 매개변수명]
+         * - 메서드명 : effectiveColdCacheTtlSeconds (매개변수 없음).
+         * - 역할 : 설정 누락으로 coldCacheTtlSeconds가 0 이하일 때도 Cold 캐시가 즉시 만료되지 않게 기본 6시간(21,600초)을 돌려줌.
          */
             return coldCacheTtlSeconds > 0L ? coldCacheTtlSeconds : 21_600L;
             /*
-             * [자바 문법] return, 삼항 연산자(조건 ? 참일때값 : 거짓일때값), 숫자 가독성 밑줄 표기(21_600L == 21600L)
-             * [핵심 원리] 설정값이 0 이하이면 자동으로 21,600초(6시간)를 반환하여 Cold 캐시가 즉시 만료되는 현상을 방지함.
+             * [자바 문법]
+             * - return : 계산한 결과를 호출한 쪽에 돌려주고 메서드를 끝내는 예약어임.
+             * - > : 왼쪽 값이 오른쪽 값보다 큰지 비교하는 연산자임.
+             * - 0L, 21_600L : long 타입 숫자 리터럴이며, 밑줄(_)은 큰 숫자 가독성을 위한 구분 기호임 (값은 21600L과 같음).
+             * - ? : : '조건 ? 참일때값 : 거짓일때값' 형태로 분기하는 삼항 연산자임.
+             *
+             * [동작 흐름]
+             * - 호출 출처 : EmergencyDataService.buildFreshSnapshot()이 Cold 캐시 유효 시간을 계산할 때 호출함.
+             * - 흐름 :
+             *   ├── coldCacheTtlSeconds > 0L ──> 설정된 coldCacheTtlSeconds 그대로 반환
+             *   └── coldCacheTtlSeconds <= 0L ──> 안전 기본값 21_600L(6시간) 반환
+             * - 전달 대상 : EmergencyDataService의 coldTtlSeconds 변수 ──> coldCachedAt 만료 비교에 쓰임.
              */
         }
     }
@@ -66,12 +121,27 @@ public record Yonsei119Properties(
             String directions15Url
     ) {
     /*
-     * [자바 문법] public record
-     * [자바/스프링/라이브러리 내장 도구(타입)] String (이름 변경 불가)
-     * [내가 지은 이름] Naver(대문자 타입명) / clientId, darkStyleId, clientSecret, directions5Url, directions15Url(소문자 필드명)
-     * [핵심 원리 & 보안 분리 비유]
-     * - 식당 간판 번호(clientId, darkStyleId)는 손님(브라우저 /api/config)에게 알려주지만,
-     * - 금고 비밀번호(clientSecret)는 주방(NaverDirectionsService, NaverGeocodingService) 안에서만 꺼내 쓰고 손님에게는 절대 보여주지 않음.
+     * [자바 문법]
+     * - public record : 중첩 불변 record 선언임.
+     *
+     * [자바 표준 내장 타입 (이름 변경 불가)]
+     * - String (출처: java.lang 패키지).
+     *
+     * [레코드명 및 필드명]
+     * - 레코드명 : Naver (네이버 클라우드 플랫폼 지도·경로·지오코딩 API 설정 record).
+     * - 필드명 :
+     *   · clientId : yonsei119.naver.client-id (공개 지도 SDK 및 NCP 게이트웨이 Client ID).
+     *   · darkStyleId : yonsei119.naver.dark-style-id (네이버 다크 모드 지도 스타일 UUID).
+     *   · clientSecret : yonsei119.naver.client-secret (서버 HTTP 요청 헤더 전용 비밀키, 브라우저 미노출).
+     *   · directions5Url : yonsei119.naver.directions5-url (네이버 Directions 5 API 호출 URL).
+     *   · directions15Url : yonsei119.naver.directions15-url (네이버 Directions 15 API 호출 URL).
+     *
+     * [동작 흐름]
+     * - 호출 출처 : application.yml의 yonsei119.naver.* 속성 및 환경변수로 생성됨.
+     * - 흐름 : 공개 키와 비밀키를 함께 보관 ──> 사용처에 따라 공개/비공개 필드를 분리 조회함.
+     * - 전달 대상 :
+     *   ├── EmergencyApiController.getConfig() ──> clientId, darkStyleId만 FrontendConfigDto로 복사해 브라우저에 전달
+     *   └── NaverDirectionsService, NaverGeocodingService ──> clientSecret을 서버 API 요청 헤더에만 포함
      */
     }
 
@@ -81,10 +151,24 @@ public record Yonsei119Properties(
             String label
     ) {
     /*
-     * [자바 문법] public record, double(소수점 실수 기본형 — 위도·경도처럼 정밀한 소수점 계산에 사용 / 형제 타입: float, int, long)
-     * [자바/스프링/라이브러리 내장 도구(타입)] String (이름 변경 불가)
-     * [내가 지은 이름] DefaultOrigin(대문자 타입명) / lat(위도), lng(경도), label(장소 이름)
-     * [핵심 원리] GPS 신호가 없는 데스크톱 PC 환경이나 위치 초기화 시 지도의 초기 중심점이 되는 기본 좌표(서울시청)를 담는 도시락 칸임.
+     * [자바 문법]
+     * - public record : 중첩 불변 record 선언임.
+     * - double : 64비트 소수점 실수 기본형임 (위도·경도 좌표 저장에 사용하며, 형제 타입은 float·int·long임).
+     *
+     * [자바 표준 내장 타입 (이름 변경 불가)]
+     * - String (출처: java.lang 패키지).
+     *
+     * [레코드명 및 필드명]
+     * - 레코드명 : DefaultOrigin (GPS 미사용 시나 위치 초기화 시 쓰는 기본 출발지 record).
+     * - 필드명 :
+     *   · lat : yonsei119.default-origin.lat (기본 위도, application.yml 기준 37.5666805).
+     *   · lng : yonsei119.default-origin.lng (기본 경도, application.yml 기준 126.9784147).
+     *   · label : yonsei119.default-origin.label (기본 위치명, application.yml 기준 "서울시청").
+     *
+     * [동작 흐름]
+     * - 호출 출처 : 부팅 시 application.yml의 yonsei119.default-origin.* 항목으로부터 생성됨.
+     * - 흐름 : 위도·경도·라벨 보관 ──> EmergencyApiController.getConfig()가 FrontendConfigDto로 변환해 응답.
+     * - 전달 대상 : 프론트엔드 search-controls.js의 syncFrontendConfig()가 기본 출발 좌표로 반영함.
      */
     }
 
@@ -92,10 +176,21 @@ public record Yonsei119Properties(
             String allowedOriginPatterns
     ) {
     /*
-     * [자바 문법] public record
-     * [자바/스프링/라이브러리 내장 도구(타입)] String (이름 변경 불가)
-     * [내가 지은 이름] Cors(대문자 타입명) / allowedOriginPatterns(콤마로 구분된 허용 출처 패턴 문자열)
-     * [핵심 원리] WebConfig에서 브라우저 교차 출처(CORS) 허용 범위를 코드 수정 없이 환경변수로 제어하기 위한 설정 칸임.
+     * [자바 문법]
+     * - public record : 중첩 불변 record 선언임.
+     *
+     * [자바 표준 내장 타입 (이름 변경 불가)]
+     * - String (출처: java.lang 패키지).
+     *
+     * [레코드명 및 필드명]
+     * - 레코드명 : Cors (교차 출처 리소스 공유 CORS 정책 설정 record).
+     * - 필드명 :
+     *   · allowedOriginPatterns : yonsei119.cors.allowed-origin-patterns (콤마 구분 허용 출처 패턴, 기본값 "*").
+     *
+     * [동작 흐름]
+     * - 호출 출처 : 부팅 시 application.yml의 yonsei119.cors.allowed-origin-patterns 속성으로 생성됨.
+     * - 흐름 : YONSEI119_CORS_ORIGINS 또는 "*" 보관 ──> WebConfig.addCorsMappings()가 콤마로 분리.
+     * - 전달 대상 : /api/** 경로의 CORS 허용 규칙으로 등록됨.
      */
     }
 }

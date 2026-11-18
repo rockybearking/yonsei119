@@ -13,15 +13,28 @@ import {
     radiusExtent
 } from './utils.js';
 /*
- * [JS 문법] import { ... } from './...' : 지도 렌더링 상수(`constants.js`), 런타임 상태(`state.js`), DOM·기하 유틸(`utils.js`)을 가져옴.
- * [아키텍처 계층] `map-engine.js`는 네이버 지도 JS v3 WebGL 엔진 마운트, SDK 동적 로드, 커스텀 GPU 오버레이, 반경 원, 실시간 교통 레이어, 카메라 피팅을 전담함.
+ * [JS 문법]
+ * - import { 심볼 } from './파일.js' : 동일 폴더 모듈에서 필요한 상수와 함수를 가져옴.
+ *
+ * [프로젝트 내부 가져오기 목록]
+ * - ./constants.js : CAN_USE_CSS_TRANSLATE(CSS translate 지원 여부), DEFAULT_NAVER_CLIENT_ID(기본 키)
+ * - ./state.js : state(지도·좌표·진단 전역 상태), uiCallbacks(상위 모듈 역호출 레지스트리)
+ * - ./utils.js : blurKeyword(포커스 해제), byId(ID 조회), node(DOM 생성), radiusExtent(반경 경계)
+ *
+ * [모듈 아키텍처]
+ * - map-engine.js : 네이버 지도 v3 GL SDK 동적 로드, WebGL/2D 마운트, 좌표 투영을 담당함.
+ * - OverlayView DOM 오버레이, 탐색 반경 Circle, 교통 레이어, 카메라 이동을 전담함.
  */
 
 let sdkLoadPromise = null;
 let loadedSdkClientId = DEFAULT_NAVER_CLIENT_ID;
 /*
- * [JS 문법] let : SDK 비동기 로딩 Promise와 현재 로드된 네이버 Client ID를 모듈 내부에서 추적하는 변수임.
- * [내가 지은 이름] sdkLoadPromise, loadedSdkClientId
+ * [JS 문법]
+ * - let : 모듈 실행 중 값이 다시 할당되어야 하는 변수를 모듈 스코프에 선언하는 키워드임.
+ *
+ * [프로젝트 내부 변수]
+ * - sdkLoadPromise : 비동기 SDK <script> 로드 중 같은 Promise를 돌려줘 중복 삽입을 막음.
+ * - loadedSdkClientId : 현재 로드되었거나 로드 중인 네이버 Client ID를 추적함(기본 DEFAULT_NAVER_CLIENT_ID).
  */
 
 export function ensureNaverMapSdkLoaded(targetClientId = state.naverClientId) {
@@ -62,6 +75,21 @@ export function ensureNaverMapSdkLoaded(targetClientId = state.naverClientId) {
         script.dataset.clientId = cleanClientId;
         script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(cleanClientId)}&submodules=gl`;
         script.async = true;
+        /*
+         * [JS/DOM 내장 API]
+         * - document.createElement('script') : 동적 <script> DOM 요소를 생성하는 표준 API임.
+         * - encodeURIComponent(str) : URL 쿼리 값의 특수문자를 퍼센트 인코딩해 URI 깨짐을 막음.
+         * - script.dataset / script.src / script.async : data-* 기록, 경로 지정, 비동기 로드 속성임.
+         *
+         * [SDK URL 조립 구조]
+         * - 1단계 기본 URL : https://oapi.map.naver.com/openapi/v3/maps.js
+         * - 2단계 인증 쿼리 : ?ncpKeyId=${encodeURIComponent(cleanClientId)} (백엔드·기본 키 전달)
+         * - 3단계 GL 서브모듈 : &submodules=gl (WebGL 벡터 지도·다크 스타일 지원 모듈 포함)
+         * - 시각 구조도 :
+         *   https://oapi.map.naver.com/openapi/v3/maps.js    <-- 1) 기본 URL
+         *     ?ncpKeyId=${encodeURIComponent(cleanClientId)} <-- 2) ? + 인코딩된 ncpKeyId 인증 쿼리
+         *     &submodules=gl                                 <-- 3) & + WebGL 벡터 지도 서브모듈
+         */
 
         script.onload = () => {
             setTimeout(() => resolve(Boolean(window.naver?.maps)), 60);
@@ -81,12 +109,28 @@ export function ensureNaverMapSdkLoaded(targetClientId = state.naverClientId) {
     return sdkLoadPromise;
 }
 /*
- * [브라우저 내장 함수] encodeURIComponent(...), document.createElement('script'), replaceChild(...) (이름 변경 불가)
- * [내가 지은 이름] ensureNaverMapSdkLoaded : 프론트엔드와 백엔드(`application.yml` -> `GET /api/config`)의 네이버 Client ID(`ncpKeyId`)를 단일 진실 공급원으로 통합함.
- * [작동 원리 및 조립 URL 예시]
- * - 평상시(`cleanClientId === 'xfbxloc8km'`)에는 `index.html`이 이미 로드한 `window.naver.maps`를 0ms로 즉시 재사용함.
- * - 만약 서버 환경변수(`NAVER_MAP_CLIENT_ID`)가 새 키로 교체되었거나 초기 네트워크 순단으로 SDK 로드가 누락된 경우, 자동으로 아래 스크립트 URL을 재주입함:
- *   https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=발급받은클라이언트ID&submodules=gl
+ * [JS 문법]
+ * - export function fn(param = defaultVal) : 외부 공개 함수 선언과 기본값 매개변수 문법임.
+ * - delete obj.prop / try ... catch / void err : 전역 속성 정리 및 예외 무시 패턴임.
+ *
+ * [JS/DOM 내장 API]
+ * - Promise.resolve(val) / new Promise(executor) : 비동기 로드 결과를 불리언으로 반환함.
+ * - String(val).trim() / Boolean(val) : 문자열 앞뒤 공백 제거와 불리언 형변환 표준 함수임.
+ * - document.getElementById(id) : HTML 문서에서 지정 ID를 가진 요소를 조회함.
+ * - parentNode.replaceChild(newEl, oldEl) / head.appendChild(el) : DOM 요소 교체·삽입 API임.
+ * - setTimeout(fn, delayMs) : 지정 시간(60ms) 뒤 콜백을 실행 예약하는 타이머 함수임.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·매개변수 : ensureNaverMapSdkLoaded(targetClientId = state.naverClientId)
+ * - 지역 변수 : cleanClientId(정규화 키), existingScript(#naver-maps-sdk), delErr, script
+ *
+ * [동작 흐름]
+ * - 호출 : app.js의 init() 또는 search-controls.js의 syncFrontendConfig()가 호출함.
+ * - cleanClientId 정규화 -> 같은 키로 window.naver?.maps 로드 완료 시 Promise.resolve(true) 반환
+ * - 같은 키로 이미 로딩 중이면 -> 기존 sdkLoadPromise 재사용 반환
+ * - 새 키 로드 필요 시 -> 기존 window.naver 정리 후 <script id="naver-maps-sdk"> 교체·삽입
+ *   ├── script.onload -> 60ms 대기 후 Boolean(window.naver?.maps)로 resolve
+ *   └── script.onerror -> sdkLoadPromise = null 초기화 후 false로 resolve
  */
 
 export function getHospitalLatLng(hospital) {
@@ -106,8 +150,19 @@ export function getHospitalLatLng(hospital) {
     return hospital._latLng;
 }
 /*
- * [네이버 지도 SDK 내장 타입] new window.naver.maps.LatLng(위도, 경도) : 지도 좌표 객체를 생성함 (이름 변경 불가).
- * [내가 지은 이름] getHospitalLatLng : 병원마다 `LatLng` 인스턴스를 최초 1번만 만들어 `hospital._latLng`에 캐싱해 두어, 지도 이동 때마다 수백 개 객체가 반복 할당되는 GC 부하를 제거함.
+ * [네이버 지도 SDK 내장 API]
+ * - new naver.maps.LatLng(lat, lng) : 위도·경도 숫자로 네이버 지도 좌표 객체를 생성함.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·매개변수 : getHospitalLatLng(hospital)
+ * - 지역 변수 : naverMaps(window.naver?.maps 네임스페이스)
+ * - 캐시 속성 : hospital._latLng(좌표 객체), hospital._latLngLat, hospital._latLngLng
+ *
+ * [동작 흐름]
+ * - 호출 : app.js(#cluster-zoom), fitRadius, focusHospitalOnMap, updateMarkers 등이 호출함.
+ * - !naverMaps?.LatLng -> null 반환
+ * - _latLng 미존재 또는 좌표 변경 -> new naverMaps.LatLng(hospital.lat, hospital.lng) 생성·캐시
+ * - 좌표 동일 시 -> 기존 hospital._latLng 재사용 반환(반복 생성 및 GC 부하 절감)
  */
 
 export function isMapReadyForOverlays() {
@@ -125,8 +180,19 @@ export function isMapReadyForOverlays() {
     return true;
 }
 /*
- * [네이버 지도 SDK 내장 함수] state.map.get('renderMode'), state.map.isGLReady() (이름 변경 불가)
- * [내가 지은 이름] isMapReadyForOverlays : WebGL 벡터 모드(`renderMode === 2`)에서 비동기 스타일 시트(`style.json`) 초기화가 완전히 끝났는지 안전하게 검증함.
+ * [네이버 지도 SDK 내장 API]
+ * - map.get('renderMode') : 지도의 현재 렌더링 모드를 조회함(2이면 WebGL 벡터 모드).
+ * - map.isGLReady() : WebGL 컨텍스트와 벡터 스타일 시트 초기화 완료 여부를 반환함.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수 : isMapReadyForOverlays() (매개변수 없음, state.map 준비 여부 검사)
+ * - 지역 변수 : glCheckErr(isGLReady() 예외 발생 시 안전하게 false를 반환하기 위한 변수)
+ *
+ * [동작 흐름]
+ * - 호출 : coordToScreenPoint, createNaverDomOverlay.draw, updateCircle, updateMarkers 등에서 호출함.
+ * - !state.map -> false 즉시 반환
+ * - renderMode === 2 (GL 모드) -> Boolean(state.map.isGLReady()) 반환(예외 시 false)
+ * - 2D 일반 모드 -> 즉시 true 반환
  */
 
 export function coordToScreenPoint(lat, lng, cachedLatLng = null) {
@@ -153,8 +219,25 @@ export function coordToScreenPoint(lat, lng, cachedLatLng = null) {
     return { x, y };
 }
 /*
- * [네이버 지도 SDK 내장 함수] projection.fromCoordToOffset(latLng) : 위경도 좌표를 화면 픽셀 좌표 `{ x, y }`로 투영함 (이름 변경 불가).
- * [내가 지은 이름] coordToScreenPoint : GL 투영기가 준비되기 직전이라도 웹 메르카토르(Web Mercator) 수학 공식으로 폴백 좌표를 계산해 클러스터링 오류를 원천 방지함.
+ * [JS 내장 함수]
+ * - Number.isFinite(val) : 값이 NaN이나 Infinity가 아닌 유한한 실수인지 검사함.
+ * - Math.sin(rad) / Math.log(x) / Math.PI / ** : 웹 메르카토르 투영 계산용 수학 API임.
+ *
+ * [네이버 지도 SDK 내장 API]
+ * - new naver.maps.LatLng(lat, lng) : 투영 계산에 사용할 위경도 좌표 객체를 생성함.
+ * - map.getProjection() : 지도의 현재 좌표-화면 투영기 객체를 반환함.
+ * - projection.fromCoordToOffset(latLng) : 위경도를 지도 기준 화면 픽셀 { x, y }로 변환함.
+ * - map.getZoom() : 현재 지도의 정수 줌 레벨을 조회함.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·매개변수 : coordToScreenPoint(lat, lng, cachedLatLng = null)
+ * - 지역 변수 : naverMaps, latLng, projection, offset, projErr, zoom, scale, x, sinLat, y
+ *
+ * [동작 흐름]
+ * - 호출 : markers-cluster.js의 updateMarkers()가 클러스터링 전에 픽셀 좌표를 구할 때 호출함.
+ * - latLng 존재 & isMapReadyForOverlays() 참 -> state.map.getProjection().fromCoordToOffset(latLng)
+ *   └── offset.x, offset.y가 유한 숫자 -> { x: offset.x, y: offset.y } 반환
+ * - 투영기 미준비 또는 예외 발생 -> 256 * (2 ** zoom) 기반 웹 메르카토르 공식으로 폴백 좌표 계산
  */
 
 export function createNaverDomOverlay(options) {
@@ -246,14 +329,32 @@ export function createNaverDomOverlay(options) {
 }
 /*
  * [JS 문법]
- * - class 클래스명 extends 부모클래스 : 객체지향 상속 문법임.
- * - super() : 부모(`naver.maps.OverlayView`) 생성자를 먼저 호출하는 필수 예약어임.
- * - ?? (널 병합 연산자, Nullish Coalescing) : 왼쪽 값이 `null` 또는 `undefined`일 때만 오른쪽 기본값을 채택함 (`0`은 유효값으로 보존).
- * [네이버 지도 SDK 내장 메서드] onAdd(), draw(), onRemove(), getPanes(), getProjection(), setMap() : 네이버 지도 SDK가 생명주기에 맞춰 자동 호출하는 약속된 메서드이므로 이름을 바꾸면 안 됨.
- * [내가 지은 이름] createNaverDomOverlay(팩토리 함수), NaverDomOverlay(파스칼 표기 커스텀 클래스), setPosition(좌표 갱신 메서드)
- * [GPU 60fps 합성 핵심 원리]
- * - `left`/`top`을 매 프레임 바꾸면 메인 스레드에서 Layout(리플로우)이 반복 발생해 모바일 스크롤·드래그가 버벅임.
- * - `left: 0px; top: 0px`로 고정한 뒤 개별 `style.translate = "240px 180px"`만 갱신하면 **100% GPU 컴포지터 스레드**에서 부드럽게 이동함.
+ * - class Sub extends Base / super() : ES6 클래스 상속과 부모 생성자 선행 호출 문법임.
+ * - a ?? b : 널 병합 연산자로 왼쪽이 null이나 undefined일 때만 기본값을 씀(0 보존).
+ *
+ * [JS/DOM 내장 API]
+ * - parent.appendChild(child) / parent.removeChild(child) : DOM 노드를 추가·제거함.
+ * - Math.round(n) / Number.isFinite(n) / String(v) : 정수 반올림·유한성 검증·문자열 변환임.
+ * - element.style : position, left, top, zIndex, translate, transform 인라인 스타일을 제어함.
+ *
+ * [네이버 지도 SDK 내장 API]
+ * - naver.maps.OverlayView : HTML 요소를 지도 좌표에 고정해 추적시키는 SDK 추상 클래스임.
+ * - overlay.setMap(map) / getMap() / getPanes() / getProjection() : 지도 부착·페인·투영기 API임.
+ * - onAdd() / draw() / onRemove() : 오버레이 추가·이동·제거 시 SDK가 자동 호출하는 메서드임.
+ *
+ * [프로젝트 내부 클래스·변수]
+ * - 팩토리·클래스 : createNaverDomOverlay(options), 내부 클래스 NaverDomOverlay
+ * - 커스텀 메서드·속성 : setPosition(nextPosition), position, content, xAnchor, yAnchor, zIndex
+ * - 캐시 속성·지역 변수 : _lastTranslate, _lastLeft, _lastTop, projection, offset, rx, ry
+ *
+ * [동작 흐름]
+ * - 호출 : markers-cluster.js(병원 카드), updateLocationMarker(출발점), drawRouteOnMap(경유지)에서 호출함.
+ * - onAdd() -> left/top을 0px 고정, transform(-xAnchor*100%, -yAnchor*100%) 앵커 설정
+ *   └── targetPane(floatPane || overlayLayer || overlayImage)에 content 삽입
+ * - draw() -> getProjection().fromCoordToOffset(position)로 정수 픽셀 (rx, ry) 산출
+ *   ├── CAN_USE_CSS_TRANSLATE 지원 -> style.translate만 직전 값과 다를 때 갱신(리플로우 방지)
+ *   └── 미지원 브라우저 -> style.left, style.top을 직전 캐시와 비교해 다를 때만 갱신
+ * - onRemove() -> parentNode.removeChild(content)로 지도 DOM에서 분리
  */
 
 export function guardGlShapeRedraw(shapeOverlay) {
@@ -274,8 +375,25 @@ export function guardGlShapeRedraw(shapeOverlay) {
     return shapeOverlay;
 }
 /*
- * [JS 내장 함수] Function.prototype.bind(...) : 원본 메서드의 `this` 문맥을 고정한 새 함수를 반환함 (이름 변경 불가).
- * [내가 지은 이름] guardGlShapeRedraw : 네이버 GL 도형(`Circle`, 2D 폴백 `Polyline`)이 지도 팬(Pan) 도중 동일 도형을 WebWorker에 중복 재전송하며 깜빡이는 현상을 차단함.
+ * [JS 문법]
+ * - function fn() : 호출 시점의 동적 this를 쓰기 위해 화살표 함수 대신 일반 함수로 작성함.
+ *
+ * [JS 내장 메서드]
+ * - Function.prototype.bind(thisArg) : 함수의 this 컨텍스트를 지정 객체로 고정한 새 함수를 만듦.
+ *
+ * [네이버 지도 SDK GL 메서드]
+ * - shape.drawGL() / shape.hasSource() : WebGL 모드에서 도형 소스를 등록하고 존재 여부를 확인함.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·매개변수 : guardGlShapeRedraw(shapeOverlay)
+ * - 지역 변수·가드 속성 : origDrawGL, guardedDrawGl, _glRedrawGuarded, _glSourceLoadedOnce
+ *
+ * [동작 흐름]
+ * - 호출 : updateCircle() 및 directions-eta.js의 2D 폴백 Polyline 생성 시 호출함.
+ * - drawGL 미존재 또는 _glRedrawGuarded 참 -> 원본 shapeOverlay 그대로 반환
+ * - 래핑 적용 -> _glRedrawGuarded = true 기록 후 drawGL을 guardedDrawGl로 교체
+ *   ├── this.hasSource?.() && this._glSourceLoadedOnce 참 -> 중복 drawGL 건너뜀
+ *   └── 최초 실행 -> origDrawGL() 호출 후 hasSource() 참이면 _glSourceLoadedOnce = true 저장
  */
 
 export function updateCircle(force = false) {
@@ -340,8 +458,24 @@ export function updateCircle(force = false) {
     }
 }
 /*
- * [네이버 지도 SDK 내장 타입] new window.naver.maps.Circle({...}) : 반경(`km * 1000` 미터) 원을 지도 위에 그리는 도형 클래스임 (이름 변경 불가).
- * [내가 지은 이름] updateCircle : `nextKey`(위경도+반경+테마)가 이전과 같으면 원을 다시 만들지 않고 즉시 반환(Memoization)해 불필요한 GL 재구축을 막음.
+ * [JS 내장 함수]
+ * - Number.prototype.toFixed(6) : 위경도를 소수점 6자리 문자열로 고정해 비교 오차를 없앰.
+ * - Number(val) : 문자열 값을 숫자로 변환함(* 1000으로 km를 미터 단위로 환산).
+ *
+ * [네이버 지도 SDK 내장 API]
+ * - new naver.maps.Circle(options) : 중심 좌표와 미터 반경의 원을 지도에 그리는 도형 클래스임.
+ * - new naver.maps.LatLng(lat, lng) / circle.setMap(null) : 중심 좌표 생성 및 원 제거 메서드임.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·매개변수 : updateCircle(force = false)
+ * - DOM 참조·지역 변수 : radiusEl(#radius), radius, nextKey, naverMaps, circle, err, circleErr
+ *
+ * [동작 흐름]
+ * - 호출 : fitRadius, syncMapOverlays, updateMarkers, locate, setCustomOrigin 등에서 호출함.
+ * - radius === 'all' -> 기존 state.circle.setMap(null) 제거 후 circleKey·circleMap 초기화
+ * - !force && circleMap === map && circleKey === nextKey -> 동일 원 재사용(생성 생략)
+ * - 변경 필요 시 -> 기존 원 제거 -> state.darkMode 색상 적용해 new Circle 생성
+ *   └── guardGlShapeRedraw(circle) 적용 -> state.circle·circleKey 저장 및 생성 횟수 누적
  */
 
 export function updateLocationMarker() {
@@ -371,7 +505,19 @@ export function updateLocationMarker() {
     });
 }
 /*
- * [내가 지은 이름] updateLocationMarker : GPS 측정 위치나 우클릭 지정 출발점에 파란색 맥동 마커(`.location-marker`)를 표시하며, 초기화 상태(`!state.locationKnown`)이면 깨끗이 지움.
+ * [DOM/네이버 지도 SDK 내장 API]
+ * - element.setAttribute(name, val) / element.append(...nodes) : ARIA 속성 설정 및 노드 삽입 API임.
+ * - overlay.setMap(null) / new naver.maps.LatLng(lat, lng) : 오버레이 제거 및 좌표 생성 SDK API임.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수 : updateLocationMarker() (매개변수 없음)
+ * - DOM 참조 : marker(div.location-marker 및 내부 span.location-dot)
+ *
+ * [동작 흐름]
+ * - 호출 : syncMapOverlays, locate, setCustomOrigin, resetOriginAndRoute에서 호출함.
+ * - 기존 state.locationMarker?.setMap(null) 제거 및 null 초기화
+ * - !state.map || !state.locationKnown || !isMapReadyForOverlays() -> 마커 없이 종료
+ * - 조건 충족 -> div.location-marker 조립 -> createNaverDomOverlay(xAnchor:0.5, yAnchor:0.5, zIndex:1000)
  */
 
 export function syncGlTrafficLayers(mapbox, visible) {
@@ -470,8 +616,29 @@ export function syncGlTrafficLayers(mapbox, visible) {
     }
 }
 /*
- * [Mapbox GL 내장 함수] mapbox.getStyle(), mapbox.getSource(), mapbox.addSource(), mapbox.addLayer(), mapbox.setLayoutProperty() (이름 변경 불가)
- * [내가 지은 이름] syncGlTrafficLayers : 다크 모드 Custom Style(`customStyleId`)에 기본 소통 레이어가 빠져 있어도 실시간 교통 벡터 타일(`ctt`: 원활 초록·서행 주황·정체 빨강)을 도로 기호 아래에 직접 주입해 줌.
+ * [JS 내장 메서드]
+ * - Array.isArray(val) : 전달된 값이 배열인지 검사하는 표준 정적 메서드임.
+ * - String.prototype.startsWith(prefix) : 문자열이 특정 접두사로 시작하는지 확인함.
+ * - Array.prototype.find(fn) : 조건에 맞는 첫 번째 배열 원소를 반환함.
+ *
+ * [Mapbox GL 내장 API]
+ * - mapbox.getStyle() : 현재 로드된 벡터 스타일 시트의 layers 배열을 반환함.
+ * - mapbox.setLayoutProperty(layerId, 'visibility', val) : 레이어 표시('visible'/'none')를 바꿈.
+ * - mapbox.getSource(id) / mapbox.addSource(id, spec) : 벡터 타일 소스를 조회·등록함.
+ * - mapbox.getLayer(id) / mapbox.addLayer(spec, beforeId) : 지정 레이어 아래에 새 레이어를 넣음.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·매개변수 : syncGlTrafficLayers(mapbox, visible)
+ * - 지역 변수 : visibility, style, layer, group, bgWidthStops, fgWidthStops, lineOffsetStops
+ * - 레이어 배치 변수 : firstSymbolLayer(첫 심볼 레이어 ID), specs(원활·서행·정체 6개 레이어 정의), spec
+ *
+ * [동작 흐름]
+ * - 호출 : syncTrafficLayer() 내부에서 state.map.getMapbox() 인스턴스가 있을 때 호출함.
+ * - 1단계 기존 레이어 -> metadata.group이 ctt/dctt거나 ID가 CTT/로 시작하면 visibility 동기화
+ * - 2단계 벡터 소스 -> 'ctt' 소스가 없고 visible이 참이면 네이버 교통 WMTS 메타데이터 소스 추가
+ * - 3단계 커스텀 레이어 -> specs 6개(stateVal 1 원활·2 서행·4 정체, 배경선+전경선) 순회
+ *   ├── 레이어 미등록 -> firstSymbolLayer(도로 라벨) 아래에 addLayer()로 삽입
+ *   └── 레이어 존재 -> setLayoutProperty()로 visibility만 전환
  */
 
 export function syncTrafficLayer() {
@@ -514,8 +681,22 @@ export function syncTrafficLayer() {
     }
 }
 /*
- * [네이버 지도 SDK 내장 타입/함수] new naver.maps.TrafficLayer({ interval: 300000 }), naver.maps.Event.once(...) (이름 변경 불가)
- * [내가 지은 이름] syncTrafficLayer : 5분(`300000ms`) 주기로 갱신되는 실시간 도로 교통소통 레이어를 라이트·다크 양쪽 테마에서 일관되게 동기화함.
+ * [네이버 지도 SDK 내장 API]
+ * - map.get('renderMode') / map.getMapbox() : GL 모드 확인 및 내부 Mapbox 인스턴스 접근 메서드임.
+ * - naver.maps.Event.once(target, eventName, cb) : 지정 이벤트 발생 시 1회만 콜백을 실행함.
+ * - new naver.maps.TrafficLayer(options) : 주기(300000ms=5분)마다 갱신되는 실시간 교통 레이어임.
+ * - trafficLayer.setMap(map | null) : 교통 레이어를 지도에 연결하거나 분리함.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수 : syncTrafficLayer() (매개변수 없음)
+ * - 지역 변수 : naverMaps(window.naver?.maps), mapbox(getMapbox() 반환 객체), err
+ *
+ * [동작 흐름]
+ * - 호출 : toggleTrafficLayer() 및 mountNaverMap()의 syncMapOverlays()에서 호출함.
+ * - GL 모드이면서 !isMapReadyForOverlays() -> 'glReady'에 syncTrafficLayer 재호출 예약 후 종료
+ * - state.trafficEnabled 참 -> state.trafficLayer 생성(최초) 후 setMap(state.map)
+ * - state.trafficEnabled 거짓 -> 기존 state.trafficLayer.setMap(null) 분리
+ * - state.map.getMapbox?.() 존재 시 -> syncGlTrafficLayers(mapbox, state.trafficEnabled) 함께 동기화
  */
 
 export function toggleTrafficLayer() {
@@ -531,7 +712,18 @@ export function toggleTrafficLayer() {
     syncTrafficLayer();
 }
 /*
- * [내가 지은 이름] toggleTrafficLayer : 도구 모음의 `'교통'` 버튼(`#traffic-toggle`) 클릭 시 상태와 접근성 `aria-pressed` 속성을 함께 토글함.
+ * [DOM 내장 API]
+ * - element.setAttribute(name, val) : 버튼의 aria-pressed와 aria-label 속성을 갱신함.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수 : toggleTrafficLayer() (매개변수 없음)
+ * - DOM 참조 : btn(#traffic-toggle 버튼 요소)
+ *
+ * [동작 흐름]
+ * - 호출 : app.js의 init()에서 #traffic-toggle click 핸들러로 연결됨.
+ * - state.trafficEnabled = !state.trafficEnabled 상태 반전
+ *   ├── btn 존재 -> aria-pressed, aria-label 속성 갱신
+ *   └── syncTrafficLayer() 호출 -> 지도 교통 레이어 즉시 켜고 끔
  */
 
 export function fitBounds(bounds) {
@@ -570,9 +762,28 @@ export function fitBounds(bounds) {
     }
 }
 /*
- * [네이버 지도 SDK 내장 함수] state.map.fitBounds(bounds, { top, right, bottom, left }) (이름 변경 불가)
- * [내가 지은 이름] fitBounds : 상단 활성 경로 배너(`#active-route-banner`), 하단 검색 패널(`.search-panel`), 모바일 반열림 바텀시트(`halfPeekExtra`) 높이를 모두 계산해
- *   자동차 경로선이나 반경 원이 UI 카드 밑에 가려지지 않도록 스마트 여백(Padding)을 확보함.
+ * [JS/DOM 내장 API]
+ * - document.querySelector(selector) : CSS 선택자로 첫 일치 DOM 요소를 탐색함.
+ * - element.getBoundingClientRect().bottom : 뷰포트 기준 요소 하단의 Y 픽셀 좌표를 읽음.
+ * - element.clientHeight / offsetHeight / window.innerHeight : 요소·창의 픽셀 높이를 측정함.
+ * - Math.max(...) / Math.min(...) / Math.round(...) : 여백 상한·하한 제한과 반올림 함수임.
+ *
+ * [네이버 지도 SDK 내장 API]
+ * - naver.maps.Event.once(map, 'glReady', cb) : GL 스타일 준비 완료 시 1회 실행할 콜백을 등록함.
+ * - map.fitBounds(bounds, margins) : 여백 안쪽 화면에 bounds가 다 들어가도록 카메라를 맞춤.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·매개변수 : fitBounds(bounds)
+ * - DOM 참조 : mapEl(#map), searchPanel(.search-panel), activeBanner(#active-route-banner)
+ * - 지역 변수 : naverMaps, height, halfPeekExtra, bannerBottom, top, rawBottom, bottom, fitErr
+ *
+ * [동작 흐름]
+ * - 호출 : #cluster-zoom, fitRadius(), directions-eta.js의 drawRouteOnMap()에서 호출함.
+ * - !isMapReadyForOverlays() -> 'glReady' 이벤트에 fitBounds(bounds) 재호출 예약 후 종료
+ * - UI 패널에 가리지 않도록 안전 여백 산출 :
+ *   ├── top -> 활성 경로 배너 하단 + 16px (최소 32px ~ 지도 높이 24% 제한)
+ *   └── bottom -> 검색 패널 높이+24px와 halfPeekExtra(276px) 중 큰 값 (최대 지도 높이 42%)
+ * - state.map.fitBounds(bounds, { top, right: 32, bottom, left: 32 }) 실행
  */
 
 export function fitRadius() {
@@ -612,8 +823,19 @@ export function fitRadius() {
     updateCircle();
 }
 /*
- * [네이버 지도 SDK 내장 타입/함수] new naver.maps.LatLngBounds(남서좌표, 북동좌표), bounds.extend(좌표) (이름 변경 불가)
- * [내가 지은 이름] fitRadius : 선택한 탐색 반경(`5 km` ~ `100 km` 또는 `전국`) 전체가 화면에 쏙 들어오도록 지도 줌과 중심을 맞춤.
+ * [네이버 지도 SDK 내장 API]
+ * - new naver.maps.LatLng(lat, lng) : 사각 경계의 남서·북동 꼭짓점 좌표를 생성함.
+ * - new naver.maps.LatLngBounds(sw, ne) / bounds.extend(pos) : 좌표 경계 생성·확장 메서드임.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수 : fitRadius() (매개변수 없음)
+ * - 지역 변수 : naverMaps, radiusVal(#radius 값), bounds, firstPos, pos, box
+ *
+ * [동작 흐름]
+ * - 호출 : syncMapOverlays, initRadius, applySnapshotToState, locate, geocodeAndMoveOrigin 등
+ * - radiusVal === 'all' -> 전체 병원 좌표로 bounds 구성(목록 비면 한반도 기본 좌표 사용)
+ * - 숫자 반경 -> radiusExtent(state.origin, Number(radiusVal))로 남서·북동 bounds 생성
+ * - fitBounds(bounds) 카메라 맞춤 -> updateCircle() 반경 원 동기화
  */
 
 export function focusHospitalOnMap(hospital, targetZoom = 15) {
@@ -648,8 +870,23 @@ export function focusHospitalOnMap(hospital, targetZoom = 15) {
     }
 }
 /*
- * [네이버 지도 SDK 내장 함수] state.map.morph(좌표, 줌, 옵션) : 중심 이동과 확대 애니메이션을 단일 궤적으로 부드럽게 이어 주는 카메라 함수임 (형제 함수: `panTo`, `setCenter`, `setZoom`).
- * [내가 지은 이름] focusHospitalOnMap : 검색·추천·공유 링크로 특정 병원을 선택했을 때 해당 병원 위치(줌 15)로 카메라를 부드럽게 비행시킴.
+ * [JS 내장 함수]
+ * - Number.isFinite(val) : 위도·경도가 유효한 유한 실수인지 확인함.
+ *
+ * [네이버 지도 SDK 내장 API]
+ * - map.get('renderMode') / naver.maps.Event.once(map, 'glReady', cb) : GL 모드 확인 및 대기임.
+ * - map.morph(coord, zoom, opts) : 중심 이동과 확대·축소를 부드러운 애니메이션으로 실행함.
+ * - map.updateBy(coord, zoom) / map.setCenter(coord) / map.setZoom(zoom) : 폴백 카메라 이동 API임.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·매개변수 : focusHospitalOnMap(hospital, targetZoom = 15)
+ * - 지역 변수 : naverMaps, targetLatLng(getHospitalLatLng(hospital) 반환 좌표)
+ *
+ * [동작 흐름]
+ * - 호출 : handleInitialHospitalDeepLink, updateSearch, loadEtaRanking 추천 클릭 시 호출함.
+ * - 좌표 유효성 검사 통과 -> state.hasFitted = true (후속 스냅샷 로드의 자동 피팅 덮어쓰기 방지)
+ * - GL 모드 미준비 시 -> 'glReady'에 focusHospitalOnMap 재호출 예약 후 종료
+ * - 준비 완료 -> morph(450ms, easeOutCubic) -> updateBy -> setCenter + setZoom 순으로 폴백 이동
  */
 
 export function mountNaverMap() {
@@ -751,6 +988,20 @@ export function mountNaverMap() {
         zoomControl: false,
         mapDataControl: false
     };
+    /*
+     * [JS/DOM 내장 API]
+     * - Array.isArray(val) : 값이 배열인지 확인하는 표준 정적 메서드임.
+     * - Map.prototype.values() / Map.prototype.clear() : Map의 모든 값 순회 및 초기화 메서드임.
+     * - document.createElement('div') / element.replaceChildren(child) : 캔버스 div 생성·교체 API임.
+     *
+     * [네이버 지도 SDK 내장 API]
+     * - map.getCenter() / map.getZoom() / map.destroy() : 현재 중심·줌 조회 및 지도 해제 메서드임.
+     * - overlay.setMap(null) : 마커·원·폴리라인·교통 레이어를 지도에서 분리하는 메서드임.
+     *
+     * [프로젝트 내부 변수]
+     * - DOM 참조 : mapContainer(#map), canvasHost(새 div.naver-map-canvas)
+     * - 지역 변수 : naverMaps, prevCenter, prevZoom, currentCenter, currentZoom, savedActiveRoute, baseOptions
+     */
 
     if (!naverMaps.glEnabled && !state._glWaitFinished) {
         if (!state._glCallbackBound) {
@@ -799,6 +1050,24 @@ export function mountNaverMap() {
     } else {
         state.map = new naverMaps.Map(canvasHost, baseOptions);
     }
+    /*
+     * [네이버 지도 SDK 내장 API]
+     * - naver.maps.glEnabled : submodules=gl 서브모듈 스크립트 로드 완료 여부 플래그임.
+     * - naver.maps.onJSContentLoaded : 비동기 서브모듈 로드 완료 시 호출되는 SDK 콜백 훅임.
+     * - naver.maps.Util.glSupported() : 현재 브라우저의 WebGL 렌더링 지원 여부를 판별함.
+     * - new naver.maps.Map(container, options) : 지도 인스턴스 생성자(gl, customStyleId 지원).
+     * - map.get('renderMode') : 반환값이 2이면 WebGL 벡터 엔진이 실제 가동 중임을 뜻함.
+     *
+     * [프로젝트 내부 변수]
+     * - 상태 플래그 : state._glWaitFinished, state._glCallbackBound, state._force2dFallback
+     * - 지역 변수 : finishGlWait, prevCallback, glSubmoduleReady, usingGlEngine, glOptions
+     *
+     * [동작 흐름]
+     * - !naverMaps.glEnabled && !state._glWaitFinished -> 서브모듈 로드 대기 분기
+     *   └── onJSContentLoaded 훅 + 1500ms 안전 타임아웃 -> _glWaitFinished = true 후 mountNaverMap()
+     * - glSubmoduleReady 참 -> glOptions(gl: true, 다크 모드 시 customStyleId)로 GL 지도 생성
+     * - 생성 예외 또는 GL 미지원·강제 폴백 -> baseOptions 기반 2D 일반 지도로 자동 생성
+     */
 
     const syncMapOverlays = () => {
         if (!state.hasFitted && state.hospitals.length > 0) {
@@ -873,12 +1142,28 @@ export function mountNaverMap() {
     }
 }
 /*
- * [네이버 지도 SDK 내장 타입/이벤트]
- * - new naver.maps.Map(컨테이너, 옵션) : 메인 지도를 생성함 (`gl: true` + 다크모드 시 `customStyleId` 적용, 저사양 GPU 시 자동 2D 폴백).
- * - naver.maps.Event.addListener(map, 이벤트명, 콜백) :
- *   ├── `'glReady'`    : WebGL 벡터 스타일 로드 완료 직후 반경 원·마커·교통·활성 경로를 복원함.
- *   ├── `'idle'`       : 카메라 이동이 멈췄을 때 `onUpdateMarkers()`로 화면 내 병원 카드를 Key-Diffing 갱신함.
- *   ├── `'rightclick'` : PC 마우스 우클릭 지점으로 출발 기준점을 즉시 이동함.
- *   └── `'longtap'`    : 아이폰·안드로이드에서 지도를 길게 누른 지점으로 출발 기준점을 즉시 이동함.
- * [내가 지은 이름] mountNaverMap(지도 마운트·테마 재마운트 총괄 함수), savedActiveRoute(테마 전환 전 그려져 있던 경로 백업본)
+ * [네이버 지도 SDK 내장 API]
+ * - naver.maps.Event.addListener(map, eventName, fn) : 지도에 이벤트 리스너를 등록함.
+ *   · 'glReady' : WebGL 스타일 초기화가 끝나 isGLReady()가 참이 될 때 발생함.
+ *   · 'init' : 2D 일반 지도 초기화가 완료될 때 발생함.
+ *   · 'idle' : 지도 이동·확대·축소 애니메이션이 완전히 멈출 때 발생함.
+ *   · 'rightclick' / 'longtap' : 마우스 우클릭 또는 모바일 길게 누르기 시 좌표와 함께 발생함.
+ *   · 'dragstart' / 'zoom_changed' : 지도 드래그 시작 또는 줌 변경 시 발생함.
+ * - coord.lat() / coord.lng() : 이벤트 좌표 객체에서 위도와 경도 실수를 꺼내는 메서드임.
+ *
+ * [프로젝트 내부 함수·변수]
+ * - 함수·내부 콜백 : mountNaverMap(), syncMapOverlays()
+ * - 지역 변수 : currentGlMap, glSettled, event, coord, eventName
+ *
+ * [동작 흐름]
+ * - 호출 : init(), syncFrontendConfig(), applyTheme(), GL 대기·폴백 타임아웃에서 호출함.
+ * - 1단계 백업·정리 -> 중심·줌·savedActiveRoute 백업 -> 기존 오버레이·지도 해제 -> canvasHost 교체
+ * - 2단계 엔진 마운트 -> GL 준비 시 glReady, 2D 모드 시 init + 즉시 syncMapOverlays() 실행
+ *   ├── syncMapOverlays() -> fitRadius -> updateCircle -> updateLocationMarker -> onUpdateMarkers
+ *   ├── savedActiveRoute 존재 시 -> uiCallbacks.onDrawRouteOnMap?.(..., { fitMap: false }) 복원
+ *   └── GL 2200ms 내 미준비 -> state._force2dFallback = true 설정 후 mountNaverMap() 재실행
+ * - 3단계 이벤트 연결 -> 지도 생성 뒤 상시 상호작용 리스너를 등록함
+ *   ├── 'idle' -> uiCallbacks.onUpdateMarkers?.()로 화면 마커 갱신
+ *   ├── 'rightclick' / 'longtap' -> uiCallbacks.onCustomOrigin?.(lat, lng, 라벨)로 출발지 이동
+ *   └── 'dragstart' / 'zoom_changed' -> blurKeyword()로 검색창 포커스 해제
  */

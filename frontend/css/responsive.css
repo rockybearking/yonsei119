@@ -17,9 +17,29 @@
     }
 }
 /*
- * [iOS Safari & Android WebView 필수 방어]
- * - 모바일 터치 기기에서 input/select 글자 크기가 16px 미만이면 포커스 순간 브라우저가 강제 화면 확대(Auto-Zoom)를 일으켜 지도 UI가 깨짐.
- * - 16px 고정을 통해 아이폰·갤럭시 전 기종에서 흔들림 없는 검색 입력을 보장함.
+ * [CSS 문법]
+ * - @media (max-width: 720px) : 뷰포트 너비 720px 이하인 소형 태블릿·스마트폰 환경에 반응하는 미디어 쿼리임.
+ * - @media (max-width: 700px), (any-pointer: coarse) : 쉼표(,) OR 조건으로 700px 이하 또는 터치 기기면 적용됨.
+ *   · any-pointer: coarse : 기기 입력 장치 중 손가락 터치처럼 정밀도가 낮은 포인터가 있는지 감지함.
+ * - 의사 요소 (::placeholder) : 입력창 안내 문구 크기까지 16px로 맞춰 포커스 시 배율 흔들림을 막음.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - grid-template-columns: repeat(2, minmax(0, 1fr)) : 4열이던 옵션 카드와 내비 버튼을 2x2 2열로 재배치함.
+ * - font-size: 16px : iOS Safari·Android WebView가 16px 미만 입력창 포커스 시 자동 확대하는 현상을 차단함.
+ *
+ * [CSS 선택자명]
+ * - .directions-alternatives : 빠른길·최적·편한길·무료 4대 경로 옵션 비교 카드 그리드 클래스명임.
+ * - .navigation-actions : 네이버지도·카카오맵·T맵·공유하기 4버튼 그리드 클래스명임.
+ * - #keyword / #radius / .directions-select : 검색어 입력창, 반경 선택창, 길찾기 API·경유지 드롭다운임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : #keyword, #radius, #directions-api, #directions-waypoint 입력·선택 요소와 매칭됨.
+ * - frontend/js/directions-eta.js : loadDirectionsForHospital()이 .directions-alternatives를 동적 생성함.
+ * - frontend/js/hospital-sheet.js : renderContacts()가 .navigation-actions를 동적 생성함.
+ *
+ * [동작 흐름]
+ * - 화면 폭 720px 이하 진입 -> 4열 버튼 그리드가 2열로 접혀 글자 잘림 방지
+ * - 화면 폭 700px 이하 또는 터치 기기 -> 입력·선택창 16px 고정 ──> 탭 시 강제 자동 확대 차단
  */
 
 @media (max-width: 640px) {
@@ -164,9 +184,45 @@
     }
 }
 /*
- * [스마트폰 640px 이하 반응형 레이아웃]
- * - 좌측 상단 ☰ 서랍 메뉴와 우측 상단 2줄 활성 경로 배너가 서로 겹치지 않도록 52px 안전 간격을 두었음.
- * - 상세 시트는 하단 바텀시트 + Half-Peek 2단 스냅으로 자동 동작함.
+ * [CSS 문법]
+ * - @media (max-width: 640px) : 스마트폰 뷰포트 분기점(640px 이하)을 감지하는 표준 미디어 쿼리임.
+ * - :root : 문서 최상위 <html> 루트 선택자로, 모바일에서 CSS 변수를 작은 값으로 재정의함.
+ * - 관계형 의사 클래스 (:has()) + :not() + [hidden] : 경로 배너가 열려 있을 때만 좌측 서랍 메뉴를 아래로 내림.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - env(safe-area-inset-*, 0px) / calc() / min() / var() / dvh 단위 : 노치·홈 바 여백과 동적 뷰포트 높이를 계산함.
+ * - position: fixed | absolute / z-index / top / right / bottom / left : 서랍(16)·팝오버(25)·패널·배너 좌표임.
+ * - width / max-width / max-height / width: fit-content : 하단 패널 전체 폭 확장과 접힘 시 내용 폭 수축 처리임.
+ * - transform: translate3d(...) / will-change: transform : GPU 3D 레이어로 바텀시트 열기·닫기·반열림을 처리함.
+ * - display: flex | grid / flex-direction / flex-wrap: wrap / align-items / justify-content : 툴바·배너 2줄 배치임.
+ * - flex: 0 0 42px / flex: 1 1 0 / margin-left: auto / gap : 모바일 도구 버튼 크기와 툴바 버튼 균등 분배임.
+ * - grid-template-columns: minmax(0, 1fr) : 다열 그리드를 가로 넘침 없는 안전한 1열로 전환함.
+ * - border-radius / box-shadow / padding / min-height: 42px : 바텀시트·배너 모서리와 터치 버튼 최소 높이임.
+ *
+ * [CSS 커스텀 속성명 (변수명)]
+ * - --edge : 화면 외곽 여백 토큰임 (데스크톱 14px -> 640px 이하 12px).
+ * - --action-size : 모바일 메뉴 서랍 내부 도구 버튼 크기 변수임 (42px 고정).
+ *
+ * [CSS 선택자명]
+ * - 좌측 서랍·도구 : .mobile-top-left-menu, .mobile-menu-drawer, .map-actions, .map-action, .radius-popover
+ * - 검색·순위 : .search-panel, .is-collapsed, .eta-rank-box
+ * - 바텀시트 : .sheet, .sheet.open, .sheet.open.half-peek, .sheet-drag-handle, .sheet-header, .sheet-scroll, .detail-section
+ * - 1열 전환 툴바 : .directions-toolbar, .directions-select-group, .directions-kpi-grid
+ * - 1열 전환 보드 : .egen-matrix-grid, .equipment-matrix-grid, .severe-matrix-grid
+ * - 상단 배너 : .active-route-banner, .active-route-footer, .active-route-actions
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/js/constants.js : MOBILE_MAX_WIDTH = 640 기준과 동일하게 분기함.
+ * - frontend/js/search-controls.js : syncMobileMenuPlacement()가 #map-actions를 .mobile-menu-drawer로 원자적 이동함.
+ * - frontend/js/search-controls.js : initPanels()가 #search-panel에 .is-collapsed 클래스를 토글함.
+ * - frontend/js/hospital-sheet.js : syncResponsiveSheetLayout()이 .touch-device를 켜고 snapSheetToHalfPeek()이 .half-peek 적용함.
+ * - frontend/js/directions-eta.js : drawRouteOnMap()이 #active-route-banner를 화면에 노출함.
+ *
+ * [동작 흐름]
+ * - 640px 이하 화면 진입 -> MOBILE_MAX_WIDTH 미디어 쿼리 활성화
+ *   ├── 도구 모음 : #map-actions가 좌측 상단 메뉴로 이동해 하단 검색 패널 높이 축소
+ *   ├── 경로 배너 : 좌측 52px를 비워 메뉴 버튼과 충돌 없이 2줄 카드로 표시
+ *   └── 바텀시트·그리드 : .touch-device 여부와 무관하게 하단 시트와 1열 그리드 보장
  */
 
 @media (max-width: 390px) {
@@ -208,7 +264,29 @@
     }
 }
 /*
- * [초소형 모바일 화면 방어] iPhone SE(320px), 표준 Android(360px), 갤럭시 Z 폴드 커버 화면(280~310px)에서도 글자 잘림이나 가로 넘침이 0건이 되도록 열 수를 단계적으로 축소함.
+ * [CSS 문법]
+ * - @media (max-width: 390px) / 360px / 310px : 초소형·폴더블 커버 화면까지 폭을 단계별 방어하는 미디어 쿼리임.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - flex-wrap: wrap / flex: 1 1 100% / width: 100% / justify-content: flex-end / gap : 390px 이하 2줄 분리 배치임.
+ * - grid-template-columns: 1fr : 360px 이하에서 원본 표·전화 버튼을, 310px 이하에서 옵션·내비까지 1열로 줄임.
+ * - grid-template-columns: repeat(2, minmax(0, 1fr)) / padding: 12px : 뒤쪽 단독 규칙 우선 원리로 종별 필터는 2열 유지함.
+ *   · 캐스케이드(Cascade) : 같은 명시도에서는 아래쪽 선언이 앞선 1fr 규칙을 덮어씀.
+ *
+ * [CSS 선택자명]
+ * - 출발지 행 : .origin-info-row, .origin-address-text, .origin-info-actions
+ * - 다열·여백 : .filters, .raw-grid, .phone-actions, .detail-section
+ * - 내비·옵션 : .directions-alternatives, .navigation-actions
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : .filters(4개 종별 체크박스) 및 #origin-eta-bar 내부 .origin-info-row와 연결됨.
+ * - frontend/js/hospital-sheet.js / directions-eta.js : 동적 생성되는 전화·내비·경로 옵션·원본 표 그리드에 적용됨.
+ *
+ * [동작 흐름]
+ * - 화면 폭 단계별 축소 -> 열 수·내부 여백 순차 감소
+ *   ├── 390px 이하 ──> 출발 주소 윗줄(100%) + 초기화·순위 버튼 둘째 줄 우측 정렬
+ *   ├── 360px 이하 ──> 원본 표·전화 1열 전환 (.filters는 캐스케이드로 2x2 유지)
+ *   └── 310px 이하 ──> 경로 옵션·내비 버튼까지 1열 축소로 가로 스크롤 차단
  */
 
 @media (max-height: 450px) {
@@ -227,7 +305,23 @@
     }
 }
 /*
- * [스마트폰 가로 모드(Landscape) 대응] 세로 높이가 450px 이하로 낮아진 상태에서도 지도 시야가 확보되도록 드롭다운 최대 높이를 자동 제한함.
+ * [CSS 문법]
+ * - @media (max-height: 450px) : 스마트폰 가로 모드나 분할 화면처럼 세로 높이가 450px 이하인 환경을 감지함.
+ * - 중첩 @media (max-width: 559px) : 바깥 높이 조건과 안쪽 너비 조건이 AND로 함께 만족될 때만 적용됨.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - max-height: min(22dvh, 110px) / max-height: 35dvh : min()과 동적 뷰포트 단위 dvh로 목록 최대 높이를 제한함.
+ * - grid-template-columns: repeat(2, minmax(0, 1fr)) : 높이 450px·너비 559px 이하일 때 종별 필터를 2열로 배치함.
+ *
+ * [CSS 선택자명]
+ * - .eta-rank-box / .search-results / .filters : 추천 순위 목록, 검색 자동완성 드롭다운, 4대 종별 필터 클래스명임.
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/index.html : #eta-rank-box(.eta-rank-box), #search-results(.search-results), .filters 요소와 연결됨.
+ *
+ * [동작 흐름]
+ * - 세로 450px 이하 가로 모드 진입 -> 목록 최대 높이 제한 적용
+ *   └── .eta-rank-box(최대 110px)·.search-results(35dvh) 내부 스크롤 ──> 지도 화면 가림 방지
  */
 
 @media (prefers-reduced-motion: reduce) {
@@ -258,6 +352,28 @@
     }
 }
 /*
- * [웹 접근성 WCAG 2.3.3 — 동작 줄이기(prefers-reduced-motion) 배려]
- * - 전정기관 민감증이나 배터리 절약 모드를 켠 사용자를 위해 불필요한 무한 파동·회전·전광판 애니메이션을 즉시 정지함.
+ * [CSS 문법]
+ * - @media (prefers-reduced-motion: reduce) : OS의 "동작 줄이기" 접근성 설정을 감지하는 표준 미디어 쿼리임.
+ * - 그룹 선택자 (,) / 의사 요소 (::before, ::after) : 전환과 키프레임 애니메이션 대상 선택자를 일괄 묶음.
+ *
+ * [표준 CSS 속성·단위·함수]
+ * - transition: none : 시트와 상태 알림 토스트의 슬라이드·페이드 전환 애니메이션을 제거해 즉시 표시·숨김 처리함.
+ * - animation: none : 로딩 스피너, 현재 위치 맥동 파동, 전광판 텍스트 스크롤 키프레임 재생을 완전히 정지함.
+ * - transform: none / opacity: 0.3 / display: none : 전광판은 시작 위치로 고정하고 위치 마커는 정적 링만 남김.
+ *
+ * [CSS 선택자명]
+ * - 전환 대상 : .sheet, .status-toast
+ * - 회전·전광판 : .spinner, .is-loading .refresh-icon, .is-marquee .marquee-inner
+ * - 위치 마커 : .location-marker::before, .location-marker::after, .location-dot
+ *
+ * [연동 HTML 요소 및 JS 모듈]
+ * - frontend/css/style.css / map-overlays.css / dialogs-toast.css / sheet-egen.css : 기존 애니메이션을 최종 덮어씀.
+ * - frontend/js/search-controls.js : fetchData() 중 document.body에 .is-loading 클래스를 추가함.
+ * - frontend/js/utils.js : updateMarquees()가 넘침 텍스트 요소에 .is-marquee 클래스를 추가함.
+ * - frontend/js/map-engine.js : updateLocationMarker()가 .location-marker와 .location-dot을 지도에 생성함.
+ *
+ * [동작 흐름]
+ * - 사용자가 OS 모션 감소 설정 활성화 -> @media (prefers-reduced-motion: reduce) 적용
+ *   ├── transition: none ──> 시트·토스트 움직임 없이 즉시 전환
+ *   └── animation: none ──> 스피너·위치 파동·전광판 정지 (정적 반투명 링만 유지해 위치 식별 보장)
  */

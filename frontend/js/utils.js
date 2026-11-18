@@ -7,16 +7,35 @@ import {
     state
 } from './state.js';
 /*
- * [JS 문법] import { ... } from './...' : `constants.js`의 필드 사전과 `state.js`의 전역 런타임 상태 객체를 가져옴.
- * [아키텍처 계층] `utils.js`는 DOM 유틸리티·결측치 정제·한국어 차단공지 분석·구면기하 거리 계산을 담당하는 순수 공통 도구함임.
+ * [JS 문법]
+ * - import { ... } from './파일.js' : 다른 ES 모듈에서 공개한 상수와 객체를 현재 파일로 가져옴.
+ *
+ * [연동 모듈]
+ * - `./constants.js` : API 필드 한글 사전(`API_FIELD_LABELS`), 질환 차단 매핑(`SPECIFIC_BLOCK_TARGETS`).
+ * - `./state.js` : 기본 출발 좌표(`DEFAULT_ORIGIN`), 전역 상태(`state`).
+ *
+ * [모듈 역할]
+ * - DOM·비동기 보조 : 요소 생성·조회, 메인 스레드 양보, 상태 토스트·다이얼로그 폴백을 제공함.
+ * - 의료 데이터 정제 : 결측치·날짜·병상 수치 변환, 차단 공지 판별, 증상 필터를 담당함.
+ * - 거리·기기 판별 : 구면 직선거리·사각 범위 계산과 GPS 하드웨어 신뢰도 검증을 수행함.
  */
 
 export const byId = id => document.getElementById(id);
 /*
- * [JS 문법] const 함수명 = 매개변수 => 반환식 : 간결한 화살표 함수(Arrow Function) 문법임.
- * [브라우저 내장 함수] document.getElementById(id) : HTML 문서에서 `id="..."` 속성으로 요소를 즉시 찾는 표준 함수임 (이름 변경 불가).
- *   (형제 DOM 탐색 함수 비교: CSS 선택자 단건 조회 `document.querySelector()`, 다건 조회 `document.querySelectorAll()`)
- * [내가 지은 이름] byId(단축 조회 함수명), id(찾을 요소 ID 문자열)
+ * [JS 문법]
+ * - export const / 화살표 함수 (`id => ...`) : 매개변수 1개일 때 괄호와 `return`을 생략해 간결히 작성함.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - document.getElementById(id) : HTML 문서에서 `id`가 일치하는 단일 요소를 즉시 찾는 메서드임.
+ *   · 형제 메서드 : CSS 선택자 단건 조회 `querySelector()`, 다건 조회 `querySelectorAll()`.
+ *
+ * [함수명 및 매개변수명]
+ * - 함수명 : `byId`.
+ * - 매개변수명 : `id` (찾을 HTML 요소의 `id` 속성 문자열).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `app.js`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`, `hospital-sheet.js`, `search-controls.js`.
+ * - 흐름 : `byId('요소ID')` ──> `document.getElementById(id)` ──> DOM 요소(또는 `null`) 반환
  */
 
 export function node(tag, className = '', content = undefined) {
@@ -30,12 +49,24 @@ export function node(tag, className = '', content = undefined) {
     return item;
 }
 /*
- * [JS 문법] function, 기본값 매개변수(`className = ''`, `content = undefined`), return
- * [브라우저 내장 함수/속성]
- * - document.createElement(tag) : 새 HTML 태그 노드를 메모리에서 안전하게 생성함 (이름 변경 불가).
- * - item.textContent : 모든 문자열을 순수 텍스트로만 이스케이프해 넣으므로 XSS(악성 스크립트 삽입 공격)가 원천 차단됨.
- *   (비교 주의: `innerHTML`은 외부 문자열에 `<img onerror=...>`가 섞이면 스크립트가 실행될 위험이 있어 사용하지 않음.)
- * [내가 지은 이름] node(안전 DOM 생성 팩토리 함수), tag(태그명), className(CSS 클래스), content(표시 텍스트), item(생성된 요소 상자)
+ * [JS 문법]
+ * - export function / 기본값 매개변수 (`param = 값`) / const / if / !== / return :
+ *   · 생략된 인자에 기본값을 채우고, 조건에 맞을 때만 속성을 설정한 뒤 요소를 반환함.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - document.createElement(tagName) : 지정한 HTML 태그 이름의 새 요소를 만드는 메서드임.
+ * - Element.prototype.className : 요소의 `class` 속성을 문자열로 설정하는 프로퍼티임.
+ * - Node.prototype.textContent : 태그 해석 없이 순수 텍스트만 넣어 XSS 보안 위험을 막는 프로퍼티임.
+ *   · 비교 : `innerHTML`은 외부 문자열의 HTML·스크립트가 실행될 위험이 있음.
+ * - String(value) : 숫자나 다른 값을 문자열로 변환하는 내장 함수임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `node`, `tag`(태그명), `className`(CSS 클래스), `content`(텍스트 내용).
+ * - 지역 변수명 : `item`(생성된 HTML 요소 객체).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `empty()`, `createMarqueeEl()` 및 UI 렌더링 모듈 전체에서 호출함.
+ * - 흐름 : `createElement(tag)` ──> `className`·`textContent` 설정 ──> 안전한 DOM 노드 반환
  */
 
 export function empty(container, message) {
@@ -45,8 +76,20 @@ export function empty(container, message) {
     container.replaceChildren(node('p', 'empty-state', message));
 }
 /*
- * [브라우저 내장 함수] container.replaceChildren(...) : 기존 자식 요소들을 모두 비우고 새 요소로 한 번에 교체하는 최신 표준 DOM 메서드임 (이름 변경 불가).
- * [내가 지은 이름] empty(빈 상태 안내 렌더링 함수), container(대상 부모 박스), message(안내 문구)
+ * [JS 문법]
+ * - export function / if / `!` (논리 부정) / return : 대상이 비어 있으면 일찍 반환해 오류를 막음.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - Element.prototype.replaceChildren(...nodes) : 기존 자식 노드를 모두 지우고 새 노드로 한 번에 교체함.
+ *
+ * [함수명 및 매개변수명]
+ * - 함수명 및 매개변수명 : `empty`, `container`(비울 부모 요소), `message`(빈 상태 안내 문구).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hospital-sheet.js`와 `directions-eta.js`가 표시할 데이터가 없을 때 호출함.
+ * - 흐름 :
+ *   ├── `container` 없음 ──> 즉시 `return`
+ *   └── `container` 존재 ──> `node('p', 'empty-state', message)` 생성 ──> `replaceChildren()` 교체
  */
 
 export function yieldToMain() {
@@ -58,11 +101,23 @@ export function yieldToMain() {
     });
 }
 /*
- * [JS 문법] ?. (옵셔널 체이닝, Optional Chaining) : 앞쪽 객체가 `null`/`undefined`여도 에러 없이 안전하게 `undefined`를 반환함.
- * [브라우저 내장 도구(API) & 함수]
- * - window.scheduler.yield() : 긴 반복문 중간에 브라우저 메인 스레드 제어권을 잠시 양보해 사용자의 지도 드래그·터치 입력을 먼저 처리하게 해 주는 최신 스케줄링 API임 (이름 변경 불가).
- * - new Promise(...) / setTimeout(..., 0) : `scheduler.yield` 미지원 브라우저(사파리 구버전 등)를 위한 안전한 비동기 양보 폴백임.
- * [내가 지은 이름] yieldToMain(메인 스레드 양보 헬퍼 함수)
+ * [JS 문법]
+ * - export function / typeof / !== / === / && / in / ?. (옵셔널 체이닝) / new Promise :
+ *   · 브라우저 API 지원 여부를 안전하게 확인한 뒤 비동기 `Promise`를 돌려줌.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - window.scheduler.yield() : 긴 JS 작업 도중 메인 스레드 제어권을 브라우저에 양보하는 메서드임.
+ *   · 효과 : 사용자 클릭·스크롤과 화면 페인트가 끊기지 않고 우선 처리됨.
+ * - new Promise(executor) / setTimeout(resolve, 0) : 구형 환경에서 태스크 큐로 실행을 양보하는 폴백임.
+ *
+ * [함수명]
+ * - `yieldToMain` (메인 스레드 양보 비동기 유틸리티 함수).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `search-controls.js:applySnapshotToState()`가 병원 목록 정규화 루프 도중 호출함.
+ * - 흐름 :
+ *   ├── `scheduler.yield` 지원 ──> `window.scheduler.yield()` 반환
+ *   └── 미지원 브라우저 ──> `setTimeout(resolve, 0)`으로 다음 프레임에 제어권 양보
  */
 
 export function isMissing(value) {
@@ -72,35 +127,75 @@ export function isMissing(value) {
         );
 }
 /*
- * [JS 문법] 정규표현식 `/.../i` (`i`: 대소문자 무시) 및 `.test(...)` 매칭 함수
- * [내가 지은 이름] isMissing(공공데이터 결측치 판별 함수), value(검사할 원본값)
- * [의료 도메인 절대 원칙]
- * - 숫자 `0`이나 문자열 `'0'`은 결측치가 아니라 **'가용 병상 0석(만실)'**이라는 중대한 상태이므로 반드시 `false`(유효값)로 판정함.
- * - 반면 `null`, 빈 문자열(`""`), `'null'`, `'N/A'`, 하이픈(`'-'`)은 미보고 결측치(`true`)로 분류해 `0석`으로 왜곡되지 않게 방어함.
+ * [JS 문법]
+ * - export function / `== null` (`null`과 `undefined` 동시 검사) / || / 정규표현식 `/.../i` :
+ *   · `i`는 대소문자 무시 플래그, `(?:...)`는 캡처하지 않는 묶음 그룹임.
+ *
+ * [JS 내장 메서드 (이름 변경 불가)]
+ * - RegExp.prototype.test(str) : 문자열이 정규식 패턴에 맞는지 불리언으로 검사하는 메서드임.
+ * - String(value) / String.prototype.trim() : 값을 문자열로 바꾸고 양쪽 공백을 지우는 메서드임.
+ *
+ * [함수명 및 매개변수명]
+ * - 함수명 및 매개변수명 : `isMissing`, `value`(결측 여부를 판별할 원본 값).
+ *
+ * [동작 흐름]
+ * - 도메인 판정 규칙 :
+ *   ├── `null`, `undefined`, 빈칸, `'N/A'`, `'NaN'`, 대시(`-` 등) ──> `true` (결측치)
+ *   └── 숫자 `0` 또는 `'0'` ──> `false` (결측이 아니라 '0석 만실' 데이터로 보호)
  */
 
 export function isBlankOrNull(val) {
     return val === null || val === undefined || String(val).trim() === '';
 }
 /*
- * [내가 지은 이름] isBlankOrNull(공백·널 판별 보조 함수), val(원본값)
+ * [JS 문법]
+ * - export function / === / || / return : 엄격 동등 비교로 `null`, `undefined`, 빈 문자열을 검사함.
+ *
+ * [JS 내장 함수 및 메서드 (이름 변경 불가)]
+ * - String(val) / String.prototype.trim() : 문자열 변환 후 양끝 공백을 제거하는 표준 API임.
+ *
+ * [함수명 및 매개변수명]
+ * - 함수명 및 매개변수명 : `isBlankOrNull`, `val`(비어 있는지 검사할 원본 값).
  */
 
 export function displayValue(value) {
     return isMissing(value) ? '미정보' : String(value).trim();
 }
 /*
- * [JS 문법] 조건식 ? 참일때값 : 거짓일때값 (삼항 조건 연산자)
- * [내가 지은 이름] displayValue : 결측치이면 `'미정보'`로 표시하고, 값이 있으면 양끝 공백을 다듬어 반환함.
+ * [JS 문법]
+ * - export function / 삼항 조건 연산자 (`조건 ? 참 : 거짓`) / return : 한 줄로 분기 값을 반환함.
+ *
+ * [JS 내장 함수 및 메서드 (이름 변경 불가)]
+ * - String(value) / String.prototype.trim() : 유효한 문자열의 앞뒤 공백을 정리함.
+ *
+ * [함수명 및 매개변수명]
+ * - 함수명 및 매개변수명 : `displayValue`, `value`(화면에 보여 줄 원본 값).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hospital-sheet.js`의 `openHospital()`, `renderBasic()`, `renderContacts()`가 호출함.
+ * - 흐름 : `isMissing(value)` 검사
+ *   ├── `true` (결측) ──> `'미정보'` 반환
+ *   └── `false` (유효) ──> 앞뒤 공백을 제거한 문자열 반환
  */
 
 export function firstReported(...values) {
     return values.find(value => !isMissing(value));
 }
 /*
- * [JS 문법] ...values (나머지 매개변수, Rest Parameters) : 개수 제한 없이 전달된 인자들을 배열 `values`로 묶어 받음.
- * [JS 내장 함수] Array.prototype.find(...) : 조건을 만족하는 첫 번째 원소를 찾아 반환함 (형제 함수: 전체 추출 `.filter()`, 존재 여부 `.some()`).
- * [내가 지은 이름] firstReported : 여러 시각 후보(`hvidate`, `mkioskdate`) 중 결측치가 아닌 첫 번째 보고 시각을 고름.
+ * [JS 문법]
+ * - export function / 나머지 매개변수 (`...values`) : 여러 인자를 배열 `values`로 모아 받음.
+ * - 화살표 함수 (`value => ...`) / return.
+ *
+ * [JS 내장 메서드 (이름 변경 불가)]
+ * - Array.prototype.find(predicate) : 조건이 참인 첫 번째 요소를 반환하고 없으면 `undefined`를 반환함.
+ *   · 형제 메서드 : 전체 목록 추출 `.filter()`, 존재 여부 확인 `.some()`.
+ *
+ * [함수명 및 매개변수명]
+ * - 함수명 및 매개변수명 : `firstReported`, `values`(우선순위 순서로 전달한 후보 값들).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hospital-sheet.js`가 병상 보고일시(`hvidate`)·중증질환 보고일시(`mkioskdate`)를 고를 때 씀.
+ * - 흐름 : `values` 순회 ──> `!isMissing(value)` 첫 항목 발견 ──> 유효 값(또는 `undefined`) 반환
  */
 
 export function fieldLabel(key) {
@@ -114,8 +209,24 @@ export function fieldLabel(key) {
     return key;
 }
 /*
- * [JS 문법] 백틱 템플릿 리터럴 `` `${변수}` `` : 문자열 안에 변수 값을 직관적으로 끼워 넣는 문법임.
- * [내가 지은 이름] fieldLabel : 영문 태그 코드(`'hvec'`)를 `'hvec(일반(응급실 일반병상))'` 형태의 친절한 한글 병기 라벨로 변환함.
+ * [JS 문법]
+ * - export function / const / || / if / 템플릿 리터럴 `` `${a}(${b})` `` / 정규표현식 `/^hvs?\d+$/i` / return.
+ *   · `s?`는 문자 `s`가 0번 또는 1번 나오는 선택 패턴을 뜻함.
+ *
+ * [JS 내장 함수 및 메서드 (이름 변경 불가)]
+ * - String(val) / String.prototype.toLowerCase() : 값을 문자열로 바꾸고 소문자로 통일함.
+ * - RegExp.prototype.test(str) : 문자열이 정규식 패턴과 일치하는지 불리언으로 판별함.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `fieldLabel`, `key`(API 원본 필드 키 문자열).
+ * - 지역 변수명 : `label`(`constants.js:API_FIELD_LABELS`에서 찾은 한글 설명).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hospital-sheet.js:renderRawBeds()`가 개발자 모드 `#all-beds`를 그릴 때 호출함.
+ * - 흐름 : `key` 소문자화 ──> `API_FIELD_LABELS` 조회
+ *   ├── 사전에 있음 ──> `'hvec(일반(응급실 일반병상))'` 형태로 반환
+ *   ├── 미등록 `hv*`·`hvs*` 코드 ──> `'코드(설명 미정보)'` 반환
+ *   └── 그 외 키 ──> `key` 원문 반환
  */
 
 export function formatParamLabel(currentKey, baselineKey) {
@@ -131,7 +242,19 @@ export function formatParamLabel(currentKey, baselineKey) {
     return '';
 }
 /*
- * [내가 지은 이름] formatParamLabel : E-Gen 병상/장비 셀 하단에 표시할 API 파라미터 코드 설명 문자열을 조립함.
+ * [JS 문법]
+ * - export function / if / && / 템플릿 리터럴 / return : 두 인자 조합에 따라 4가지 문자열로 분기함.
+ *
+ * [함수명 및 매개변수명]
+ * - 함수명 및 매개변수명 : `formatParamLabel`, `currentKey`(가용 키 `'hvec'`), `baselineKey`(기준 키 `'hvs01'` 또는 `null`).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hospital-sheet.js`의 `createBedCell()`과 `createEquipmentCell()`이 셀 하단 출처 표기에 씀.
+ * - 분기 :
+ *   ├── 둘 다 있음 ──> `'hvec / hvs01 (가용 / 기준)'`
+ *   ├── `currentKey`만 있음 ──> `'hvec (가용)'`
+ *   ├── `baselineKey`만 있음 ──> `'hvs01 (기준)'`
+ *   └── 둘 다 없음 ──> `''` 반환
  */
 
 export function availability(raw, yes = '가능', no = '불가능') {
@@ -164,9 +287,24 @@ export function availability(raw, yes = '가능', no = '불가능') {
     return { text, className: 'unknown' };
 }
 /*
- * [JS 내장 함수] .toUpperCase(), .startsWith(...), .includes(...) (문자열 대소문자 정규화 및 접두사·포함 검사 내장 함수, 이름 변경 불가)
- * [내가 지은 이름] availability : 국립중앙의료원 중증질환 코드(`'Y'`, `'N'`, 장비·인력 미보유 코드 `'N1'` 등)를
- *   화면 표준 상태 객체 `{ text: '가능'|'불가능'|'-', className: 'yes'|'no'|'unknown' }`으로 변환함.
+ * [JS 문법]
+ * - export function / 기본값 매개변수 (`yes = '가능'`, `no = '불가능'`) / const / if / === / || / 객체 리터럴 반환.
+ *
+ * [JS 내장 함수 및 메서드 (이름 변경 불가)]
+ * - String(val) / .trim() / .toUpperCase() : 원본 값을 문자열로 바꾸고 공백 제거·대문자 변환함.
+ * - String.prototype.startsWith(prefix) : 지정한 접두사로 시작하는지 검사하는 메서드임.
+ * - String.prototype.includes(substr) : 문자열 안에 특정 단어가 들어 있는지 검사하는 메서드임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `availability`, `raw`(가용 코드 `'Y'`, `'N'`, `'N1'` 등), `yes`(긍정 라벨), `no`(부정 라벨).
+ * - 지역 변수명 : `text`(공백 제거 문자열), `upper`(대문자 변환 문자열).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `isAnySevereAccepted()` 및 `hospital-sheet.js`의 `renderSevere()`, `createEquipmentCell()`, `renderRawSevere()`.
+ * - 판정 흐름 :
+ *   ├── 결측 / `'정보미제공'` / `'-'` ──> `{ text: '-', className: 'unknown' }`
+ *   ├── `'Y'` 또는 `'가능*'` ──> `{ text: yes, className: 'yes' }`
+ *   └── `'N*'` 또는 `'불가'` 포함 ──> `{ text: no, className: 'no' }`
  */
 
 export function integerValue(raw) {
@@ -181,8 +319,23 @@ export function integerValue(raw) {
     return Number.isSafeInteger(value) ? value : null;
 }
 /*
- * [JS 내장 도구/함수] Number(...), Number.isSafeInteger(...) : 부호 있는 정수(음수 초과수용 `-4`, 만실 `0`, 여유 `8` 포함)만 정확히 숫자로 변환함 (이름 변경 불가).
- * [내가 지은 이름] integerValue : 숫자가 아닌 문자열이나 빈 값은 억지로 `0`으로 만들지 않고 `null`을 반환해 데이터 왜곡을 방지함.
+ * [JS 문법]
+ * - export function / if / `!` / 정규표현식 `/^-?\d+$/` (선택적 음수 부호와 정수) / 삼항 연산자 / `null` / return.
+ *
+ * [JS 내장 함수 및 메서드 (이름 변경 불가)]
+ * - String(val) / .trim() / RegExp.prototype.test(str) : 값이 순수 정수 문자열 형태인지 검사함.
+ * - Number(str) : 문자열을 숫자 타입으로 변환하는 표준 내장 함수임.
+ * - Number.isSafeInteger(num) : 정밀도 손실이 없는 안전한 정수 범위인지 판별하는 정적 메서드임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `integerValue`, `raw`(병상 수 등 원본 값).
+ * - 지역 변수명 : `text`(공백 제거 문자열), `value`(변환된 숫자).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `bedValue()`, `getBedTrafficInfo()`, `matchesSymptomPresetClient()`가 병상 숫자를 꺼낼 때 씀.
+ * - 흐름 :
+ *   ├── 결측치 또는 비정수 문자열 ──> `0`으로 왜곡하지 않고 `null` 반환
+ *   └── 음수(`-4`, 초과수용)·`0`(만실)·양수 ──> 안전한 정수 반환 (`HospitalRecommendationScorer`와 동일)
  */
 
 export function bedValue(raw) {
@@ -195,13 +348,21 @@ export function bedValue(raw) {
         : `${value}석`;
 }
 /*
- * [JS 내장 함수] Math.abs(숫자) : 음수 병상(`-3`)의 절댓값(`3`)을 구해 `'초과수용 3석'`으로 읽기 쉽게 표현함 (이름 변경 불가).
- * [내가 지은 이름] bedValue : 지도 마커 카드·클러스터 목록·추천 배지에서 응급실 병상 수를 짧은 한글 요약 문자열로 변환함.
- * [변환 예시]
- *   raw = "7"   ──> "7석"
- *   raw = "0"   ──> "0석"
- *   raw = "-3"  ──> "초과수용 3석"
- *   raw = ""    ──> "미정보"
+ * [JS 문법]
+ * - export function / const / if / === / `null` / `<` / 삼항 연산자 / 템플릿 리터럴 / return.
+ *
+ * [JS 내장 함수 (이름 변경 불가)]
+ * - Math.abs(x) : 숫자의 절댓값(음수에서 부호를 뗀 양수)을 구하는 표준 정적 메서드임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `bedValue`, `raw`(응급실 일반병상 `hvec` 원본 값).
+ * - 지역 변수명 : `value`(`integerValue(raw)`에서 얻은 정수 또는 `null`).
+ *
+ * [동작 흐름]
+ * - 사용처 : `markers-cluster.js` 병원 카드·클러스터 목록과 `directions-eta.js` 요약 표시에 씀.
+ * - 변환 흐름 :
+ *   ├── `null` ──> `'미정보'` / `'0'` ──> `'0석'` / `'7'` ──> `'7석'`
+ *   └── 음수(`-3`) ──> `Math.abs()` 적용 ──> `'초과수용 3석'`
  */
 
 export function getBedTrafficInfo(rawErBeds) {
@@ -221,12 +382,23 @@ export function getBedTrafficInfo(rawErBeds) {
     return { className: 'avail-full', label: `응급실 초과수용 (${Math.abs(count)}석 초과)` };
 }
 /*
- * [내가 지은 이름] getBedTrafficInfo : 지도 마커 카드 우측 상단 '병상 여유 신호등'(`.bed-traffic-dot`)의 색상 클래스와 툴팁 문구를 판정함.
- * [시각화 매핑 요약]
- *   count >= 3   ──> .avail-plenty  (초록 신호등: 여유)
- *   count 1 ~ 2  ──> .avail-low     (주황 신호등: 잔여 1~2석 주의)
- *   count <= 0   ──> .avail-full    (빨강 신호등: 만실 또는 초과수용)
- *   count null   ──> .avail-unknown (회색 신호등: 미보고)
+ * [JS 문법]
+ * - export function / const / if / === / >= / 템플릿 리터럴 / 객체 리터럴 `{ className, label }` / return.
+ *
+ * [JS 내장 함수 (이름 변경 불가)]
+ * - Math.abs(x) : 음수 초과수용 병상 수의 절댓값을 구하는 표준 정적 메서드임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `getBedTrafficInfo`, `rawErBeds`(응급실 일반병상 `hvec` 원본 값).
+ * - 지역 변수명 : `count`(`integerValue(rawErBeds)` 결과).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `markers-cluster.js`·`directions-eta.js`가 카드·목록·순위 배지의 `.bed-traffic-dot` 표시에 호출함.
+ * - 분류 흐름 (`HospitalRecommendationScorer.classifyBedAvailabilityStatus()`와 동일 기준) :
+ *   ├── `null` ──> `.avail-unknown` ('병상 미정보')
+ *   ├── `count >= 3` ──> `.avail-plenty` ('응급실 여유')
+ *   ├── `1 <= count <= 2` ──> `.avail-low` ('응급실 혼잡 임박')
+ *   └── `count <= 0` ──> `.avail-full` ('만실' 또는 '초과수용')
  */
 
 export function parseApiDate(value) {
@@ -256,10 +428,24 @@ export function parseApiDate(value) {
     };
 }
 /*
- * [JS 내장 도구(타입) & 함수]
- * - Date.UTC(...) : 접속자의 스마트폰/PC 국가 시간대가 어디든 항상 한국 표준시(UTC+9, `hour - 9`) 기준으로 정확히 타임스탬프를 계산함 (이름 변경 불가).
- * - new Intl.DateTimeFormat('ko-KR', ...).format(date) : 국제화 표준 날짜 포맷터임 (이름 변경 불가).
- * [내가 지은 이름] parseApiDate : 공공데이터 14자리 시각 문자열(`"20261117183000"`)을 `{ timestamp, display: "11월 17일 오후 06:30" }` 객체로 변환함.
+ * [JS 문법]
+ * - export function / if / `!` / 정규표현식 `/^\d{14}$/` / || / const / 단축 속성명 / return.
+ *
+ * [JS 내장 API 및 메서드 (이름 변경 불가)]
+ * - String.prototype.slice(start, end) : 문자열에서 지정한 인덱스 구간의 부분 문자열을 잘라냄.
+ * - Number(str) : 잘라낸 숫자 문자열을 정수·실수 값으로 변환함.
+ * - Date.UTC(y, mIndex, d, h, min, s) : UTC 기준 타임스탬프(밀리초)를 계산하는 정적 메서드임.
+ *   · 월 인덱스는 0부터 시작(`month - 1`)하며, 한국 시간(UTC+9)은 `hour - 9`로 보정함.
+ * - new Date(epochMs) / Date.prototype.getTime() : 밀리초 단위 Epoch 시각 숫자를 얻는 표준 API임.
+ * - new Intl.DateTimeFormat('ko-KR', options).format(date) : 지정 타임존의 한국어 날짜 문자열을 만듦.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `parseApiDate`, `value`(14자리 `yyyyMMddHHmmss` 일시 문자열).
+ * - 지역 변수명 : `year`, `month`, `day`, `hour`, `minute`, `second`, `date`, `display`.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `getActiveMessages()`(공지 기간 비교)와 `hospital-sheet.js`의 보고일시 표기 함수들.
+ * - 흐름 : 14자리 문자열 검증 ──> `Date.UTC`로 한국시 기준 Epoch 변환 ──> `{ timestamp, display }` 반환
  */
 
 export function getActiveMessages(hospital, now = Date.now()) {
@@ -270,8 +456,21 @@ export function getActiveMessages(hospital, now = Date.now()) {
     });
 }
 /*
- * [JS 내장 함수] Date.now() : 현재 시각 밀리초 타임스탬프를 반환함 (이름 변경 불가).
- * [내가 지은 이름] getActiveMessages : 병원의 공지 배열 중 시작일시(`symblksttdtm`)가 지났고 종료일시(`symblkenddtm`)가 아직 안 지난 현재 유효 공지만 추려냄.
+ * [JS 문법]
+ * - export function / 기본값 매개변수 (`now = Date.now()`) / ?. / || / 화살표 함수 / <= / > / && / return.
+ *
+ * [JS 내장 API 및 메서드 (이름 변경 불가)]
+ * - Date.now() : 현재 UTC 기준 Epoch 밀리초 시각을 반환하는 표준 정적 메서드임.
+ * - Array.prototype.filter(callback) : 조건이 참인 요소만 추려 새 배열을 만드는 메서드임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `getActiveMessages`, `hospital`(병원 객체), `now`(비교 기준 밀리초).
+ * - 지역 변수명 : `item`(공지 항목), `start`(`symblksttdtm` 파싱 결과), `end`(`symblkenddtm` 파싱 결과).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `matchesSymptomPresetClient()`와 `hospital-sheet.js`가 종료된 과거 공지를 걸러낼 때 씀.
+ * - 흐름 : `hospital.messages` 순회 ──> `parseApiDate()`로 시작·종료 비교 ──> 현재 유효 공지만 반환
+ * - 정합성 : 백엔드 `HospitalRecommendationScorer.isMessageCurrentlyActive()`와 동일한 기간 규칙임.
  */
 
 export function isNoticeBlocking(msg) {
@@ -293,11 +492,22 @@ export function isNoticeBlocking(msg) {
     return false;
 }
 /*
- * [핵심 버그 수정 및 한국어 형태소 방어 원리]
- * - 한국어 문자열 `"수술 불가능"` 안에는 부분 문자열 `"가능"`이 포함되어 있음.
- * - 만약 `'가능'` 검사를 먼저 수행하면 `"뇌출혈 수술 불가능"` 같은 위급 차단 공지가 정상(`false`)으로 오판되는 치명적 버그가 발생함.
- * - 따라서 반드시 **차단 키워드(`불가능|불가|차단|부재|중단|마감`)를 최우선으로 먼저 검사**하고, 긍정 판정에는 부정 후방탐색(`(?<!불)가능`: 앞에 `'불'`이 없는 `'가능'`)을 적용했음.
- * [내가 지은 이름] isNoticeBlocking(차단 공지 판별 함수), msg(개별 공지 객체)
+ * [JS 문법]
+ * - export function / if / `!` / const / || / === / 정규표현식 / 부정형 후방 탐색 `(?<!불)가능` / return.
+ *
+ * [JS 내장 함수 및 메서드 (이름 변경 불가)]
+ * - String(val) / String.prototype.trim() : 값을 문자열로 바꾸고 양쪽 공백을 제거함.
+ * - RegExp.prototype.test(str) : 문자열에 정규식 패턴이 일치하는지 검사함.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `isNoticeBlocking`, `msg`(단일 진료 공지 객체).
+ * - 지역 변수명 : `body`(`symblkmsg` 본문 문자열), `yon`(`symoutdspyon` 차단 구분 코드).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hasGeneralErBlockNotice()`, `isDiseaseSpecificallyBlocked()`, `hasBlockingKeywordInNotices()`.
+ * - 오판 방지 흐름 (`HospitalRecommendationScorer.isNoticeBlocking()`과 동일) :
+ *   ├── 1) `yon === '차단'` 또는 차단 키워드(`불가능|불가|중단|...`) 일치 ──> 즉시 `true` (차단)
+ *   └── 2) 부정 후방 탐색 `(?<!불)가능`·`'정상 진료'` 확인 ──> '불가능' 속 '가능' 오탐 없이 `false`
  */
 
 export function hasGeneralErBlockNotice(activeMessages) {
@@ -316,7 +526,21 @@ export function hasGeneralErBlockNotice(activeMessages) {
     return false;
 }
 /*
- * [내가 지은 이름] hasGeneralErBlockNotice : 특정 단일 질환이 아니라 '응급실 전체 수용 불가/진료 중단' 공지가 떠 있는지 판별함.
+ * [JS 문법]
+ * - export function / for...of / if / `!` / continue / const / 템플릿 리터럴 / || / && / return.
+ *
+ * [JS 내장 메서드 (이름 변경 불가)]
+ * - String.prototype.includes(substr) : 문자열 안에 지정 단어가 포함되어 있는지 확인함.
+ * - RegExp.prototype.test(str) : 문자열이 정규식 패턴에 맞는지 검사함.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `hasGeneralErBlockNotice`, `activeMessages`(현재 유효한 공지 배열).
+ * - 지역 변수명 : `msg`(공지 항목), `combined`(질환명·진료과명·본문을 합친 문자열).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `matchesSymptomPresetClient()` 1단계 검사에서 호출함.
+ * - 흐름 : `activeMessages` 순회 ──> `isNoticeBlocking(msg)` 통과 ──>
+ *   └── `'응급실'` + `'수용불가|진료중단'` 포함 ──> `true` 반환 (전체 병원 제외, 백엔드와 동일)
  */
 
 export function isDiseaseSpecificallyBlocked(activeMessages, itemKey) {
@@ -352,7 +576,25 @@ export function isDiseaseSpecificallyBlocked(activeMessages, itemKey) {
     return false;
 }
 /*
- * [내가 지은 이름] isDiseaseSpecificallyBlocked : 28대 중증질환 개별 항목(`mkioskty1~27`)에 대해 활성 차단 공지가 올라와 있는지 교차 검증함.
+ * [JS 문법]
+ * - export function / const / if / `!` / || / && / for...of / continue / === / >= / 화살표 함수 / return.
+ *
+ * [JS 내장 함수 및 메서드 (이름 변경 불가)]
+ * - String(val) / .trim() / .toUpperCase() : 값을 문자열로 바꾼 뒤 공백 제거·대문자 통일함.
+ * - Array.prototype.includes(item) : 배열 안에 특정 문자열이 들어 있는지 검사함.
+ * - Array.prototype.some(predicate) : 배열 요소 중 하나라도 조건을 만족하면 즉시 `true`를 반환함.
+ * - String.prototype.includes(substr) / .length : 부분 문자열 포함 여부와 글자 수를 확인함.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `isDiseaseSpecificallyBlocked`, `activeMessages`, `itemKey`(`'mkioskty1'`~`'mkioskty27'`).
+ * - 지역 변수명 : `config`(`SPECIFIC_BLOCK_TARGETS[itemKey]`), `msg`, `cod`, `symName`, `bodyText`, `target`.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `isAnySevereAccepted()` 및 `hospital-sheet.js:renderSevere()`에서 호출함.
+ * - 교차 검증 흐름 :
+ *   ├── `isNoticeBlocking(msg)` 참인 공지만 대상으로 삼음
+ *   ├── `cod`가 `config.codes`에 포함 ──> 즉시 `true` (차단)
+ *   └── `symName`(4자 이상)·`bodyText`(3자 이상) 키워드 일치 ──> `true` (API `'Y'`여도 차단 보정)
  */
 
 function isAnySevereAccepted(severeMap, activeMessages, keys) {
@@ -365,7 +607,17 @@ function isAnySevereAccepted(severeMap, activeMessages, keys) {
     return false;
 }
 /*
- * [내가 지은 이름] isAnySevereAccepted : 주어진 중증질환 키 목록 중 최소 1개 이상이 `'가능'(Y)`이면서 동시에 차단 공지도 없는지 확인하는 내부 보조 함수임.
+ * [JS 문법]
+ * - function (파일 내부 비공개 헬퍼) / for...of / const / if / === / && / `!` / return.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 : `isAnySevereAccepted`.
+ * - 매개변수명 : `severeMap`(병원 `severe` 객체), `activeMessages`(유효 공지 배열), `keys`(`mkioskty*` 키 배열).
+ * - 지역 변수명 : `key`, `status`(`availability(severeMap[key])` 결과).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `matchesSymptomPresetClient()`가 증상 관련 중증질환 키 목록을 검사할 때 씀.
+ * - 흐름 : `keys` 순회 ──> `status.className === 'yes'` & `!isDiseaseSpecificallyBlocked()` ──> `true` 반환
  */
 
 function hasBlockingKeywordInNotices(activeMessages, keywordRegex) {
@@ -381,7 +633,20 @@ function hasBlockingKeywordInNotices(activeMessages, keywordRegex) {
     return false;
 }
 /*
- * [내가 지은 이름] hasBlockingKeywordInNotices : 활성 차단 공지 본문·진료과명에 해당 증상군 차단 키워드(예: 소아, 뇌출혈, 분만 등)가 포함되어 있는지 검사함.
+ * [JS 문법]
+ * - function (파일 내부 비공개 헬퍼) / for...of / if / `!` / continue / const / 템플릿 리터럴 / || / return.
+ *
+ * [JS 내장 메서드 (이름 변경 불가)]
+ * - RegExp.prototype.test(str) : 문자열이 정규표현식 패턴과 일치하는지 검사함.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 : `hasBlockingKeywordInNotices`.
+ * - 매개변수명 : `activeMessages`(유효 공지 배열), `keywordRegex`(증상별 차단 키워드 정규식).
+ * - 지역 변수명 : `msg`, `combined`(질환명·진료과명·본문을 합친 문자열).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `matchesSymptomPresetClient()`가 각 증상 분기 초반에 차단 공지를 확인함.
+ * - 흐름 : `activeMessages` 순회 ──> `isNoticeBlocking(msg)` 통과 ──> `keywordRegex.test(combined)` ──> `true` 반환
  */
 
 export function matchesSymptomPresetClient(hospital, presetKey) {
@@ -481,12 +746,23 @@ export function matchesSymptomPresetClient(hospital, presetKey) {
     }
 }
 /*
- * [JS 문법] switch (값) { case '...': ... default: ... } : 증상 프리셋 종류별로 3중 교차 검증 규칙을 분기함.
- * [내가 지은 이름] matchesSymptomPresetClient : 백엔드 `HospitalRecommendationScorer.matchesSymptomPreset()`과 1:1 대칭을 이루는 클라이언트 증상 필터 엔진임.
- * [3중 교차 검증 원리 — '응급실 핑퐁' 사전 예방]
- *   1단계) 응급실 전면 수용불가 공지가 있으면 즉시 제외(`false`)
- *   2단계) 해당 진료과·질환 차단 공지(예: 신경외과 수술 불가)가 있으면 즉시 제외(`false`)
- *   3단계) 전용 병상(`hv*`) 여유가 있거나 해당 중증질환 수용 코드(`mkioskty*`)가 `'Y'`인 병원만 통과(`true`)
+ * [JS 문법]
+ * - export function / if / `!` / || / === / const / 화살표 함수 / switch...case...default / return.
+ *
+ * [JS 내장 함수 및 메서드 (이름 변경 불가)]
+ * - String(val) / .trim() / .toUpperCase() : 플래그 값을 문자열로 정제한 뒤 대문자로 통일함.
+ * - Boolean(value) : 어떤 값이든 명확한 `true`/`false` 논리형으로 변환하는 표준 함수임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `matchesSymptomPresetClient`, `hospital`(병원 객체), `presetKey`(선택 증상 키).
+ * - 지역 변수명 : `beds`, `severe`, `activeMessages`, `posBed`(양수 병상 확인), `flagYes`(`'Y'`/양수 확인), `val`, `raw`, `num`.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `markers-cluster.js:matchesFilters()` (백엔드 `HospitalRecommendationScorer.matchesSymptomPreset()`와 동일 규칙).
+ * - 3단계 판별 흐름 :
+ *   ├── 1단계 : `hasGeneralErBlockNotice()` 참 ──> 즉시 `false`
+ *   ├── 2단계 : 프리셋별 `hasBlockingKeywordInNotices()` 차단 키워드 검출 ──> 즉시 `false`
+ *   └── 3단계 : 외상센터 여부·전용 병상 양수(`posBed`)·연관 중증질환(`isAnySevereAccepted`) 중 하나 충족 ──> `true`
  */
 
 export function distanceKm(a, b) {
@@ -503,8 +779,20 @@ export function distanceKm(a, b) {
     return 6371 * 2 * Math.atan2(Math.sqrt(arc), Math.sqrt(1 - arc));
 }
 /*
- * [JS 내장 도구/함수] Math.PI, Math.sin, Math.cos, Math.sqrt, Math.atan2, 거듭제곱 연산자 `**` (이름 변경 불가)
- * [내가 지은 이름] distanceKm : 지구 구체(`반지름 6371 km`) 위 두 위경도 좌표 `a`, `b` 사이의 하버사인(Haversine) 직선 거리(`km`)를 계산함.
+ * [JS 문법]
+ * - export function / const / 화살표 함수 / 거듭제곱 연산자 (`** 2`) / 산술 연산자 / return.
+ *
+ * [JS 내장 API 및 함수 (이름 변경 불가)]
+ * - Math.PI / Math.sin(x) / Math.cos(x) / Math.sqrt(x) / Math.atan2(y, x) :
+ *   · 원주율 상수와 삼각·제곱근·역탄젠트 함수로, 구면 위 두 위경도 사이 거리 계산에 쓰임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `distanceKm`, `a`(출발 `{ lat, lng }`), `b`(도착 `{ lat, lng }`).
+ * - 지역 변수명 : `radians`(각도를 라디안으로 바꾸는 함수), `dLat`, `dLng`, `arc`.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `markers-cluster.js`, `directions-eta.js`, `hospital-sheet.js`, `search-controls.js`가 직선거리 계산에 호출함.
+ * - 흐름 : 위경도 차 ──> 라디안 변환 ──> 하버사인(Haversine, 지구 반지름 `6371 km`) 계산 ──> `km` 거리 반환
  */
 
 export function radiusExtent(origin, radiusKm) {
@@ -524,8 +812,20 @@ export function radiusExtent(origin, radiusKm) {
     };
 }
 /*
- * [내가 지은 이름] radiusExtent : 출발 기준점(`origin`)으로부터 `radiusKm` 반경을 감싸는 사각 위경도 경계 상자(`{ south, north, west, east }`)를 계산함.
- * [성능 원리] 수백 개 병원에 무거운 삼각함수(`distanceKm`)를 돌리기 전에 단순 부등호 비교만으로 반경 밖 병원을 90% 이상 즉시 걸러내는 1차 체(Bounding Box) 역할을 함.
+ * [JS 문법]
+ * - export function / const / 산술 연산자 / 객체 리터럴 `{ south, north, west, east }` / return.
+ *
+ * [JS 내장 API 및 함수 (이름 변경 불가)]
+ * - Math.PI / Math.sin(x) / Math.cos(x) / Math.asin(x) : 중심점과 반경으로 위경도 사각 범위를 계산하는 함수임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `radiusExtent`, `origin`(기준 `{ lat, lng }`), `radiusKm`(탐색 반경 km).
+ * - 지역 변수명 : `angle`(지구 중심각 라디안), `latDelta`(위도 편차), `lngDelta`(경도 편차).
+ *
+ * [동작 흐름]
+ * - 호출 출처 :
+ *   ├── `map-engine.js:updateCircle()` ──> 반경 원의 화면 맞춤 범위 계산
+ *   └── `markers-cluster.js:updateMarkers()` ──> `distanceKm()` 계산 전 단순 부등호로 반경 밖 병원 사전 제외
  */
 
 export function getOriginDisplayLabel() {
@@ -533,7 +833,18 @@ export function getOriginDisplayLabel() {
     return state.originAddress ? `${base} (${state.originAddress})` : base;
 }
 /*
- * [내가 지은 이름] getOriginDisplayLabel : 현재 출발 기준점 이름과 역지오코딩된 도로명/행정동 주소를 합쳐 `'우클릭 지정 출발지 (원주시 흥업면)'` 형태로 반환함.
+ * [JS 문법]
+ * - export function / const / 삼항 조건 연산자 / || / 템플릿 리터럴 / return.
+ *
+ * [함수명 및 지역 변수명]
+ * - 함수명 : `getOriginDisplayLabel`.
+ * - 지역 변수명 : `base`(위치 확인 시 `state.originLabel`, 미확인 시 `DEFAULT_ORIGIN.label`).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hospital-sheet.js:openHospital()`, `directions-eta.js`, `search-controls.js:updateRadiusUI()`.
+ * - 흐름 :
+ *   ├── `state.originAddress` 있음 ──> `'지정 출발지 (강원 원주시...)'` 형태로 조합 반환
+ *   └── `state.originAddress` 없음 ──> `'서울시청'` 또는 `'내 위치'` 기본 라벨 반환
  */
 
 export function isAppleTouchDevice() {
@@ -544,8 +855,23 @@ export function isAppleTouchDevice() {
     );
 }
 /*
- * [브라우저 내장 도구(API)] navigator.userAgent, navigator.maxTouchPoints (이름 변경 불가)
- * [내가 지은 이름] isAppleTouchDevice : iPhone·iPod뿐만 아니라 User-Agent를 `Macintosh`로 보고하는 최신 iPadOS까지 멀티터치 포인트 수로 정확히 식별함.
+ * [JS 문법]
+ * - export function / const / || / && / 정규표현식 리터럴 / > / return.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - navigator.userAgent : 브라우저와 운영체제 식별 문자열을 반환하는 읽기 전용 속성임.
+ * - navigator.maxTouchPoints : 기기가 지원하는 최대 동시 터치 접점 수를 반환하는 속성임.
+ * - RegExp.prototype.test(str) : 문자열이 정규표현식 패턴에 맞는지 검사함.
+ *
+ * [함수명 및 지역 변수명]
+ * - 함수명 : `isAppleTouchDevice`.
+ * - 지역 변수명 : `userAgent`(`navigator.userAgent` 문자열).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hasMobileGpsHardware()`, `hospital-sheet.js:syncResponsiveSheetLayout()`.
+ * - 판별 흐름 :
+ *   ├── `iPad` / `iPhone` / `iPod` 문자열 일치 ──> `true`
+ *   └── `Macintosh` 보고 + 멀티터치 접점 `> 1` (최신 iPadOS) ──> `true`
  */
 
 export function hasMobileGpsHardware() {
@@ -560,8 +886,23 @@ export function hasMobileGpsHardware() {
     );
 }
 /*
- * [내가 지은 이름] hasMobileGpsHardware : 물리적 GPS(GNSS) 칩셋을 탑재한 스마트폰·태블릿 모바일 환경인지 판별함.
- * [핵심 원리] GPS 수신기가 없는 일반 데스크톱 PC에서 브라우저가 통신사 IP 주소나 공유기 기지국으로 엉뚱한 위치(예: ISP 국사 소재지)를 잡는 현상을 원천 차단함.
+ * [JS 문법]
+ * - export function / const / if / 정규표현식 `/Android/i` / || / typeof / !== / && / `!` / return.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - navigator.userAgent : 브라우저와 OS 식별 문자열을 읽는 표준 속성임.
+ * - window.matchMedia(query) : CSS 미디어 쿼리(`'(pointer: coarse)'` 등) 일치 여부를 `.matches`로 반환함.
+ *
+ * [함수명 및 지역 변수명]
+ * - 함수명 : `hasMobileGpsHardware`.
+ * - 지역 변수명 : `ua`(`navigator.userAgent` 문자열).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `app.js:init()`, `isGenuineGpsPosition()`, `search-controls.js:locate()`.
+ * - 목적 : GPS 칩 없는 데스크톱이 IP 기반 부정확 좌표로 이동하지 않게 기기 특성을 걸러냄.
+ * - 흐름 :
+ *   ├── Android 또는 `isAppleTouchDevice()` 참 ──> `true`
+ *   └── 주 포인터가 터치(`coarse`)이고 마우스(`fine`) 없음 ──> `true` / 그 외 ──> `false`
  */
 
 export function isGenuineGpsPosition(position) {
@@ -579,11 +920,24 @@ export function isGenuineGpsPosition(position) {
     return accuracy <= 100;
 }
 /*
- * [브라우저 내장 속성] position.coords.accuracy(오차 반경 m), position.coords.altitude(GNSS 위성 고도 m) (이름 변경 불가)
- * [내가 지은 이름] isGenuineGpsPosition : IP 주소 추정(오차 수 km, altitude=null) 및 이동통신 기지국 삼각측량(오차 수백 m)을 배제하고 순수 GPS 위성 수신 좌표만 허용하는 검증기임.
- * [판정 기준 요약]
- *   1) 데스크톱 PC 환경 : GNSS 위성 고도(`altitude !== null`)가 실측되고 오차 반경이 `50m 이하`인 실제 GPS 수신기 신호만 허용 (IP·공유기 추정치 100% 차단)
- *   2) 모바일 기기 환경 : 오차 반경 `100m 이하` 정밀 GPS 신호만 허용 (지하·실내 기지국/IP 광역 추정치 100% 차단)
+ * [JS 문법]
+ * - export function / const / ?. / if / `!` / || / && / !== / <= / `null` / return.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - GeolocationPosition.coords : 위치 측위 API가 전달하는 위도·경도·정확도·고도 객체임.
+ *   · `latitude`·`longitude` : 위도·경도 값.
+ *   · `accuracy` : 미터 단위 오차 반경 / `altitude` : 위성 고도(실측 시 숫자).
+ * - Number(val) / Number.isFinite(val) : 숫자로 바꾸고 `NaN`·`Infinity`가 아닌 유한 실수인지 검사함.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `isGenuineGpsPosition`, `position`(브라우저 측위 `GeolocationPosition` 객체).
+ * - 지역 변수명 : `coords`, `accuracy`.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `search-controls.js:locate()`가 위치 반영 전 좌표 신뢰도를 검증할 때 호출함.
+ * - 판별 흐름 :
+ *   ├── 데스크톱(`!hasMobileGpsHardware()`) ──> 위성 고도 실측(`altitude !== null`) & 오차 `50m` 이하만 허용
+ *   └── 모바일 기기 ──> 오차 `100m` 이하 정밀 GPS만 허용 (IP·기지국 광역 추정 배제)
  */
 
 export function blurKeyword() {
@@ -593,8 +947,20 @@ export function blurKeyword() {
     }
 }
 /*
- * [브라우저 내장 속성/함수] document.activeElement, element.blur() : 지도를 드래그할 때 검색창 포커스를 해제해 모바일 가상 키보드가 화면을 가리지 않도록 내려 줌.
- * [내가 지은 이름] blurKeyword
+ * [JS 문법]
+ * - export function / const / if / && / === : 요소 존재와 현재 포커스 일치 여부를 확인함.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - document.activeElement : 현재 문서에서 키보드 포커스를 가진 DOM 요소를 반환하는 속성임.
+ * - HTMLElement.prototype.blur() : 요소의 포커스를 해제해 모바일 가상 키보드를 닫히게 하는 메서드임.
+ *
+ * [함수명 및 지역 변수명]
+ * - 함수명 : `blurKeyword`.
+ * - 지역 변수명 : `keyword`(`#keyword` 검색 입력창 요소 참조).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `map-engine.js`(지도 드래그 시작)와 `search-controls.js` (`#search-form` 제출)에서 호출함.
+ * - 흐름 : `document.activeElement === keyword` ──> `keyword.blur()` ──> 모바일 가상 키보드 숨김
  */
 
 export function createMarqueeEl(tag, className = '', text = '', title = undefined) {
@@ -607,7 +973,20 @@ export function createMarqueeEl(tag, className = '', text = '', title = undefine
     return el;
 }
 /*
- * [내가 지은 이름] createMarqueeEl : 병상·중증질환 코드 설명이 셀 폭보다 길 때 전광판(Ticker) 스크롤이 작동하도록 `.marquee-inner` 래퍼를 감싸 생성함.
+ * [JS 문법]
+ * - export function / 기본값 매개변수 (`param = 값`) / const / if / return.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - HTMLElement.prototype.title : 마우스를 올렸을 때 표시되는 기본 툴팁 문자열 속성임.
+ * - Element.prototype.append(...nodes) : 부모 요소의 끝부분에 자식 노드들을 삽입하는 메서드임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `createMarqueeEl`, `tag`(외부 태그명), `className`(CSS 클래스), `text`(문자열), `title`(선택 툴팁).
+ * - 지역 변수명 : `el`(외부 래퍼 요소), `inner`(`<span class="marquee-inner">` 내부 텍스트 노드).
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `hospital-sheet.js`가 병상 파라미터 라벨(`.egen-cell-param`)·비고(`.severe-remark-box`) 생성 시 씀.
+ * - 흐름 : `el` 생성 ──> `inner`(`.marquee-inner`) 추가 ──> 이후 `updateMarquees()`가 넘침 시 흐르는 효과 부여
  */
 
 export function updateMarquees() {
@@ -644,10 +1023,27 @@ export function updateMarquees() {
     });
 }
 /*
- * [브라우저 내장 함수] requestAnimationFrame(...), style.setProperty('--변수명', 값), style.removeProperty(...) (이름 변경 불가)
- * [성능 원리 — 읽기/쓰기 배치 분리(FastDOM 패턴)]
- * - 첫 번째 `for` 루프에서는 `scrollWidth`/`clientWidth` **읽기(Read)**만 수행하고, 두 번째 `for` 루프에서만 스타일 **쓰기(Write)**를 수행하여
- *   강제 동기 레이아웃(Layout Thrashing)을 0회로 억제했음.
+ * [JS 문법]
+ * - export function / 화살표 함수 / const / if / `!` / for...of / 객체 구조 분해 (`{ a, b }`) / 템플릿 리터럴 / return.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - requestAnimationFrame(callback) : 다음 화면 그리기 직전 프레임에 맞추어 콜백을 실행하는 함수임.
+ * - document.querySelectorAll(selector) / Element.prototype.querySelector(selector) : DOM 요소 탐색 메서드임.
+ * - Array.prototype.push(item) : 배열 끝에 새 항목을 추가하는 메서드임.
+ * - Element.prototype.scrollWidth / .clientWidth : 실제 내용 전체 너비와 보이는 너비를 읽는 속성임.
+ * - Element.prototype.classList.add() / .remove() : CSS 클래스를 추가·제거하는 메서드임.
+ * - CSSStyleDeclaration.prototype.setProperty() / .removeProperty() : CSS 변수 값을 쓰거나 지우는 메서드임.
+ * - Math.ceil() / Math.max() / Math.min() / Number.prototype.toFixed() : 올림, 범위 제한, 소수점 포맷 함수임.
+ *
+ * [함수명 및 지역 변수명]
+ * - 함수명 : `updateMarquees`.
+ * - 지역 변수명 : `containers`, `measurements`, `container`, `inner`, `overflow`, `duration`.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `app.js`의 `resize` 리스너 및 `hospital-sheet.js` 상세 시트 렌더링 직후 호출됨.
+ * - 레이아웃 스래싱(Reflow 반복) 방지 흐름 :
+ *   ├── 1차 `for...of` (읽기 전용) ──> `scrollWidth - clientWidth` 측정값만 `measurements` 수집
+ *   └── 2차 `for...of` (쓰기 전용) ──> `is-marquee`, `--ticker-diff`, `--ticker-duration` 일괄 반영
  */
 
 export function setStatus(message) {
@@ -719,10 +1115,26 @@ export function setStatus(message) {
     }
 }
 /*
- * [브라우저 내장 도구(API) & 함수]
- * - toastEl.showPopover() / toastEl.hidePopover() : HTML5 Popover API로 모달 다이얼로그보다도 위층(Top Layer)에 비침투형 상태 토스트를 띄움 (이름 변경 불가).
- * - clearTimeout / setTimeout : 이전 알림 타이머를 취소하고 일반 알림은 4.2초, 오류/오프라인 경고는 6.5초 뒤 자동으로 닫음.
- * [접근성 원리] 중간 로딩 문구(`…`)는 스크린 리더 라이브 영역(`#status-announcer`, `#alert-announcer`)에 보내지 않아 음성 낭독 스팸을 방지함.
+ * [JS 문법]
+ * - export function / const / if / `!` / 삼항 연산자 / `delete` 연산자 / typeof / === / try...catch / void / && / return.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - clearTimeout(id) / setTimeout(fn, ms) : 예약된 타이머를 취소하고 지정 시간 뒤 콜백 인자 fn을 실행하는 타이머 API임.
+ * - Node.prototype.textContent / HTMLElement.prototype.hidden / .dataset : 텍스트, 숨김, `data-*` 속성을 제어함.
+ * - HTMLElement.prototype.matches(':popover-open') / .showPopover() / .hidePopover() :
+ *   · HTML Popover 요소를 열림 여부 확인 뒤 브라우저 최상위 Top Layer에 표시하거나 숨김.
+ * - RegExp.prototype.test(str) / String.prototype.includes(substr) : 패턴 및 단어 포함 여부를 검사함.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `setStatus`, `message`(표시할 상태 문구, 빈 문자열이면 닫힘).
+ * - 지역 변수명 : `statusEl`, `toastEl`, `text`, `politeAnnouncer`, `alertAnnouncer`, `popErr`, `isError`, `isInterstitial`, `isSdkFatalError`.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `app.js`, `search-controls.js`, `directions-eta.js`, `hospital-sheet.js`, `#status-toast-close`.
+ * - 흐름 :
+ *   ├── 빈 문구(`!text`) ──> `data-open="false"`·`hidePopover()`로 토스트 닫기
+ *   ├── 문구 존재 ──> `showPopover()` 표시 + 확정 문구(`…` 제외)만 `#status-announcer`/`#alert-announcer` 전달
+ *   └── 일반(`4200ms`)·오류(`6500ms`) 후 ──> `setTimeout` ──> `setStatus('')` 자동 닫힘
  */
 
 export function installDialogLightDismiss(dialog) {
@@ -748,8 +1160,24 @@ export function installDialogLightDismiss(dialog) {
     });
 }
 /*
- * [Modern Web Guidance `light-dismiss-a-dialog` 표준 점진적 향상 적용]
- * - 최신 브라우저는 HTML `<dialog closedby="any">` 속성만으로 바깥 어두운 배경(`::backdrop`) 클릭 및 `ESC` 닫기를 네이티브 처리함.
- * - `'closedBy' in HTMLDialogElement.prototype`을 지원하지 않는 구형 모바일 브라우저(구버전 iOS Safari 등)에서만
- *   `getBoundingClientRect()` 좌표 비교 폴백 리스너를 등록해 모든 기기에서 동일한 라이트 디스미스(바깥 터치 시 닫힘) UX를 보장함.
+ * [JS 문법]
+ * - export function / if / `!` / || / typeof / === / in / !== / const / <= / && / 화살표 함수 / return.
+ *
+ * [브라우저 내장 Web API (이름 변경 불가)]
+ * - HTMLDialogElement / HTMLDialogElement.prototype : `<dialog>` 요소의 표준 DOM 인터페이스임.
+ *   · `'closedBy' in HTMLDialogElement.prototype`으로 브라우저의 `closedby` 속성 지원 여부를 탐지함.
+ * - EventTarget.prototype.addEventListener('click', handler) : 클릭 이벤트 리스너를 등록하는 메서드임.
+ * - event.target / event.clientX / event.clientY : 클릭된 대상 요소와 뷰포트 좌표를 제공하는 속성임.
+ * - Element.prototype.getBoundingClientRect() : 요소의 화면상 사각 좌표(`top`, `bottom`, `left`, `right`)를 반환함.
+ * - HTMLDialogElement.prototype.close() : 모달 다이얼로그를 닫고 배경 막(`::backdrop`)을 없애는 메서드임.
+ *
+ * [함수명·매개변수명 및 지역 변수명]
+ * - 함수명 및 매개변수명 : `installDialogLightDismiss`, `dialog`(`#cluster-dialog`·`#notice-dialog` 요소).
+ * - 지역 변수명 : `event`, `rect`, `clickedInside`.
+ *
+ * [동작 흐름]
+ * - 호출 출처 : `search-controls.js:initNotice()`가 `#notice-dialog`·`#cluster-dialog`에 등록함.
+ * - 점진적 향상 흐름 :
+ *   ├── `closedBy` 네이티브 지원 최신 브라우저 ──> 즉시 `return` (`index.html`의 `closedby="any"` 동작)
+ *   └── 미지원 구형 브라우저 ──> `dialog` `'click'` ──> 바깥 클릭(`event.target === dialog && !clickedInside`)이면 `dialog.close()` 호출
  */

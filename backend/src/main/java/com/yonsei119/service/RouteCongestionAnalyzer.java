@@ -7,24 +7,45 @@ import tools.jackson.databind.JsonNode;
 import java.util.ArrayList;
 import java.util.List;
 /*
- * [자바 문법] package, import : 주행 경로의 교차로(guide) 소요 시간으로부터 구간별 실주행 속도와 혼잡도(원활·서행·정체)를 세밀하게 분해하는 독립 분석기 패키지 선언임.
- * [자바/스프링/라이브러리 내장 도구(타입)]
- * - JsonNode (출처: tools.jackson.databind) : Spring Boot 4 내장 Jackson 3 JSON 트리 탐색 객체임 (이름 변경 불가).
- * - List, ArrayList : 자바 표준 순서 목록 타입임 (이름 변경 불가).
- * [스프링/라이브러리 내장 어노테이션]
- * - @Component (출처: org.springframework.stereotype) : NaverDirectionsService와 병렬로 분리된 독립 스프링 빈으로 등록함.
+ * [패키지 및 임포트]
+ * - com.yonsei119.service : 서비스 계층 클래스들을 묶어 관리하는 패키지 선언임.
+ * - package, import : RouteCongestionAnalyzer 클래스의 소속 패키지와 외부 패키지 타입 사용을 선언하는 예약어임.
+ *
+ * [자바/라이브러리 내장 타입 (이름 변경 불가)]
+ * - JsonNode (tools.jackson.databind) : Spring Boot 4 내장 Jackson 3의 JSON 트리 노드 타입임.
+ * - List, ArrayList (java.util) : 순서 있는 목록 인터페이스와 동적 배열 구현체임.
+ *
+ * [프로젝트 내부 참조 타입]
+ * - DirectionsResponseDto (com.yonsei119.dto) : 길찾기 응답과 RouteSectionDto를 담은 DTO 레코드임.
  */
 
 @Component
 public class RouteCongestionAnalyzer {
 /*
- * [스프링/라이브러리 내장 어노테이션] @Component
- * [자바 문법] public class
- * [내가 지은 이름] RouteCongestionAnalyzer : 도로 구간별 혼잡도 정밀 보정 및 도로명 라벨 추출 전담 분석기임.
- * [핵심 원리 & 교통방송 비유]
- * - 네이버 원본 응답의 section 배열은 큰 도로 하나를 통째로 뭉뚱그려 내려보내는 경우가 많음.
- * - 이 분석기는 교차로 안내(guide) 배열의 거리(m)와 시간(ms)으로 구간 평균 시속(km/h)을 역산하고,
- *   고속도로(40/70km/h 기준)인지 일반도로(16/30km/h 기준)인지 구분하여 초록(원활)·주황(서행)·빨강(정체) 색상을 정밀하게 쪼개 줌.
+ * [스프링 내장 어노테이션]
+ * - @Component 정의 (출처: org.springframework.stereotype.Component, 이름 변경 불가)
+ *   · 역할 : 개발자가 작성한 클래스를 컴포넌트 스캔 대상에 포함해 스프링 싱글톤 빈으로 자동 생성·등록하는 범용 어노테이션임.
+ * - @Component 현재 코드 적용
+ *   · 적용 대상 : RouteCongestionAnalyzer 클래스 — 도로 구간별 평균 시속과 혼잡도를 계산하는 분석기 빈임.
+ *   · 작동 원리 : 컴포넌트 스캔 시 클래스 메타데이터를 읽어 싱글톤 빈 1개를 등록하고 다른 빈 생성자 DI로 주입함.
+ *   · 실행 시점 : 스프링 애플리케이션 부팅 및 ApplicationContext 초기화 단계에서 빈 생성과 의존성 주입이 완료됨.
+ *   · 비교 : 서비스 계층 @Service, 저장소 @Repository, 웹 API @RestController는 기능상 동일하고 역할 의미만 다름.
+ *
+ * [자바 문법]
+ * - public class : 다른 패키지에서도 접근 가능한 공개 클래스 선언부임.
+ *
+ * [클래스명]
+ * - RouteCongestionAnalyzer : 도로 구간별 평균 시속을 계산해 혼잡도와 도로명 라벨을 산출하는 분석기임.
+ *
+ * [호출 경로]
+ * - EmergencyApiController (GET /api/directions) -> NaverDirectionsService.getDrivingRoute(...)
+ *   └── parseDirectionsJson(...) -> congestionAnalyzer.buildDetailedSections(...) 호출로 실행됨.
+ *
+ * [동작 흐름]
+ * - 1단계: 원본 JSON의 section 배열 파싱 -> rawSections 목록 수집
+ * - 2단계: guide 배열의 거리·시간 역산 -> 구간별 평균 시속(km/h) 계산
+ * - 3단계: 고속도로 여부 판별 -> 속도 기준 혼잡도 코드(1: 원활, 2: 서행, 3: 정체) 분류
+ * - 4단계: 겹치지 않는 원본 서행·정체(>= 2) 구간 보완 -> 최종 구간 리스트 반환
  */
 
     public List<DirectionsResponseDto.RouteSectionDto> buildDetailedSections(
@@ -32,9 +53,20 @@ public class RouteCongestionAnalyzer {
             JsonNode guideNode
     ) {
     /*
-     * [자바 문법] public : 원본 section JSON 노드와 guide JSON 노드를 받아 세분화된 RouteSectionDto 리스트를 반환함.
-     * [자바/스프링/라이브러리 내장 도구(타입)] List<...>, JsonNode (이름 변경 불가)
-     * [내가 지은 이름] buildDetailedSections(함수명), sectionNode, guideNode
+     * [자바 문법]
+     * - public : 다른 패키지에서도 호출 가능한 접근 제어자임.
+     * - List<DirectionsResponseDto.RouteSectionDto> : 반환 리스트 원소를 RouteSectionDto로 제한한 제네릭임.
+     *
+     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
+     * - List (java.util), JsonNode (tools.jackson.databind)
+     *
+     * [프로젝트 내부 참조 타입]
+     * - DirectionsResponseDto.RouteSectionDto
+     *
+     * [메서드명 및 매개변수명]
+     * - 메서드명: buildDetailedSections
+     * - sectionNode : 네이버 응답의 "section" 배열 노드임.
+     * - guideNode : 네이버 응답의 "guide" 배열 노드임.
      */
         List<DirectionsResponseDto.RouteSectionDto> rawSections = new ArrayList<>();
         if (sectionNode != null && sectionNode.isArray()) {
@@ -104,13 +136,37 @@ public class RouteCongestionAnalyzer {
         }
         return detailed;
         /*
-         * [스프링/자바 내장 함수] JsonNode.path(키) : 키가 없어도 NullPointerException 없이 안전하게 MissingNode를 반환함 (형제 함수: .get(키)는 없으면 null 반환).
-         * [정밀 분해 변환 예시]
-         *   원본 section: [서원대로 전체 2000m, 서행(2)]
-         *   + guide 타이밍 역산:
-         *     ├── 구간 0~2 (1200m, 90초 = 48km/h) ──> 원활(1, 초록색 유지)
-         *     └── 구간 2~4 (800m, 240초 = 12km/h) ──> 정체(3, 빨간색 경고)
-         *   (이미 분해된 구간 위에 원본 section을 중복 덧칠하지 않아 원활 초록 구간이 서행으로 오염되지 않음.)
+         * [자바 문법]
+         * - int, long, double, boolean : 기본형 변수 타입 선언임.
+         * - 0L, 3_600_000.0 : long 리터럴과 자릿수 구분 밑줄을 쓴 실수 리터럴임.
+         * - if / else if, 향상된 for(:), 삼항 연산자(? :), (int) 강제 형변환
+         * - new ArrayList<>() : 다이아몬드 연산자로 좌변 제네릭 타입을 컴파일러가 추론함.
+         *
+         * [지역 변수명]
+         * - rawSections, sec, pointIndex, pointCount, secDistance, secName, congestion, speed
+         * - detailed, hasValidGuideTiming, prevIdx, g, toIdx, distMeters, durMs, guideType
+         * - instructions, speedExact, speedKmh, midIdx, matchedSec, secRoadName, expressway, label, raw
+         *
+         * [프로젝트 내부 생성자]
+         * - new DirectionsResponseDto.RouteSectionDto(...) : 구간 혼잡도 DTO 레코드 생성자임.
+         *
+         * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
+         * - new ArrayList<>() : 빈 동적 배열 리스트를 생성함.
+         * - .isArray() (JsonNode) : 대상 JsonNode가 JSON 배열인지 boolean으로 반환함.
+         * - .path("키") (JsonNode) : 키가 없어도 MissingNode를 반환해 NullPointerException을 막음.
+         * - .get("키") (JsonNode 비교) : 키가 없을 때 null을 반환하므로 연쇄 호출 시 예외 위험이 있음.
+         * - .asInt(기본값), .asLong(기본값), .asString(기본값) (JsonNode) : 실패 시 기본값을 반환함.
+         * - .trim() (String), .add(요소) (List) : 공백을 제거하거나 리스트 끝에 요소를 추가함.
+         * - Math.round(double), Math.max(int, int) (java.lang.Math) : 반올림 및 최소 1km/h 보정함.
+         *
+         * [동작 흐름]
+         * - 1단계: sectionNode 순회 -> pointCount > 0이고 pointIndex >= 0인 유효 구간만 rawSections에 적재
+         * - 2단계: guideNode 순회 -> toIdx > prevIdx && distMeters > 0 && durMs > 0 확인
+         *   ├── 평균 시속 계산: (distMeters / 1000.0) / (durMs / 3_600_000.0) -> speedKmh 반올림
+         *   ├── 중앙 점(midIdx)으로 findOverlappingSection 호출 -> 고속도로 판별 -> 혼잡도 분류
+         *   └── speedKmh < 35이면서 원본 혼잡도가 더 높으면 원본 혼잡도 채택 -> detailed에 추가
+         * - 3단계: 유효한 guide 타이밍 없음 -> rawSections 즉시 반환
+         * - 4단계: 겹치지 않는 congestion >= 2 원본 구간 보완 추가 -> detailed 반환
          */
     }
 
@@ -119,8 +175,19 @@ public class RouteCongestionAnalyzer {
             DirectionsResponseDto.RouteSectionDto candidate
     ) {
     /*
-     * [자바 문법] private static boolean : 후보 구간이 이미 세분화된 구간과 좌표 인덱스상 겹치는지 검사함.
-     * [내가 지은 이름] hasOverlappingDetailedSection, detailed, candidate
+     * [자바 문법]
+     * - private static boolean : 클래스 내부 전용 정적 논리 메서드 선언임.
+     *
+     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
+     * - List (java.util)
+     *
+     * [프로젝트 내부 참조 타입]
+     * - DirectionsResponseDto.RouteSectionDto
+     *
+     * [메서드명 및 매개변수명]
+     * - 메서드명: hasOverlappingDetailedSection
+     * - detailed : 이미 세분화된 구간 리스트임.
+     * - candidate : 추가 여부를 판별할 원본 구간 객체임.
      */
         int candStart = candidate.pointIndex();
         int candEnd = candStart + candidate.pointCount();
@@ -133,7 +200,19 @@ public class RouteCongestionAnalyzer {
         }
         return false;
         /*
-         * [수학 원리] 두 선분 [candStart, candEnd]와 [detStart, detEnd]의 교집합 길이가 0보다 크면 겹침(true)으로 판정함.
+         * [자바 문법]
+         * - int, for (:), if, return
+         *
+         * [지역 변수명]
+         * - candStart, candEnd, det, detStart, detEnd
+         *
+         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
+         * - Math.max(int, int), Math.min(int, int) (java.lang.Math) : 두 정수의 최댓값·최솟값을 반환함.
+         *
+         * [동작 흐름]
+         * - 두 구간 [candStart, candEnd]와 [detStart, detEnd] 범위 비교
+         *   ├── Math.max(candStart, detStart) < Math.min(candEnd, detEnd) -> 겹침(true) 반환
+         *   └── 모든 구간과 겹치지 않음 -> false 반환
          */
     }
 
@@ -142,8 +221,19 @@ public class RouteCongestionAnalyzer {
             int targetIdx
     ) {
     /*
-     * [자바 문법] private static : 특정 폴리라인 점 번호(targetIdx)를 감싸고 있는 원본 도로 구간을 찾아 도로명을 가져옴.
-     * [내가 지은 이름] findOverlappingSection, rawSections, targetIdx
+     * [자바 문법]
+     * - private static, int
+     *
+     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
+     * - List (java.util)
+     *
+     * [프로젝트 내부 참조 타입]
+     * - DirectionsResponseDto.RouteSectionDto
+     *
+     * [메서드명 및 매개변수명]
+     * - 메서드명: findOverlappingSection
+     * - rawSections : 원본 도로 구간 목록임.
+     * - targetIdx : 찾을 경로 폴리라인 중앙 점 인덱스임.
      */
         for (DirectionsResponseDto.RouteSectionDto sec : rawSections) {
             int start = sec.pointIndex();
@@ -154,7 +244,16 @@ public class RouteCongestionAnalyzer {
         }
         return null;
         /*
-         * [자바 문법] return null : 일치하는 원본 구간이 없으면 null을 반환함.
+         * [자바 문법]
+         * - for (:), if, 비교 연산자(>=, <=), 논리곱(&&), return null
+         *
+         * [지역 변수명]
+         * - sec, start, end
+         *
+         * [동작 흐름]
+         * - rawSections 순회 -> targetIdx >= start && targetIdx <= end 검사
+         *   ├── 범위 일치 구간 발견 -> 일치한 RouteSectionDto 객체 즉시 반환
+         *   └── 일치 구간 없음 -> null 반환
          */
     }
 
@@ -165,8 +264,15 @@ public class RouteCongestionAnalyzer {
             int speedKmh
     ) {
     /*
-     * [자바 문법] private static boolean : 도로명·안내코드·평균속도를 종합해 고속도로/도시고속화도로 구간인지 판별함.
-     * [내가 지은 이름] isExpresswaySegment, sectionName, instructions, guideType, speedKmh
+     * [자바 문법]
+     * - private static boolean, int
+     *
+     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
+     * - String (java.lang.String)
+     *
+     * [메서드명 및 매개변수명]
+     * - 메서드명: isExpresswaySegment
+     * - sectionName (원본 도로명), instructions (안내 문구), guideType (안내 코드), speedKmh (평균 시속)
      */
         if (speedKmh >= 68 || (guideType >= 50 && guideType <= 53)) {
             return true;
@@ -185,14 +291,30 @@ public class RouteCongestionAnalyzer {
                 || combined.contains("톨게이트")
                 || combined.contains("분기점");
         /*
-         * [핵심 원리] 고속도로는 시속 50km/h라도 평소보다 막히는 '서행'인 반면, 시내 일반도로는 시속 50km/h면 매우 '원활'이므로 기준표를 분리해야 정확함.
+         * [자바 문법]
+         * - if, 논리합(||), 논리곱(&&), 문자열 결합(+), return
+         *
+         * [지역 변수명]
+         * - combined
+         *
+         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
+         * - .contains(CharSequence) (String) : 문자열 안에 특정 단어가 포함되어 있는지 판별함.
+         *
+         * [동작 흐름]
+         * - speedKmh >= 68 또는 guideType이 50~53(고속도로 진출입) -> 즉시 true 반환
+         * - └── 아니면 sectionName + " " + instructions에서 고속도로 키워드 포함 여부 반환
          */
     }
 
     public static int classifyCongestionBySpeed(int speedKmh, boolean expressway) {
     /*
-     * [자바 문법] public static int : 평균 시속(speedKmh)을 혼잡도 코드(1: 원활, 2: 서행, 3: 정체)로 변환함.
-     * [내가 지은 이름] classifyCongestionBySpeed, speedKmh, expressway
+     * [자바 문법]
+     * - public static int, boolean
+     *
+     * [메서드명 및 매개변수명]
+     * - 메서드명: classifyCongestionBySpeed
+     * - speedKmh : 구간 평균 시속(km/h)임.
+     * - expressway : 고속도로·도시고속화도로 여부임.
      */
         if (expressway) {
             if (speedKmh < 40) {
@@ -211,16 +333,27 @@ public class RouteCongestionAnalyzer {
         }
         return 1;
         /*
-         * [속도 기준표 요약]
-         * - 고속도로 : 40 미만=정체(3), 40~69=서행(2), 70 이상=원활(1)
-         * - 일반도로 : 16 미만=정체(3), 16~29=서행(2), 30 이상=원활(1)
+         * [자바 문법]
+         * - if, 비교 연산자(<), return
+         *
+         * [동작 흐름]
+         * - expressway == true (고속도로) -> < 40 정체(3) | < 70 서행(2) | >= 70 원활(1)
+         * - expressway == false (일반도로) -> < 16 정체(3) | < 30 서행(2) | >= 30 원활(1)
          */
     }
 
     private static String resolveSegmentLabel(String sectionName, String instructions) {
     /*
-     * [자바 문법] private static : 교차로 안내 문구("일산로에서 '원주세브란스' 방면 우회전")에서 핵심 도로·교차로 이름만 깔끔히 뽑아냄.
-     * [내가 지은 이름] resolveSegmentLabel, sectionName, instructions
+     * [자바 문법]
+     * - private static
+     *
+     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
+     * - String (java.lang.String)
+     *
+     * [메서드명 및 매개변수명]
+     * - 메서드명: resolveSegmentLabel
+     * - sectionName : 원본 section 도로명임.
+     * - instructions : 교차로 안내 문구임.
      */
         String fromIdxName = "";
         int fromPos = instructions.indexOf("에서 ");
@@ -259,7 +392,22 @@ public class RouteCongestionAnalyzer {
         }
         return "주행 구간";
         /*
-         * [스프링/자바 내장 함수] .indexOf(...), .substring(시작, 끝), .startsWith(...) (이름 변경 불가)
+         * [자바 문법]
+         * - int, char 리터럴('\''), if, 삼항 연산자(? :), 논리 부정 연산자, return
+         *
+         * [지역 변수명]
+         * - fromIdxName, fromPos, quotedName, q1, q2, commaIdx
+         *
+         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
+         * - .indexOf(String/int), .indexOf(int, int) (String) : 첫 위치를 찾으며 없으면 -1을 반환함.
+         * - .substring(int beginIndex, int endIndex) (String) : 시작 이상 끝 미만 부분 문자열을 자름.
+         * - .trim(), .isEmpty(), .equals(Object), .startsWith(String), .contains(CharSequence) (String)
+         *
+         * [동작 흐름]
+         * - 1단계: instructions에서 "에서 " 앞(fromIdxName)과 작은따옴표 안 방면명(quotedName) 추출
+         * - 2단계: sectionName 있음 -> fromIdxName과 다르면 "도로명·교차로명", 같으면 sectionName 반환
+         * - 3단계: sectionName 없음 -> fromIdxName→quotedName -> fromIdxName -> quotedName 순으로 반환
+         * - 4단계: 추출값 모두 없음 -> "목적지" 포함 시 "병원 진입 구간", 그 외 "주행 구간" 반환
          */
     }
 }
