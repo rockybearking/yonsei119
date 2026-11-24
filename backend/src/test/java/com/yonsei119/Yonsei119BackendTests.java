@@ -312,7 +312,7 @@ class Yonsei119BackendTests {
         assertEquals(1, parsed.totalCount());
         assertEquals(1, parsed.items().size());
 
-        Map<String, String> item = parsed.items().getFirst();
+        Map<String, String> item = parsed.items().get(0);
         assertEquals("A2200001", item.get("hpid"));
         assertEquals("-4", item.get("hvec"));
         assertEquals("30", item.get("hvs01"));
@@ -473,7 +473,7 @@ class Yonsei119BackendTests {
 
             EmergencySnapshotDto compactSnap = emergencyApiController.getHospitals(false, true).getBody();
             assertNotNull(compactSnap);
-            HospitalDto compactHospital = compactSnap.hospitals().getFirst();
+            HospitalDto compactHospital = compactSnap.hospitals().get(0);
             assertEquals("-2", compactHospital.beds().get("hvec"));
             assertFalse(compactHospital.basic().containsKey("dutyetc"), "경량 목록 응답에서는 불필요한 장문 원문 태그가 제거되어야 합니다.");
             assertNull(compactHospital.beds().get("hv999_unused"));
@@ -603,8 +603,8 @@ class Yonsei119BackendTests {
         assertEquals(11800, dto.taxiFare());
         assertEquals(3, dto.path().size());
         assertEquals(2, dto.sections().size());
-        assertEquals("서원대로", dto.sections().getFirst().name());
-        assertEquals(2, dto.sections().getFirst().congestion());
+        assertEquals("서원대로", dto.sections().get(0).name());
+        assertEquals(2, dto.sections().get(0).congestion());
         assertEquals("일산로", dto.sections().get(1).name());
         assertEquals(3, dto.sections().get(1).congestion());
         assertFalse(dto.guidePrompts().isEmpty());
@@ -758,8 +758,8 @@ class Yonsei119BackendTests {
         );
         assertEquals(0, dto.code());
         assertEquals(2, dto.alternatives().size());
-        assertEquals("trafast", dto.alternatives().getFirst().option());
-        assertEquals(1200, dto.alternatives().getFirst().tollFare());
+        assertEquals("trafast", dto.alternatives().get(0).option());
+        assertEquals(1200, dto.alternatives().get(0).tollFare());
         assertEquals("traavoidtoll", dto.alternatives().get(1).option());
         assertEquals(0, dto.alternatives().get(1).tollFare());
 
@@ -804,8 +804,8 @@ class Yonsei119BackendTests {
                 """;
         List<GeocodeResponseDto.GeocodeItemDto> geoItems = naverGeocodingService.parseGeocodeJson(sampleGeo);
         assertEquals(1, geoItems.size());
-        assertEquals(37.2808750, geoItems.getFirst().lat(), 0.0001);
-        assertEquals(127.9009998, geoItems.getFirst().lng(), 0.0001);
+        assertEquals(37.2808750, geoItems.get(0).lat(), 0.0001);
+        assertEquals(127.9009998, geoItems.get(0).lng(), 0.0001);
         /*
          * [자바 문법]
          * - 텍스트 블록(""" ... """) : 다중 경로, 역지오코딩, 지오코딩 3종의 JSON 샘플을 작성함.
@@ -957,7 +957,7 @@ class Yonsei119BackendTests {
                 detailedJson, "directions5", "Directions 5", "trafast", "실시간 빠른길"
         );
         assertEquals(2, dto.sections().size());
-        assertEquals(1, dto.sections().getFirst().congestion());
+        assertEquals(1, dto.sections().get(0).congestion());
         assertEquals(3, dto.sections().get(1).congestion());
         /*
          * [자바 문법]
@@ -1033,7 +1033,7 @@ class Yonsei119BackendTests {
             );
 
             EmergencySnapshotDto initialSnapshot = emergencyDataService.mergeDatasetsIntoSnapshot(initialData);
-            HospitalDto first = initialSnapshot.hospitals().getFirst();
+            HospitalDto first = initialSnapshot.hospitals().get(0);
             assertEquals("LEGACY_CODE_01", first.basic().get("phpid"));
             assertTrue(first.regional());
             assertEquals("tertiary", first.type().group());
@@ -1044,7 +1044,7 @@ class Yonsei119BackendTests {
                     "beds", List.of(Map.of("hpid", "A2200001", "hvec", "2"))
             ));
             assertEquals(1, fallbackSnapshot.totalCount());
-            HospitalDto recovered = fallbackSnapshot.hospitals().getFirst();
+            HospitalDto recovered = fallbackSnapshot.hospitals().get(0);
             assertTrue(recovered.regional());
             assertEquals("tertiary", recovered.type().group());
             assertEquals("2", recovered.beds().get("hvec"));
@@ -1194,9 +1194,9 @@ class Yonsei119BackendTests {
                 true, true, true, false, false, "stroke", "optimal", "trafast"
         );
         assertEquals(1, optimalRanks.size(), "뇌출혈 수용 불가 공지가 뜬 포화 병원은 stroke 증상 필터에서 자동 제외되어야 합니다.");
-        assertEquals("H_AVAILABLE", optimalRanks.getFirst().id());
-        assertEquals("여유", optimalRanks.getFirst().availabilityStatus());
-        assertFalse(optimalRanks.getFirst().hasBlockingNotice());
+        assertEquals("H_AVAILABLE", optimalRanks.get(0).id());
+        assertEquals("여유", optimalRanks.get(0).availabilityStatus());
+        assertFalse(optimalRanks.get(0).hasBlockingNotice());
 
         List<HospitalEtaRankDto> generalOptimal = naverDirectionsService.rankHospitalsByDrivingTime(
                 List.of(saturatedCloser, availableSlightlyFarther),
@@ -1204,7 +1204,7 @@ class Yonsei119BackendTests {
                 true, true, true, false, false, "all", "optimal", "trafast"
         );
         assertEquals(2, generalOptimal.size());
-        assertEquals("H_AVAILABLE", generalOptimal.getFirst().id(), "수용 최적 모드에서는 초과수용(-5석) 병원 대신 여유(8석) 병원이 1위가 되어야 합니다.");
+        assertEquals("H_AVAILABLE", generalOptimal.get(0).id(), "수용 최적 모드에서는 초과수용(-5석) 병원 대신 여유(8석) 병원이 1위가 되어야 합니다.");
         assertEquals("초과수용", generalOptimal.get(1).availabilityStatus());
         assertTrue(generalOptimal.get(1).hasBlockingNotice());
         /*
@@ -1467,8 +1467,9 @@ class Yonsei119BackendTests {
                     HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/user-features.js")).GET().build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
             ).body();
-            assertTrue(userFeaturesJs.contains("toggleHospitalSpeech"));
-            assertTrue(userFeaturesJs.contains("stopHospitalSpeech"));
+            assertFalse(userFeaturesJs.contains("toggleHospitalSpeech"));
+            assertFalse(userFeaturesJs.contains("stopHospitalSpeech"));
+            assertTrue(userFeaturesJs.contains("resolveUniversityHospitalLogo"));
             assertFalse(userFeaturesJs.contains("recordRecentHospital"));
             assertFalse(userFeaturesJs.contains("renderQuickHospitalsBar"));
             assertFalse(userFeaturesJs.contains("toggleFavoriteHospital"));
@@ -1481,10 +1482,17 @@ class Yonsei119BackendTests {
                     HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/sw.js")).GET().build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
             ).body();
-            assertTrue(swJs.contains("yonsei119-pwa-v261124-r5"));
+            assertTrue(swJs.contains("yonsei119-pwa-v261125-r2"));
             assertTrue(swJs.contains("'/js/user-features.js'"));
             assertTrue(swJs.contains("isValidAssetResponse"));
             assertTrue(swJs.contains("pathname === '/api/config'"));
+
+            HttpResponse<byte[]> yonseiLogoRes = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/Assets/universities/yonsei.svg")).GET().build(),
+                    HttpResponse.BodyHandlers.ofByteArray()
+            );
+            assertEquals(200, yonseiLogoRes.statusCode());
+            assertTrue(yonseiLogoRes.body().length > 1000);
 
             String mapEngineJs = client.send(
                     HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/map-engine.js")).GET().build(),

@@ -75,7 +75,6 @@ export const state = {
     hospitals: [],
     markerMap: new Map(),
     detailCache: new Map(),
-    speakingHospitalId: null,
     selected: null,
     sources: {},
     controller: null,

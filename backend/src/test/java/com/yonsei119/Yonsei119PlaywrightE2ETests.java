@@ -191,9 +191,9 @@ class Yonsei119PlaywrightE2ETests {
     }
 
     @Test
-    @DisplayName("E2E 2. 툴바 원형 버튼 크기·정렬, 음성안내, ETA 추천순위가 동작하고 제거된 필터·최근조회 UI가 없어야 한다")
-    void testSheetTtsCircleButtonSizeAndEtaRanking() {
-        emergencyDataService.setCachedSnapshotForTest(buildTwoHospitalSnapshot());
+    @DisplayName("E2E 2. 툴바 원형 버튼 규격, 대학교병원 정적 배경 로고(스크롤 고정·테마·의료원 제외), ETA 추천순위가 동작하고 음성안내 UI가 없어야 한다")
+    void testUniversityWatermarkStaticScrollMedicalExclusionAndEtaRanking() {
+        emergencyDataService.setCachedSnapshotForTest(buildThreeHospitalSnapshot());
 
         try (BrowserContext context = browser.newContext(
                 new Browser.NewContextOptions().setViewportSize(1280, 800)
@@ -210,12 +210,13 @@ class Yonsei119PlaywrightE2ETests {
 
             page.navigate("http://localhost:" + port + "/");
             dismissNoticeIfOpen(page);
-            page.waitForFunction("() => (window.__YONSEI119_DIAGNOSTICS__?.getState()?.hospitals?.length || 0) === 2");
+            page.waitForFunction("() => (window.__YONSEI119_DIAGNOSTICS__?.getState()?.hospitals?.length || 0) === 3");
 
             assertEquals(0, page.locator("#bed-alert-toggle").count());
             assertEquals(0, page.locator("#lang-select").count());
             assertEquals(0, page.locator("#symptom-chips-bar").count());
             assertEquals(0, page.locator("#quick-hospitals-bar").count());
+            assertEquals(0, page.locator("#sheet-tts-btn").count());
 
             BoundingBox radiusBox = page.locator("#radius-button").boundingBox();
             BoundingBox locationBox = page.locator("#location-button").boundingBox();
@@ -237,8 +238,70 @@ class Yonsei119PlaywrightE2ETests {
             resultBtn.click();
 
             assertThat(page.locator("#sheet")).hasClass(Pattern.compile("\\bopen\\b"));
-            assertThat(page.locator("#sheet-tts-btn")).isVisible();
-            assertThat(page.locator("#sheet-tts-btn")).containsText("음성 안내");
+            assertThat(page.locator("#sheet")).hasClass(Pattern.compile("\\bhas-univ-logo\\b"));
+            assertEquals(0, page.locator("#sheet-tts-btn").count());
+            assertThat(page.locator("#sheet-univ-watermark")).isVisible();
+            page.waitForFunction("() => document.getElementById('sheet-univ-logo')?.complete && document.getElementById('sheet-univ-logo')?.naturalWidth > 0");
+            assertTrue(
+                    String.valueOf(page.locator("#sheet-univ-logo").getAttribute("src")).contains("universities/yonsei.svg"),
+                    "연세대학교 로고 배경이 연결되어야 합니다."
+            );
+
+            String safetyBgDark = (String) page.evaluate(
+                    "() => getComputedStyle(document.querySelector('#sheet .safety-note')).backgroundColor"
+            );
+            assertTrue(
+                    safetyBgDark.contains("120, 53, 15"),
+                    "다크모드 대학병원 시트에서도 상단 주의 배너(.safety-note)가 어두운 배경을 유지해야 합니다: " + safetyBgDark
+            );
+
+            BoundingBox beforeScrollLogoBox = page.locator("#sheet-univ-logo").boundingBox();
+            assertNotNull(beforeScrollLogoBox);
+            page.evaluate("""
+                    () => {
+                        const scroller = document.querySelector('#sheet .sheet-scroll');
+                        if (scroller) {
+                            scroller.scrollTop = 360;
+                        }
+                    }
+                    """);
+            Number scrolledTop = (Number) page.evaluate("() => document.querySelector('#sheet .sheet-scroll')?.scrollTop || 0");
+            assertTrue(scrolledTop.doubleValue() > 100, "시트 내부 스크롤이 이동해야 합니다: " + scrolledTop);
+            BoundingBox afterScrollLogoBox = page.locator("#sheet-univ-logo").boundingBox();
+            assertNotNull(afterScrollLogoBox);
+            assertTrue(
+                    Math.abs(beforeScrollLogoBox.y - afterScrollLogoBox.y) < 1.0,
+                    "스크롤 중에도 대학교 배경 로고 Y 위치가 정적으로 유지되어야 합니다."
+            );
+
+            page.locator("#sheet-close").click();
+            assertThat(page.locator("#sheet")).not().hasClass(Pattern.compile("\\bopen\\b"));
+
+            page.locator("#theme-toggle").click();
+            assertEquals("light", page.locator("html").getAttribute("data-theme"));
+
+            page.locator("#keyword").fill("연세세브란스");
+            Locator lightUnivBtn = page.locator("#search-results .result-button").first();
+            assertThat(lightUnivBtn).containsText("연세세브란스병원");
+            lightUnivBtn.click();
+
+            assertThat(page.locator("#sheet")).hasClass(Pattern.compile("\\bopen\\b"));
+            assertThat(page.locator("#sheet")).hasClass(Pattern.compile("\\bhas-univ-logo\\b"));
+            assertThat(page.locator("#sheet-univ-watermark")).isVisible();
+            assertTrue(
+                    String.valueOf(page.locator("#sheet-univ-logo").getAttribute("src")).contains("universities/yonsei.svg"),
+                    "라이트 모드에서도 연세세브란스병원에 연세대학교 로고가 표시되어야 합니다."
+            );
+            page.locator("#sheet-close").click();
+
+            page.locator("#keyword").fill("서울의료원");
+            Locator medicalBtn = page.locator("#search-results .result-button").first();
+            assertThat(medicalBtn).containsText("서울특별시서울의료원");
+            medicalBtn.click();
+
+            assertThat(page.locator("#sheet")).hasClass(Pattern.compile("\\bopen\\b"));
+            assertThat(page.locator("#sheet")).not().hasClass(Pattern.compile("\\bhas-univ-logo\\b"));
+            assertThat(page.locator("#sheet-univ-watermark")).isHidden();
 
             page.locator("#sheet-close").click();
             assertThat(page.locator("#sheet")).not().hasClass(Pattern.compile("\\bopen\\b"));
@@ -254,7 +317,7 @@ class Yonsei119PlaywrightE2ETests {
         }
     }
 
-    private EmergencySnapshotDto buildTwoHospitalSnapshot() {
+    private EmergencySnapshotDto buildThreeHospitalSnapshot() {
         Map<String, List<Map<String, String>>> rawDatasets = Map.of(
                 "list", List.of(
                         Map.of(
@@ -270,20 +333,30 @@ class Yonsei119PlaywrightE2ETests {
                                 "wgs84lat", "37.5680",
                                 "wgs84lon", "126.9680",
                                 "dutyaddr", "서울특별시 서대문구 연세로 50-1"
+                        ),
+                        Map.of(
+                                "hpid", "A1100035",
+                                "dutyname", "서울특별시서울의료원",
+                                "wgs84lat", "37.5710",
+                                "wgs84lon", "126.9760",
+                                "dutyaddr", "서울특별시 중랑구 신내로 156"
                         )
                 ),
                 "basic", List.of(
                         Map.of("hpid", "A2200001", "dutyemclsname", "권역응급의료센터", "dutytel1", "033-741-0114", "dutytel3", "033-741-1119"),
-                        Map.of("hpid", "A1100001", "dutyemclsname", "권역응급의료센터", "dutytel1", "02-2228-0114", "dutytel3", "02-2228-8888")
+                        Map.of("hpid", "A1100001", "dutyemclsname", "권역응급의료센터", "dutytel1", "02-2228-0114", "dutytel3", "02-2228-8888"),
+                        Map.of("hpid", "A1100035", "dutyemclsname", "권역응급의료센터", "dutytel1", "02-2276-7000", "dutytel3", "02-2276-7119")
                 ),
                 "beds", List.of(
                         Map.of("hpid", "A2200001", "hvec", "0", "hvs01", "30"),
-                        Map.of("hpid", "A1100001", "hvec", "6", "hvs01", "40")
+                        Map.of("hpid", "A1100001", "hvec", "6", "hvs01", "40"),
+                        Map.of("hpid", "A1100035", "hvec", "4", "hvs01", "25")
                 ),
                 "messages", List.of(),
                 "severe", List.of(
                         Map.of("hpid", "A2200001", "mkioskty1", "Y", "mkioskty28", "Y"),
-                        Map.of("hpid", "A1100001", "mkioskty1", "Y")
+                        Map.of("hpid", "A1100001", "mkioskty1", "Y"),
+                        Map.of("hpid", "A1100035", "mkioskty1", "Y")
                 ),
                 "traumaList", List.of(),
                 "traumaBasic", List.of()
@@ -308,7 +381,10 @@ class Yonsei119PlaywrightE2ETests {
     }
 
     private static void recordUnexpectedPageError(String error, List<String> target) {
-        if (error.contains("oapi.map.naver.com") && error.contains("removeDOMListener")) {
+        if (error.contains("oapi.map.naver.com")
+                && (error.contains("removeDOMListener")
+                || error.contains("_isGLModeActive")
+                || error.contains("hasValue"))) {
             return;
         }
         target.add(error);

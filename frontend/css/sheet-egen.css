@@ -13,9 +13,10 @@
     bottom: 0;
     display: flex;
     flex-direction: column;
+    isolation: isolate;
     width: min(1060px, 100vw);
     max-width: 100%;
-    overflow-x: hidden;
+    overflow: hidden;
     background: #f2f6fc;
     box-shadow: -12px 0 42px rgba(16, 35, 59, 0.2);
     transform: translateX(102%);
@@ -60,7 +61,42 @@
  *   └── 모바일·터치 : 640px 이하 또는 터치 기기에서 하단 바텀시트로 전환
  */
 
+.sheet-univ-watermark {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: grid;
+    place-items: center;
+    padding: 96px 32px 32px;
+    pointer-events: none;
+    user-select: none;
+    overflow: hidden;
+}
+
+.sheet-univ-logo {
+    width: min(56%, 350px);
+    height: min(56%, 350px);
+    max-width: 350px;
+    max-height: 350px;
+    object-fit: contain;
+    opacity: 0.22;
+    filter: saturate(0.95) contrast(0.98);
+    transform: translateZ(0);
+}
+
+.sheet.half-peek .sheet-univ-watermark {
+    opacity: 0;
+}
+
+@media (forced-colors: active) {
+    .sheet-univ-watermark {
+        display: none;
+    }
+}
+
 .sheet-drag-handle {
+    position: relative;
+    z-index: 1;
     display: none;
     flex: 0 0 auto;
     justify-content: center;
@@ -103,6 +139,8 @@
  */
 
 .sheet-header {
+    position: relative;
+    z-index: 1;
     flex: 0 0 auto;
     display: flex;
     justify-content: space-between;
@@ -203,6 +241,8 @@
  */
 
 .sheet-scroll {
+    position: relative;
+    z-index: 1;
     flex: 1 1 auto;
     min-height: 0;
     padding: 16px 20px calc(28px + env(safe-area-inset-bottom, 0px));
@@ -210,6 +250,61 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+}
+
+.sheet.has-univ-logo .sheet-header {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 30%, rgba(237, 245, 255, 0.86));
+}
+
+.sheet.has-univ-logo .safety-note {
+    background: rgba(255, 249, 236, 0.82);
+}
+
+.sheet.has-univ-logo .detail-section,
+.sheet.has-univ-logo .developer-mode {
+    background: rgba(255, 255, 255, 0.58);
+}
+
+.sheet.has-univ-logo .directions-section {
+    background: linear-gradient(180deg, rgba(246, 254, 249, 0.62) 0%, rgba(255, 255, 255, 0.58) 100%);
+}
+
+.sheet.has-univ-logo .egen-table-card,
+.sheet.has-univ-logo .severe-cat-box,
+.sheet.has-univ-logo .egen-matrix-grid,
+.sheet.has-univ-logo .equipment-matrix-grid,
+.sheet.has-univ-logo .severe-matrix-grid {
+    background: transparent;
+}
+
+.sheet.has-univ-logo .egen-subgroup-header,
+.sheet.has-univ-logo .severe-cat-header {
+    background: rgba(248, 250, 252, 0.62);
+}
+
+.sheet.has-univ-logo .egen-cell,
+.sheet.has-univ-logo .equipment-cell,
+.sheet.has-univ-logo .raw-pair,
+.sheet.has-univ-logo .raw-msg-card {
+    background: rgba(255, 255, 255, 0.54);
+}
+
+.sheet.has-univ-logo .message-card {
+    background: rgba(248, 250, 252, 0.6);
+}
+
+.sheet.has-univ-logo .message-card.critical {
+    background: rgba(255, 243, 244, 0.7);
+}
+
+.sheet.has-univ-logo .message-card.urgent {
+    background: rgba(255, 249, 235, 0.7);
+}
+
+.sheet.has-univ-logo .directions-kpi-card,
+.sheet.has-univ-logo .directions-alt-btn:not(.is-active),
+.sheet.has-univ-logo .directions-traffic-summary {
+    background: rgba(255, 255, 255, 0.58);
 }
 
 .safety-note {
@@ -262,7 +357,7 @@
 }
 
 .navigation-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .contact-actions a,
@@ -323,16 +418,6 @@
 
 .map-button.share-hospital-btn {
     background: #475569;
-    color: #ffffff;
-}
-
-.map-button.tts-hospital-btn {
-    background: #0f766e;
-    color: #ffffff;
-}
-
-.map-button.tts-hospital-btn[aria-pressed="true"] {
-    background: #dc2626;
     color: #ffffff;
 }
 /*

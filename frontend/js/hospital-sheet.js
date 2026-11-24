@@ -46,8 +46,7 @@ import {
     populateWaypointSelect
 } from './directions-eta.js';
 import {
-    stopHospitalSpeech,
-    toggleHospitalSpeech
+    resolveUniversityHospitalLogo
 } from './user-features.js';
 /*
  * [JS 문법]
@@ -71,6 +70,41 @@ import {
  */
 
 let marqueeTimerId = null;
+let watermarkErrorBound = false;
+
+function syncSheetUniversityWatermark(hospital) {
+    const sheet = byId('sheet');
+    const wrap = byId('sheet-univ-watermark');
+    const img = byId('sheet-univ-logo');
+    if (!sheet || !wrap || !img) {
+        return;
+    }
+
+    if (!watermarkErrorBound) {
+        watermarkErrorBound = true;
+        img.addEventListener('error', () => {
+            sheet.classList.remove('has-univ-logo');
+            delete sheet.dataset.univCode;
+            wrap.hidden = true;
+        });
+    }
+
+    const logoInfo = resolveUniversityHospitalLogo(hospital);
+    if (!logoInfo) {
+        sheet.classList.remove('has-univ-logo');
+        delete sheet.dataset.univCode;
+        wrap.hidden = true;
+        img.removeAttribute('src');
+        return;
+    }
+
+    sheet.classList.add('has-univ-logo');
+    sheet.dataset.univCode = logoInfo.code;
+    if (img.getAttribute('src') !== logoInfo.assetPath) {
+        img.setAttribute('src', logoInfo.assetPath);
+    }
+    wrap.hidden = false;
+}
 
 function scheduleMarqueeRefresh() {
     if (marqueeTimerId !== null) {
@@ -441,19 +475,6 @@ function renderContacts(hospital) {
     shareBtn.title = '가족·동승자에게 이 병원의 실시간 현황 직통 링크를 공유합니다';
     shareBtn.addEventListener('click', () => shareHospital(hospital));
     maps.append(shareBtn);
-
-    const isSpeaking = state.speakingHospitalId === hospital.id;
-    const ttsBtn = node(
-        'button',
-        'map-button tts-hospital-btn',
-        isSpeaking ? '⏹ 음성 중지' : '🔊 음성 안내'
-    );
-    ttsBtn.id = 'sheet-tts-btn';
-    ttsBtn.type = 'button';
-    ttsBtn.setAttribute('aria-pressed', String(isSpeaking));
-    ttsBtn.title = '병원 요약·병상 현황을 음성으로 읽어 줍니다';
-    ttsBtn.addEventListener('click', () => toggleHospitalSpeech(hospital));
-    maps.append(ttsBtn);
 
     target.replaceChildren(phones, maps);
 }
@@ -1673,9 +1694,6 @@ export function openHospital(hospital, focus = true, options = {}) {
     }
 
     const isDifferentHospital = state.selected?.id !== hospital.id;
-    if (isDifferentHospital && state.speakingHospitalId) {
-        stopHospitalSpeech();
-    }
     const devModeEl = byId('developer-mode');
     if (isDifferentHospital && devModeEl) {
         devModeEl.open = false;
@@ -1684,6 +1702,7 @@ export function openHospital(hospital, focus = true, options = {}) {
     }
 
     state.selected = hospital;
+    syncSheetUniversityWatermark(hospital);
     const dirClearBtn = byId('directions-clear-btn');
     if (dirClearBtn) {
         dirClearBtn.hidden = !state.activeRoute;
@@ -1792,7 +1811,6 @@ export function openHospital(hospital, focus = true, options = {}) {
  */
 
 export function closeSheet() {
-    stopHospitalSpeech();
     if (marqueeTimerId !== null) {
         clearTimeout(marqueeTimerId);
         marqueeTimerId = null;
@@ -1811,6 +1829,7 @@ export function closeSheet() {
     byId('sheet-dim').hidden = true;
 
     state.selected = null;
+    syncSheetUniversityWatermark(null);
     sheet.inert = true;
     setBackgroundInert(false);
 

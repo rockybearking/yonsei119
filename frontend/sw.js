@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yonsei119-pwa-v261124-r5';
+const CACHE_NAME = 'yonsei119-pwa-v261125-r2';
 const APP_SHELL_ASSETS = [
     '/',
     '/index.html',

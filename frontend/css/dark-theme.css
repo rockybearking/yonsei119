@@ -299,6 +299,69 @@ body.dark-mode .sheet {
     box-shadow: 0 32px 90px rgba(0, 0, 0, 0.75);
 }
 
+body.dark-mode .sheet-univ-logo {
+    opacity: 0.25;
+    filter: invert(0.92) hue-rotate(180deg) saturate(1.18) brightness(1.12);
+}
+
+body.dark-mode .sheet.has-univ-logo .sheet-header {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.88) 30%, rgba(23, 37, 84, 0.84));
+}
+
+body.dark-mode .sheet.has-univ-logo .safety-note {
+    background: rgba(120, 53, 15, 0.26);
+    border-color: rgba(245, 158, 11, 0.42);
+    color: #fcd34d;
+}
+
+body.dark-mode .sheet.has-univ-logo .detail-section,
+body.dark-mode .sheet.has-univ-logo .developer-mode {
+    background: rgba(17, 24, 39, 0.56);
+}
+
+body.dark-mode .sheet.has-univ-logo .directions-section {
+    background: linear-gradient(180deg, rgba(6, 78, 59, 0.22) 0%, rgba(17, 24, 39, 0.56) 100%);
+}
+
+body.dark-mode .sheet.has-univ-logo .egen-table-card,
+body.dark-mode .sheet.has-univ-logo .severe-cat-box,
+body.dark-mode .sheet.has-univ-logo .egen-matrix-grid,
+body.dark-mode .sheet.has-univ-logo .equipment-matrix-grid,
+body.dark-mode .sheet.has-univ-logo .severe-matrix-grid {
+    background: transparent;
+}
+
+body.dark-mode .sheet.has-univ-logo .egen-subgroup-header,
+body.dark-mode .sheet.has-univ-logo .severe-cat-header {
+    background: rgba(23, 32, 51, 0.62);
+}
+
+body.dark-mode .sheet.has-univ-logo .egen-cell,
+body.dark-mode .sheet.has-univ-logo .equipment-cell,
+body.dark-mode .sheet.has-univ-logo .raw-pair,
+body.dark-mode .sheet.has-univ-logo .raw-msg-card,
+body.dark-mode .sheet.has-univ-logo .message-card {
+    background: rgba(30, 41, 59, 0.5);
+}
+
+body.dark-mode .sheet.has-univ-logo .message-card.critical {
+    background: rgba(127, 29, 29, 0.32);
+}
+
+body.dark-mode .sheet.has-univ-logo .message-card.urgent {
+    background: rgba(120, 53, 15, 0.32);
+}
+
+body.dark-mode .sheet.has-univ-logo .directions-action-btn:not(.primary),
+body.dark-mode .sheet.has-univ-logo .directions-kpi-card,
+body.dark-mode .sheet.has-univ-logo .directions-alt-btn:not(.is-active) {
+    background: rgba(30, 41, 59, 0.54);
+}
+
+body.dark-mode .sheet.has-univ-logo .directions-traffic-summary {
+    background: rgba(15, 23, 42, 0.52);
+}
+
 body.dark-mode .sheet-drag-handle span {
     background: #475569;
 }

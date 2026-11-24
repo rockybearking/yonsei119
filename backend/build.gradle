@@ -86,7 +86,7 @@ tasks.register('copyFrontendToStatic', Copy) {
         exclude '**/.DS_Store', '**/Thumbs.db', 'Assets/**'
     }
     from('../frontend/Assets') {
-        include '공공데이터포탈_logo.png'
+        include '공공데이터포탈_logo.png', 'universities/**'
         into 'Assets'
     }
     into layout.buildDirectory.dir('resources/main/static')

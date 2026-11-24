@@ -64,7 +64,7 @@
 
 | 영역 | 기준 경로 | 기술 구성 | 핵심 책임 |
 | :---: | :--- | :--- | :--- |
-| **클라이언트 웹 · PWA** | `frontend/` | HTML5 · 8 CSS · 11 ES Modules · Service Worker | 네이버 지도 v3 관제 UI, 병상·질환 인스펙션, 음성 안내, 오프라인 앱 쉘 폴백 |
+| **클라이언트 웹 · PWA** | `frontend/` | HTML5 · 8 CSS · 11 ES Modules · Service Worker | 네이버 지도 v3 관제 UI, 병상·질환 인스펙션, 대학병원 배경 로고 워터마크, 오프라인 앱 쉘 폴백 |
 | **백엔드 API · 수집 엔진** | `backend/src/main/` | Java 27.0.1.1 · Spring Boot 4.2.0 · Actuator | NEMC 7대 OpenAPI 병렬 수집, 메모리 캐시·사전 직렬화 ETag, Directions/Geocoding 프록시, 보안 헤더·레이트 리미트 |
 | **자동화 검증 스위트** | `backend/src/test/` | JUnit 5 · MockMvc · Playwright Chromium | 백엔드 API·캐시·보안 회귀 테스트 19건 및 실브라우저 E2E 테스트 2건 |
 | **빌드 · 컨테이너 · 배포** | 루트 설정 파일 | Gradle 9.9.2 · Foojay JDK 27 · Docker | 단일 JAR(`yonsei119.jar`) 패키징, 경량 멀티스테이지 JRE 이미지 빌드, Render 자동 배포 |
@@ -82,7 +82,7 @@
 | **스타일시트 (`css/`)** | `directions-eta.css`, `dialogs-toast.css`, `dark-theme.css`, `responsive.css` | 주행 경로 배너·ETA 카드, 모달·토스트, 다크 관제 테마, 모바일 반응형 뷰포트 분기 |
 | **초기화 · 상태 (`js/`)** | `theme-init.js`, `constants.js`, `state.js`, `utils.js`, `app.js` | 페인트 전 다크모드 초기화, NEMC 필드 사전, 전역 상태 store, 결측/초과수용 판별, 앱 부트스트랩 |
 | **지도 · 탐색 (`js/`)** | `map-engine.js`, `markers-cluster.js`, `search-controls.js` | 네이버 지도 v3 엔진·현위치 탐색, 종별 클러스터 마커·반경 원, 키워드·주소 검색 제어 |
-| **상세 · 경로 (`js/`)** | `hospital-sheet.js`, `directions-eta.js`, `user-features.js` | 병원 상세 시트·개발자 모드 원시 인스펙터, Directions 5/15 경로선·ETA 순위, Web Speech 한국어 음성 안내 |
+| **상세 · 경로 (`js/`)** | `hospital-sheet.js`, `directions-eta.js`, `user-features.js` | 병원 상세 시트·대학병원 정적 배경 로고·개발자 모드 원시 인스펙터, Directions 5/15 경로선·ETA 순위 |
 
 </details>
 
@@ -382,10 +382,10 @@ if (current < 0) {
 ### 6. 엄격한 CSP 보안 헤더 · IP 레이트 리미터 · Playwright 실브라우저 E2E
 * **Content Security Policy (`SecurityHeadersFilter`)**: 네이버 지도 SDK·WebGL 스타일·한글 웹폰트·워커(`blob:`) 출처만 명시적으로 허용하고 HTML 인라인 이벤트 핸들러를 제거해 XSS 방어를 강화했습니다.
 * **IP 토큰 버킷 레이트 리미터 (`ApiRateLimitFilter`)**: 네이버 유료 API를 대리 호출하는 `/api/directions*`, `/api/geocode*` 엔드포인트에 기본 분당 60회 제한(`X-RateLimit-*`, `429 Too Many Requests` + `Retry-After`)을 적용합니다.
-* **Playwright 실브라우저 E2E (`Yonsei119PlaywrightE2ETests`)**: 실제 Chromium에서 Render `503` 지연 복구, 초기 다크모드, CSP 무위반, 툴바 버튼 규격, 음성 안내·ETA 순위 흐름을 자동 검증합니다.
+* **Playwright 실브라우저 E2E (`Yonsei119PlaywrightE2ETests`)**: 실제 Chromium에서 Render `503` 지연 복구, 초기 다크모드, CSP 무위반, 툴바 버튼 규격, 대학병원 배경 로고·ETA 순위 흐름을 자동 검증합니다.
 
-### 7. 접근성 음성 안내 (Web Speech TTS)
-* **음성 요약 (`#sheet-tts-btn`)**: 상세 시트 내 `🔊 음성 안내` 버튼으로 핵심 응급실 병상·직선거리·진료 공지 건수·연락처 요약을 한국어로 낭독합니다.
+### 7. 전국 대학교병원 정적 배경 로고 워터마크
+* **소속 대학교 엠블럼 배경 (`#sheet-univ-watermark`)**: 전국 대학교병원 및 상급종합병원(의료원 제외) 상세 시트를 열면 소속 대학교 로고가 가장 뒤 배경에 다크·라이트 테마 맞춤 투명도로 정적 배치되어 스크롤 시에도 흔들림 없이 유지됩니다.
 
 ### 8. 로컬 실행 환경 설정 (`.env` / `.env.backup`)
 1. 프로젝트 루트의 `.env`(백업본 `.env.backup`) 파일에 `NEMC_API_SERVICE_KEY`와 `NAVER_MAP_CLIENT_SECRET`을 입력합니다. (`.gitignore`에 등록되어 Git에 커밋되지 않습니다.)
