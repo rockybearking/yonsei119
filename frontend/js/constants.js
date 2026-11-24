@@ -56,56 +56,6 @@ export const CAN_USE_CSS_TRANSLATE =
  *   └── `CAN_USE_CSS_TRANSLATE === false` ──> 구형 엔진 호환용 `style.left`·`style.top` 폴백
  */
 
-export const SYMPTOM_PRESETS = [
-    { key: 'all', label: '전체 기관', title: '종별 체크박스에 해당하는 모든 응급의료기관 표시' },
-    { key: 'pediatric', label: '소아응급', title: '소아응급 병상(hv28 등) 여유 또는 영유아 중증질환 수용 가능 병원' },
-    { key: 'stroke', label: '뇌졸중·뇌출혈', title: '뇌경색 재관류(mkioskty2) 또는 뇌출혈 수술(mkioskty3·4) 수용 가능 병원' },
-    { key: 'cardiac', label: '흉통·심근경색', title: '심근경색 재관류(mkioskty1) 또는 흉·복부 대동맥응급(mkioskty5·6) 수용 가능 병원' },
-    { key: 'trauma', label: '중증외상·접합', title: '권역외상센터·외상소생실(hv60) 가용 또는 사지접합(mkioskty20·21) 수용 가능 병원' },
-    { key: 'obstetrics', label: '산부인과·분만', title: '분만실(hv42) 가용 또는 산부인과 응급수술(mkioskty16~18) 수용 가능 병원' },
-    { key: 'burn', label: '중증화상', title: '화상 중환자실·처치실(hv8·hv43) 또는 중증화상 전문치료(mkioskty19) 수용 가능 병원' },
-    { key: 'dialysis', label: '응급투석', title: 'CRRT 장비 가용 또는 응급 혈액투석(mkioskty22·23) 수용 가능 병원' }
-];
-/*
- * [JS 문법]
- * - export const / 배열 리터럴 `[ ... ]` / 객체 리터럴 `{ ... }` : 8개 항목 메타데이터를 배열로 내보냄.
- *
- * [프로젝트 상수명 및 속성명]
- * - 상수명 : `SYMPTOM_PRESETS` (응급 증상 및 상황별 빠른 필터 칩 정의 배열).
- * - 객체 속성명 :
- *   · `key` : 필터 식별 코드(`'all'`, `'pediatric'`, `'stroke'`, `'cardiac'` 등).
- *   · `label` : 화면 버튼에 표시할 짧은 한글 라벨.
- *   · `title` : 마우스를 올렸을 때 보여 줄 툴팁 설명 문자열.
- *
- * [동작 흐름]
- * - UI 생성 : `SYMPTOM_PRESETS` ──> `search-controls.js:renderSymptomChips()` ──> `#symptom-chips-bar` 버튼 생성
- * - 양쪽 규칙 일치 : 각 `key` ──> `utils.js:matchesSymptomPresetClient()` & 백엔드 `HospitalRecommendationScorer` 공유
- */
-
-export const EQUIPMENT = {
-    hvamyn: '구급차',
-    hvangioayn: '혈관촬영기',
-    hvcrrtayn: '지속적 신대체요법(CRRT)',
-    hvctayn: 'CT',
-    hvecmoayn: 'ECMO',
-    hvhypoayn: '중심체온조절유도기(저체온치료)',
-    hvincuayn: '인큐베이터',
-    hvmriayn: 'MRI',
-    hvoxyayn: '고압산소치료기',
-    hvventiayn: '인공호흡기 일반',
-    hvventisoayn: '인공호흡기 조산아'
-};
-/*
- * [JS 문법]
- * - export const / 객체 리터럴 `{ 키: 값 }` : 영문 필드명과 한글 명칭을 1:1 키-값 쌍으로 묶은 사전임.
- *
- * [프로젝트 상수명]
- * - `EQUIPMENT` : 국립중앙의료원 API의 11종 특수 장비 필드(`hv*ayn`)를 한글명으로 바꾸는 사전임.
- *
- * [동작 흐름]
- * - 흐름 : `EQUIPMENT` ──> `API_FIELD_LABELS`에 전개 병합 ──> `utils.js:fieldLabel()` 조회 ──> 개발자 모드 한글 병기
- */
-
 export const HV_LABELS = {
     hv1: '예비항목2',
     hv2: '[중환자실] 내과',
@@ -233,7 +183,6 @@ export const HVS_LABELS = {
 export const API_FIELD_LABELS = {
     ...HV_LABELS,
     ...HVS_LABELS,
-    ...EQUIPMENT,
     hvec: '일반(응급실 일반병상)',
     hvoc: '[기타] 수술실',
     hvcc: '[중환자실] 신경과',
@@ -262,8 +211,7 @@ export const API_FIELD_LABELS = {
  *   · 주의 : 뒤에 선언한 같은 이름의 키가 앞선 값을 덮어씀.
  *
  * [프로젝트 상수명]
- * - `API_FIELD_LABELS` : `HV_LABELS`·`HVS_LABELS`·`EQUIPMENT`와 기본 병상·입력일시(`hvidate`)·당직의(`hvdnm`)를 합친 마스터 사전임.
- *   · 뒤에 다시 선언한 `hv*ayn` 키는 `(가/부)` 표기를 보강하려고 앞선 `EQUIPMENT` 값을 덮어씀.
+ * - `API_FIELD_LABELS` : `HV_LABELS`·`HVS_LABELS`와 기본 병상·장비(`hv*ayn`)·입력일시(`hvidate`)·당직의(`hvdnm`)를 합친 마스터 사전임.
  *
  * [동작 흐름]
  * - 흐름 : `utils.js:fieldLabel(key)` ──> 소문자 변환 후 `API_FIELD_LABELS[key]` 조회 ──> `hospital-sheet.js:renderRawBeds()` ──> `#all-beds` 렌더링

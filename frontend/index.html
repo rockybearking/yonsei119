@@ -89,10 +89,10 @@
 
     <!--suppress JSUnresolvedLibraryURL -->
     <link
-            rel="preload"
+            id="nanum-webfont-link"
+            rel="stylesheet"
             href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square-neo.css"
-            as="style"
-            onload="this.onload=null;this.rel='stylesheet'"
+            media="print"
     >
     <noscript>
         <!--suppress JSUnresolvedLibraryURL -->
@@ -131,6 +131,7 @@
     <link rel="modulepreload" href="js/constants.js">
     <link rel="modulepreload" href="js/state.js">
     <link rel="modulepreload" href="js/utils.js">
+    <link rel="modulepreload" href="js/user-features.js">
     <link rel="modulepreload" href="js/map-engine.js">
     <link rel="modulepreload" href="js/markers-cluster.js">
     <link rel="modulepreload" href="js/directions-eta.js">
@@ -532,26 +533,6 @@
           - 양방향 필터 연동 : 4개 체크박스 `change` 이벤트 ──> `app.js` 핸들러 실행
             ├── `markers-cluster.js:updateMarkers()` ──> 지도 마커 즉시 필터링
             └── `directions-eta.js:loadEtaRanking()` ──> `GET /api/directions/rank` (`includeRegional`~`includeOther`) 전송
-        -->
-
-        <div class="symptom-filter-wrap">
-            <div
-                    id="symptom-chips-bar"
-                    class="symptom-chips-bar"
-                    role="group"
-                    aria-label="응급 증상 및 가용 병상 빠른 필터"
-            ></div>
-        </div>
-        <!--
-          [HTML 표준 접근성 그룹 속성 (이름 변경 불가)]
-          - role="group" / aria-label : 동적 생성되는 버튼 묶음을 하나의 논리 그룹으로 보조기기에 알림.
-
-          [요소 ID 및 클래스명]
-          - `.symptom-filter-wrap`, `#symptom-chips-bar` (`.symptom-chips-bar`).
-
-          [동작 흐름]
-          - 칩 생성 : `constants.js:SYMPTOM_PRESETS` ──> `search-controls.js:renderSymptomChips()` ──> '가용병상만' + 8개 버튼
-          - 필터 정합성 : 칩 선택 ──> `utils.js:matchesSymptomPresetClient()` & `HospitalRecommendationScorer` 동일 규칙 선별
         -->
 
         <p id="map-count" class="map-count" role="status"></p>

@@ -1,5 +1,8 @@
 package com.yonsei119;
 
+import com.yonsei119.config.ApiRateLimitFilter;
+import com.yonsei119.config.SecurityHeadersFilter;
+import com.yonsei119.config.Yonsei119Properties;
 import com.yonsei119.controller.EmergencyApiController;
 import com.yonsei119.dto.DirectionsResponseDto;
 import com.yonsei119.dto.EmergencySnapshotDto;
@@ -18,9 +21,16 @@ import com.yonsei119.service.NmcOpenApiClient;
 import com.yonsei119.util.BoundedTtlCache;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.Environment;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.io.ByteArrayInputStream;
 import java.net.URI;
@@ -28,6 +38,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.GZIPInputStream;
@@ -70,6 +82,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "yonsei119.nemc.auto-refresh-enabled=false",
+                "yonsei119.nemc.service-key=",
                 "yonsei119.naver.client-secret="
         }
 )
@@ -129,6 +142,9 @@ class Yonsei119BackendTests {
 
     @Autowired
     private EmergencyApiController emergencyApiController;
+
+    @Autowired
+    private Environment environment;
     /*
      * [스프링 내장 어노테이션]
      * - @LocalServerPort 정의 (출처: org.springframework.boot.test.web.server.LocalServerPort, 이름 변경 불가)
@@ -296,7 +312,7 @@ class Yonsei119BackendTests {
         assertEquals(1, parsed.totalCount());
         assertEquals(1, parsed.items().size());
 
-        Map<String, String> item = parsed.items().get(0);
+        Map<String, String> item = parsed.items().getFirst();
         assertEquals("A2200001", item.get("hpid"));
         assertEquals("-4", item.get("hvec"));
         assertEquals("30", item.get("hvs01"));
@@ -457,7 +473,7 @@ class Yonsei119BackendTests {
 
             EmergencySnapshotDto compactSnap = emergencyApiController.getHospitals(false, true).getBody();
             assertNotNull(compactSnap);
-            HospitalDto compactHospital = compactSnap.hospitals().get(0);
+            HospitalDto compactHospital = compactSnap.hospitals().getFirst();
             assertEquals("-2", compactHospital.beds().get("hvec"));
             assertFalse(compactHospital.basic().containsKey("dutyetc"), "경량 목록 응답에서는 불필요한 장문 원문 태그가 제거되어야 합니다.");
             assertNull(compactHospital.beds().get("hv999_unused"));
@@ -587,8 +603,8 @@ class Yonsei119BackendTests {
         assertEquals(11800, dto.taxiFare());
         assertEquals(3, dto.path().size());
         assertEquals(2, dto.sections().size());
-        assertEquals("서원대로", dto.sections().get(0).name());
-        assertEquals(2, dto.sections().get(0).congestion());
+        assertEquals("서원대로", dto.sections().getFirst().name());
+        assertEquals(2, dto.sections().getFirst().congestion());
         assertEquals("일산로", dto.sections().get(1).name());
         assertEquals(3, dto.sections().get(1).congestion());
         assertFalse(dto.guidePrompts().isEmpty());
@@ -742,8 +758,8 @@ class Yonsei119BackendTests {
         );
         assertEquals(0, dto.code());
         assertEquals(2, dto.alternatives().size());
-        assertEquals("trafast", dto.alternatives().get(0).option());
-        assertEquals(1200, dto.alternatives().get(0).tollFare());
+        assertEquals("trafast", dto.alternatives().getFirst().option());
+        assertEquals(1200, dto.alternatives().getFirst().tollFare());
         assertEquals("traavoidtoll", dto.alternatives().get(1).option());
         assertEquals(0, dto.alternatives().get(1).tollFare());
 
@@ -788,8 +804,8 @@ class Yonsei119BackendTests {
                 """;
         List<GeocodeResponseDto.GeocodeItemDto> geoItems = naverGeocodingService.parseGeocodeJson(sampleGeo);
         assertEquals(1, geoItems.size());
-        assertEquals(37.2808750, geoItems.get(0).lat(), 0.0001);
-        assertEquals(127.9009998, geoItems.get(0).lng(), 0.0001);
+        assertEquals(37.2808750, geoItems.getFirst().lat(), 0.0001);
+        assertEquals(127.9009998, geoItems.getFirst().lng(), 0.0001);
         /*
          * [자바 문법]
          * - 텍스트 블록(""" ... """) : 다중 경로, 역지오코딩, 지오코딩 3종의 JSON 샘플을 작성함.
@@ -941,7 +957,7 @@ class Yonsei119BackendTests {
                 detailedJson, "directions5", "Directions 5", "trafast", "실시간 빠른길"
         );
         assertEquals(2, dto.sections().size());
-        assertEquals(1, dto.sections().get(0).congestion());
+        assertEquals(1, dto.sections().getFirst().congestion());
         assertEquals(3, dto.sections().get(1).congestion());
         /*
          * [자바 문법]
@@ -1017,7 +1033,7 @@ class Yonsei119BackendTests {
             );
 
             EmergencySnapshotDto initialSnapshot = emergencyDataService.mergeDatasetsIntoSnapshot(initialData);
-            HospitalDto first = initialSnapshot.hospitals().get(0);
+            HospitalDto first = initialSnapshot.hospitals().getFirst();
             assertEquals("LEGACY_CODE_01", first.basic().get("phpid"));
             assertTrue(first.regional());
             assertEquals("tertiary", first.type().group());
@@ -1028,7 +1044,7 @@ class Yonsei119BackendTests {
                     "beds", List.of(Map.of("hpid", "A2200001", "hvec", "2"))
             ));
             assertEquals(1, fallbackSnapshot.totalCount());
-            HospitalDto recovered = fallbackSnapshot.hospitals().get(0);
+            HospitalDto recovered = fallbackSnapshot.hospitals().getFirst();
             assertTrue(recovered.regional());
             assertEquals("tertiary", recovered.type().group());
             assertEquals("2", recovered.beds().get("hvec"));
@@ -1178,9 +1194,9 @@ class Yonsei119BackendTests {
                 true, true, true, false, false, "stroke", "optimal", "trafast"
         );
         assertEquals(1, optimalRanks.size(), "뇌출혈 수용 불가 공지가 뜬 포화 병원은 stroke 증상 필터에서 자동 제외되어야 합니다.");
-        assertEquals("H_AVAILABLE", optimalRanks.get(0).id());
-        assertEquals("여유", optimalRanks.get(0).availabilityStatus());
-        assertFalse(optimalRanks.get(0).hasBlockingNotice());
+        assertEquals("H_AVAILABLE", optimalRanks.getFirst().id());
+        assertEquals("여유", optimalRanks.getFirst().availabilityStatus());
+        assertFalse(optimalRanks.getFirst().hasBlockingNotice());
 
         List<HospitalEtaRankDto> generalOptimal = naverDirectionsService.rankHospitalsByDrivingTime(
                 List.of(saturatedCloser, availableSlightlyFarther),
@@ -1188,7 +1204,7 @@ class Yonsei119BackendTests {
                 true, true, true, false, false, "all", "optimal", "trafast"
         );
         assertEquals(2, generalOptimal.size());
-        assertEquals("H_AVAILABLE", generalOptimal.get(0).id(), "수용 최적 모드에서는 초과수용(-5석) 병원 대신 여유(8석) 병원이 1위가 되어야 합니다.");
+        assertEquals("H_AVAILABLE", generalOptimal.getFirst().id(), "수용 최적 모드에서는 초과수용(-5석) 병원 대신 여유(8석) 병원이 1위가 되어야 합니다.");
         assertEquals("초과수용", generalOptimal.get(1).availabilityStatus());
         assertTrue(generalOptimal.get(1).hasBlockingNotice());
         /*
@@ -1251,116 +1267,116 @@ class Yonsei119BackendTests {
      * [테스트 메서드명]
      * - testRootStaticResourcesAndSecurityHeaders : 11개 경로, 보안 헤더, GZIP, ETag 304를 일괄 검증함.
      */
-        HttpClient client = HttpClient.newHttpClient();
-
-        for (String path : List.of(
-                "/",
-                "/index.html",
-                "/manifest.webmanifest",
-                "/sw.js",
-                "/css/style.css",
-                "/css/panels-toolbar.css",
-                "/js/app.js",
-                "/js/theme-init.js",
-                "/js/constants.js",
-                "/api/config",
-                "/api/health"
-        )) {
-            HttpRequest plainReq = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
-                    .GET()
-                    .build();
-            HttpResponse<String> plainRes = client.send(plainReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            assertEquals(200, plainRes.statusCode(), path + " 요청이 HTTP 200을 반환해야 합니다.");
-            assertFalse(plainRes.body().isBlank(), path + " 응답 본문이 비어 있지 않아야 합니다.");
-            assertEquals("nosniff", plainRes.headers().firstValue("X-Content-Type-Options").orElse(""));
-            assertEquals("SAMEORIGIN", plainRes.headers().firstValue("X-Frame-Options").orElse(""));
-            if ("/manifest.webmanifest".equals(path)) {
-                assertTrue(
-                        plainRes.headers().firstValue("Content-Type").orElse("").contains("application/manifest+json"),
-                        "PWA 웹 매니페스트는 표준 application/manifest+json MIME 타입으로 서빙되어야 합니다."
-                );
-            }
-
-            HttpRequest gzipReq = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
-                    .header("Accept-Encoding", "gzip, deflate, br")
-                    .GET()
-                    .build();
-            HttpResponse<byte[]> gzipRes = client.send(gzipReq, HttpResponse.BodyHandlers.ofByteArray());
-            assertEquals(200, gzipRes.statusCode());
-            assertTrue(gzipRes.body().length > 0);
-
-            String decodedBody;
-            if ("gzip".equalsIgnoreCase(gzipRes.headers().firstValue("Content-Encoding").orElse(""))) {
-                try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(gzipRes.body()))) {
-                    decodedBody = new String(gis.readAllBytes(), StandardCharsets.UTF_8);
-                }
-            } else {
-                decodedBody = new String(gzipRes.body(), StandardCharsets.UTF_8);
-            }
-
-            if ("/".equals(path) || "/index.html".equals(path)) {
-                assertTrue(decodedBody.contains("<!DOCTYPE html>"));
-                assertTrue(decodedBody.contains("id=\"map\""));
-            }
-        }
-        /*
-         * [자바 문법]
-         * - 향상된 for문(for (String path : ...)) : 11개 경로 문자열을 순서대로 꺼내 반복함.
-         * - if / else, || (논리 OR) : 매니페스트 MIME 타입, gzip 인코딩 여부, HTML 경로 조건을 분기함.
-         * - 배열.length (내장 속성) : byte[] 응답 본문 배열의 바이트 길이를 확인함.
-         * - try (GZIPInputStream gis = ...) (try-with-resources) : 블록 종료 시 스트림을 자동 닫아 누수를 막음.
-         *
-         * [자바/JUnit 내장 타입]
-         * - HttpClient, HttpRequest, HttpResponse<T> (java.net.http, 이름 변경 불가) : HTTP 요청·응답 표준 타입임.
-         * - URI (java.net), List<E>, String, StandardCharsets (이름 변경 불가) : 주소·목록·문자셋 표준 API임.
-         * - ByteArrayInputStream, GZIPInputStream (이름 변경 불가) : byte[] 응답의 GZIP 압축을 푸는 스트림임.
-         *
-         * [자바/JUnit 내장 메서드]
-         * - HttpClient.newHttpClient(), List.of(...), URI.create(...) (이름 변경 불가) : 클라이언트·목록·URI 생성함.
-         * - HttpRequest.newBuilder(...), header(), GET(), build() (이름 변경 불가) : GET 요청과 헤더를 조립함.
-         * - client.send(...), BodyHandlers.ofString(...), ofByteArray() (이름 변경 불가) : 요청 전송 후 본문 수신함.
-         * - statusCode(), body(), headers().firstValue(...), orElse("") (이름 변경 불가) : 상태·본문·헤더 꺼냄.
-         * - gis.readAllBytes(), new String(bytes, charset) (이름 변경 불가) : 압축 해제 바이트를 문자열로 변환함.
-         * - String.equals(), equalsIgnoreCase(), contains(), isBlank(), assertEquals, assertFalse, assertTrue
-         *
-         * [프로젝트 URL 생성 출처 및 라우팅]
-         * - URL 조립("http://localhost:" + port + path) : @LocalServerPort로 주입된 랜덤 port에 경로를 붙임.
-         * - 정적 파일 경로("/", "/index.html" 등 9종) : WebConfig가 정적 리소스 핸들러로 서빙함.
-         * - API 경로("/api/config", "/api/health") : EmergencyApiController의 @RequestMapping("/api")와
-         *   @GetMapping("/config")·@GetMapping("/health")가 합쳐진 경로로 라우팅됨.
-         * - SecurityHeadersFilter : 모든 응답에 X-Content-Type-Options, X-Frame-Options 보안 헤더를 부여함.
-         *
-         * [지역 변수명]
-         * - client, path : 재사용 HttpClient 객체와 반복문이 순회 중인 요청 경로 문자열임.
-         * - plainReq, plainRes : 압축 헤더 없이 보낸 일반 GET 요청과 문자열 응답 객체임.
-         * - gzipReq, gzipRes : Accept-Encoding 헤더를 붙여 보낸 요청과 byte[] 응답 객체임.
-         * - decodedBody, gis : 압축 해제 또는 UTF-8 변환으로 복원한 본문 문자열과 GZIP 스트림 변수임.
-         *
-         * [동작 흐름]
-         * - 11개 경로 순회 -> "http://localhost:" + port + path 로 일반 GET 요청 전송
-         *   ├── 상태 200, 비공백 본문, SecurityHeadersFilter 보안 헤더(nosniff, SAMEORIGIN) 검증
-         *   └── "/manifest.webmanifest" -> Content-Type에 "application/manifest+json" 포함 검증
-         * - 동일 URL + "Accept-Encoding: gzip, deflate, br" 재요청 -> byte[] 응답 수신
-         *   ├── Content-Encoding="gzip" -> GZIPInputStream으로 압축 해제 후 UTF-8 문자열 복원
-         *   ├── 1024바이트 미만 비압축 응답 -> 바로 UTF-8 문자열 복원
-         *   └── "/", "/index.html" -> "<!DOCTYPE html>" 및 "id=\"map\"" 포함 검증
-         */
-
-        HttpResponse<String> appJsRes = client.send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/app.js")).GET().build(),
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
-        );
-        String etag = appJsRes.headers().firstValue("ETag").orElse("");
-        assertFalse(etag.isBlank());
-
-        HttpResponse<String> notModifiedRes = client.send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/app.js"))
-                        .header("If-None-Match", etag)
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            for (String path : List.of(
+                    "/",
+                    "/index.html",
+                    "/manifest.webmanifest",
+                    "/sw.js",
+                    "/css/style.css",
+                    "/css/panels-toolbar.css",
+                    "/js/app.js",
+                    "/js/theme-init.js",
+                    "/js/constants.js",
+                    "/api/config",
+                    "/api/health"
+            )) {
+                HttpRequest plainReq = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                         .GET()
-                        .build(),
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
-        );
-        assertEquals(304, notModifiedRes.statusCode());
+                        .build();
+                HttpResponse<String> plainRes = client.send(plainReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                assertEquals(200, plainRes.statusCode(), path + " 요청이 HTTP 200을 반환해야 합니다.");
+                assertFalse(plainRes.body().isBlank(), path + " 응답 본문이 비어 있지 않아야 합니다.");
+                assertEquals("nosniff", plainRes.headers().firstValue("X-Content-Type-Options").orElse(""));
+                assertEquals("SAMEORIGIN", plainRes.headers().firstValue("X-Frame-Options").orElse(""));
+                if ("/manifest.webmanifest".equals(path)) {
+                    assertTrue(
+                            plainRes.headers().firstValue("Content-Type").orElse("").contains("application/manifest+json"),
+                            "PWA 웹 매니페스트는 표준 application/manifest+json MIME 타입으로 서빙되어야 합니다."
+                    );
+                }
+
+                HttpRequest gzipReq = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                        .header("Accept-Encoding", "gzip, deflate, br")
+                        .GET()
+                        .build();
+                HttpResponse<byte[]> gzipRes = client.send(gzipReq, HttpResponse.BodyHandlers.ofByteArray());
+                assertEquals(200, gzipRes.statusCode());
+                assertTrue(gzipRes.body().length > 0);
+
+                String decodedBody;
+                if ("gzip".equalsIgnoreCase(gzipRes.headers().firstValue("Content-Encoding").orElse(""))) {
+                    try (GZIPInputStream gis = new GZIPInputStream(new ByteArrayInputStream(gzipRes.body()))) {
+                        decodedBody = new String(gis.readAllBytes(), StandardCharsets.UTF_8);
+                    }
+                } else {
+                    decodedBody = new String(gzipRes.body(), StandardCharsets.UTF_8);
+                }
+
+                if ("/".equals(path) || "/index.html".equals(path)) {
+                    assertTrue(decodedBody.contains("<!DOCTYPE html>"));
+                    assertTrue(decodedBody.contains("id=\"map\""));
+                }
+            }
+            /*
+             * [자바 문법]
+             * - 향상된 for문(for (String path : ...)) : 11개 경로 문자열을 순서대로 꺼내 반복함.
+             * - if / else, || (논리 OR) : 매니페스트 MIME 타입, gzip 인코딩 여부, HTML 경로 조건을 분기함.
+             * - 배열.length (내장 속성) : byte[] 응답 본문 배열의 바이트 길이를 확인함.
+             * - try (GZIPInputStream gis = ...) (try-with-resources) : 블록 종료 시 스트림을 자동 닫아 누수를 막음.
+             *
+             * [자바/JUnit 내장 타입]
+             * - HttpClient, HttpRequest, HttpResponse<T> (java.net.http, 이름 변경 불가) : HTTP 요청·응답 표준 타입임.
+             * - URI (java.net), List<E>, String, StandardCharsets (이름 변경 불가) : 주소·목록·문자셋 표준 API임.
+             * - ByteArrayInputStream, GZIPInputStream (이름 변경 불가) : byte[] 응답의 GZIP 압축을 푸는 스트림임.
+             *
+             * [자바/JUnit 내장 메서드]
+             * - HttpClient.newHttpClient(), List.of(...), URI.create(...) (이름 변경 불가) : 클라이언트·목록·URI 생성함.
+             * - HttpRequest.newBuilder(...), header(), GET(), build() (이름 변경 불가) : GET 요청과 헤더를 조립함.
+             * - client.send(...), BodyHandlers.ofString(...), ofByteArray() (이름 변경 불가) : 요청 전송 후 본문 수신함.
+             * - statusCode(), body(), headers().firstValue(...), orElse("") (이름 변경 불가) : 상태·본문·헤더 꺼냄.
+             * - gis.readAllBytes(), new String(bytes, charset) (이름 변경 불가) : 압축 해제 바이트를 문자열로 변환함.
+             * - String.equals(), equalsIgnoreCase(), contains(), isBlank(), assertEquals, assertFalse, assertTrue
+             *
+             * [프로젝트 URL 생성 출처 및 라우팅]
+             * - URL 조립("http://localhost:" + port + path) : @LocalServerPort로 주입된 랜덤 port에 경로를 붙임.
+             * - 정적 파일 경로("/", "/index.html" 등 9종) : WebConfig가 정적 리소스 핸들러로 서빙함.
+             * - API 경로("/api/config", "/api/health") : EmergencyApiController의 @RequestMapping("/api")와
+             *   @GetMapping("/config")·@GetMapping("/health")가 합쳐진 경로로 라우팅됨.
+             * - SecurityHeadersFilter : 모든 응답에 X-Content-Type-Options, X-Frame-Options 보안 헤더를 부여함.
+             *
+             * [지역 변수명]
+             * - client, path : 재사용 HttpClient 객체와 반복문이 순회 중인 요청 경로 문자열임.
+             * - plainReq, plainRes : 압축 헤더 없이 보낸 일반 GET 요청과 문자열 응답 객체임.
+             * - gzipReq, gzipRes : Accept-Encoding 헤더를 붙여 보낸 요청과 byte[] 응답 객체임.
+             * - decodedBody, gis : 압축 해제 또는 UTF-8 변환으로 복원한 본문 문자열과 GZIP 스트림 변수임.
+             *
+             * [동작 흐름]
+             * - 11개 경로 순회 -> "http://localhost:" + port + path 로 일반 GET 요청 전송
+             *   ├── 상태 200, 비공백 본문, SecurityHeadersFilter 보안 헤더(nosniff, SAMEORIGIN) 검증
+             *   └── "/manifest.webmanifest" -> Content-Type에 "application/manifest+json" 포함 검증
+             * - 동일 URL + "Accept-Encoding: gzip, deflate, br" 재요청 -> byte[] 응답 수신
+             *   ├── Content-Encoding="gzip" -> GZIPInputStream으로 압축 해제 후 UTF-8 문자열 복원
+             *   ├── 1024바이트 미만 비압축 응답 -> 바로 UTF-8 문자열 복원
+             *   └── "/", "/index.html" -> "<!DOCTYPE html>" 및 "id=\"map\"" 포함 검증
+             */
+
+            HttpResponse<String> appJsRes = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/app.js")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            String etag = appJsRes.headers().firstValue("ETag").orElse("");
+            assertFalse(etag.isBlank());
+
+            HttpResponse<String> notModifiedRes = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/app.js"))
+                            .header("If-None-Match", etag)
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            assertEquals(304, notModifiedRes.statusCode());
+        }
         /*
          * [자바/JUnit 내장 타입]
          * - HttpResponse<T>, HttpRequest, URI, StandardCharsets (이름 변경 불가) : ETag 조건부 요청 표준 타입임.
@@ -1387,5 +1403,283 @@ class Yonsei119BackendTests {
          * [검증 핵심]
          * - 실제 내장 웹 서버에서 보안 헤더, 라우팅, PWA MIME, GZIP, Weak ETag 304 재검증이 모두 동작함.
          */
+    }
+
+    @Test
+    @DisplayName("14. Java 27 런타임, 가상 스레드 활성화 및 통합 서비스명(yonsei119)을 검증한다")
+    void testJava27VirtualThreadsAndUnifiedHealthService() throws Exception {
+        assertTrue(Runtime.version().feature() >= 27, "Java 27 이상 런타임이어야 합니다");
+        assertEquals(Boolean.TRUE, environment.getProperty("spring.threads.virtual.enabled", Boolean.class));
+        assertEquals("yonsei119", environment.getProperty("spring.application.name"));
+
+        var healthResponse = emergencyApiController.health();
+        assertEquals(200, healthResponse.getStatusCode().value());
+        Map<String, Object> healthBody = healthResponse.getBody();
+        assertNotNull(healthBody);
+        assertEquals("UP", healthBody.get("status"));
+        assertEquals("yonsei119", healthBody.get("service"));
+        assertTrue(String.valueOf(healthBody.get("javaVersion")).startsWith("27"));
+
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            HttpResponse<String> httpRes = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/health")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            assertEquals(200, httpRes.statusCode());
+            assertTrue(httpRes.body().contains("\"service\":\"yonsei119\""));
+        }
+    }
+
+    @Test
+    @DisplayName("15. 콜드스타트 다크모드·WebGL GL 순서·서비스 워커·데드코드 정리가 실제 서빙 자산에 반영되어야 한다")
+    void testDarkModeColdStartFixAndDeadCodeCleanupServedAssets() throws Exception {
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            String indexHtml = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            ).body();
+            assertTrue(indexHtml.contains("data-theme=\"dark\""));
+            assertTrue(indexHtml.contains("js/theme-init.js"));
+            assertTrue(indexHtml.contains("js/user-features.js"));
+            assertTrue(indexHtml.contains("id=\"nanum-webfont-link\""));
+            assertFalse(indexHtml.contains("id=\"bed-alert-toggle\""));
+            assertFalse(indexHtml.contains("id=\"lang-select\""));
+            assertFalse(indexHtml.contains("id=\"symptom-chips-bar\""));
+            assertFalse(indexHtml.contains("id=\"quick-hospitals-bar\""));
+            assertFalse(indexHtml.contains("onload=\"this.onload=null"));
+            int sdkTagStart = indexHtml.indexOf("id=\"naver-maps-sdk\"");
+            int sdkTagEnd = indexHtml.indexOf("</script>", sdkTagStart);
+            assertTrue(sdkTagStart > 0 && sdkTagEnd > sdkTagStart);
+            assertFalse(
+                    indexHtml.substring(sdkTagStart, sdkTagEnd).contains("defer"),
+                    "#naver-maps-sdk 스크립트는 GL 서브모듈 동기 로드를 위해 defer를 사용하면 안 됩니다."
+            );
+
+            String themeInitJs = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/theme-init.js")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            ).body();
+            assertTrue(themeInitJs.contains("theme-color"));
+            assertTrue(themeInitJs.contains("dark-mode"));
+            assertTrue(themeInitJs.contains("nanum-webfont-link"));
+
+            String userFeaturesJs = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/user-features.js")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            ).body();
+            assertTrue(userFeaturesJs.contains("toggleHospitalSpeech"));
+            assertTrue(userFeaturesJs.contains("stopHospitalSpeech"));
+            assertFalse(userFeaturesJs.contains("recordRecentHospital"));
+            assertFalse(userFeaturesJs.contains("renderQuickHospitalsBar"));
+            assertFalse(userFeaturesJs.contains("toggleFavoriteHospital"));
+            assertFalse(userFeaturesJs.contains("evaluateBedAvailabilityChanges"));
+            assertFalse(userFeaturesJs.contains("SUPPORTED_LANGS"));
+            assertFalse(userFeaturesJs.contains("initBedAlertControl"));
+            assertFalse(userFeaturesJs.contains("initLanguageControl"));
+
+            String swJs = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/sw.js")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            ).body();
+            assertTrue(swJs.contains("yonsei119-pwa-v261124-r5"));
+            assertTrue(swJs.contains("'/js/user-features.js'"));
+            assertTrue(swJs.contains("isValidAssetResponse"));
+            assertTrue(swJs.contains("pathname === '/api/config'"));
+
+            String mapEngineJs = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/map-engine.js")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            ).body();
+            assertTrue(mapEngineJs.contains("temporary2dFallback"));
+            assertTrue(mapEngineJs.contains("isGLReady"));
+            assertTrue(mapEngineJs.contains("else if (!state.map)"));
+            int glCheckIdx = mapEngineJs.indexOf("if (naverMaps.glEnabled)");
+            int glSupportedCallIdx = mapEngineJs.indexOf("naverMaps.Util?.glSupported", glCheckIdx);
+            assertTrue(glCheckIdx >= 0 && glSupportedCallIdx > glCheckIdx);
+            assertFalse(mapEngineJs.contains("_force2dFallback"));
+            assertFalse(mapEngineJs.contains("state.markers"));
+
+            String searchControlsJs = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/search-controls.js")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            ).body();
+            assertTrue(searchControlsJs.contains("allSourcesUnavailable"));
+            assertTrue(searchControlsJs.contains(".env"));
+
+            String markersClusterJs = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/markers-cluster.js")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            ).body();
+            assertFalse(markersClusterJs.contains("clearMarkers"));
+            assertFalse(markersClusterJs.contains("state.markers"));
+
+            String stateJs = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/state.js")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            ).body();
+            assertFalse(stateJs.contains("markers:"));
+        }
+    }
+
+    @Test
+    @DisplayName("16. .env 설정 파일 로드(spring.config.import)로 NEMC·Naver 인증키가 정상 바인딩되어야 한다")
+    void testDotEnvConfigImportBindsApiKeys(@TempDir Path tempDir) throws Exception {
+        Path tempEnv = tempDir.resolve(".env");
+        Files.writeString(
+                tempEnv,
+                "NEMC_API_SERVICE_KEY=test-nemc-key\nNAVER_MAP_CLIENT_SECRET=test-naver-secret\n",
+                StandardCharsets.UTF_8
+        );
+        String importLocation = "optional:file:" + tempEnv.toAbsolutePath().toString().replace('\\', '/') + "[.properties]";
+
+        try (ConfigurableApplicationContext context = new SpringApplicationBuilder(Yonsei119Application.class)
+                .properties(
+                        "spring.main.web-application-type=none",
+                        "yonsei119.nemc.auto-refresh-enabled=false",
+                        "spring.config.import=" + importLocation
+                )
+                .run()) {
+            Yonsei119Properties boundProps = context.getBean(Yonsei119Properties.class);
+            assertEquals("test-nemc-key", boundProps.nemc().serviceKey());
+            assertEquals("test-naver-secret", boundProps.naver().clientSecret());
+        }
+    }
+
+    @Test
+    @DisplayName("17. /api/hospitals 사전 직렬화 JSON + ETag 헤더 및 If-None-Match 304 Not Modified가 동작해야 한다")
+    void testHospitalsSnapshotEtagAndNotModified() throws Exception {
+        Map<String, List<Map<String, String>>> rawDatasets = Map.of(
+                "list", List.of(
+                        Map.of("hpid", "A2200001", "dutyname", "연세대학교원주세브란스기독병원", "wgs84lat", "37.31912", "wgs84lon", "127.94561", "dutyaddr", "강원특별자치도 원주시 일산로 20")
+                ),
+                "basic", List.of(Map.of("hpid", "A2200001", "dutyemclsname", "권역응급의료센터")),
+                "beds", List.of(Map.of("hpid", "A2200001", "hvec", "5", "hvs01", "30")),
+                "messages", List.of(),
+                "severe", List.of(),
+                "traumaList", List.of(),
+                "traumaBasic", List.of()
+        );
+        try {
+            EmergencySnapshotDto snapshot = emergencyDataService.mergeDatasetsIntoSnapshot(rawDatasets);
+            emergencyDataService.setCachedSnapshotForTest(snapshot);
+
+            try (HttpClient client = HttpClient.newHttpClient()) {
+                HttpResponse<String> first = client.send(
+                        HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/hospitals?compact=true")).GET().build(),
+                        HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+                assertEquals(200, first.statusCode());
+                String etag = first.headers().firstValue("ETag").orElse("");
+                assertTrue(etag.startsWith("W/\""), "ETag 형식이 W/\"...\" 이어야 합니다: " + etag);
+                assertTrue(first.body().contains("\"totalCount\":1"));
+
+                HttpResponse<String> second = client.send(
+                        HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/hospitals?compact=true"))
+                                .header("If-None-Match", etag)
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+                assertEquals(304, second.statusCode());
+                assertEquals(etag, second.headers().firstValue("ETag").orElse(""));
+                assertEquals("", second.body());
+            }
+        } finally {
+            emergencyDataService.setCachedSnapshotForTest(null);
+        }
+    }
+
+    @Test
+    @DisplayName("18. 엄격한 CSP 헤더와 유료 네이버 대리 API IP 토큰 버킷 레이트 리미터(429)가 동작해야 한다")
+    void testStrictCspHeaderAndRateLimiter() throws Exception {
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            HttpResponse<String> homeRes = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            String csp = homeRes.headers().firstValue("Content-Security-Policy").orElse("");
+            assertTrue(csp.contains("worker-src 'self' blob:"), "CSP에 worker-src가 포함되어야 합니다: " + csp);
+            assertTrue(csp.contains("script-src 'self'"), "CSP에 script-src 'self'가 포함되어야 합니다: " + csp);
+            assertTrue(csp.contains("https://oapi.map.naver.com"));
+            assertTrue(csp.contains("https://*.nelo.navercorp.com"));
+            assertFalse(csp.contains("'unsafe-eval'"));
+
+            SecurityHeadersFilter securityFilter = new SecurityHeadersFilter();
+            MockHttpServletRequest httpReq = new MockHttpServletRequest("GET", "/");
+            MockHttpServletResponse httpRes = new MockHttpServletResponse();
+            securityFilter.doFilter(httpReq, httpRes, new MockFilterChain());
+            String httpCsp = httpRes.getHeader("Content-Security-Policy");
+            assertNotNull(httpCsp);
+            assertEquals(SecurityHeadersFilter.LOCAL_HTTP_CONTENT_SECURITY_POLICY, httpCsp);
+            assertTrue(httpCsp.contains("http://oapi.map.naver.com"));
+
+            MockHttpServletRequest httpsReq = new MockHttpServletRequest("GET", "/");
+            httpsReq.addHeader("X-Forwarded-Proto", "https");
+            MockHttpServletResponse httpsRes = new MockHttpServletResponse();
+            securityFilter.doFilter(httpsReq, httpsRes, new MockFilterChain());
+            String httpsCsp = httpsRes.getHeader("Content-Security-Policy");
+            assertNotNull(httpsCsp);
+            assertEquals(SecurityHeadersFilter.CONTENT_SECURITY_POLICY, httpsCsp);
+            assertFalse(httpsCsp.contains("http://oapi.map.naver.com"));
+            assertFalse(httpsCsp.contains("'unsafe-eval'"));
+
+            HttpResponse<String> geoRes = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/reverse-geocode?lat=37.5665&lng=126.9780")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            assertEquals(200, geoRes.statusCode());
+            assertTrue(geoRes.headers().firstValue("X-RateLimit-Limit").isPresent());
+            assertTrue(geoRes.headers().firstValue("X-RateLimit-Remaining").isPresent());
+        }
+
+        Yonsei119Properties limitedProps = new Yonsei119Properties(
+                new Yonsei119Properties.Nemc("https://example.invalid", "", 180, 21600, 10000, false, 180000),
+                new Yonsei119Properties.Naver("id", "style", "", "https://d5", "https://d15"),
+                new Yonsei119Properties.DefaultOrigin(37.5665, 126.9780, "서울시청"),
+                new Yonsei119Properties.Cors("*"),
+                new Yonsei119Properties.RateLimit(true, 2, 1)
+        );
+        ApiRateLimitFilter filter = new ApiRateLimitFilter(limitedProps);
+        for (int i = 0; i < 3; i++) {
+            MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/directions");
+            req.setRemoteAddr("198.51.100.42");
+            MockHttpServletResponse res = new MockHttpServletResponse();
+            filter.doFilter(req, res, new MockFilterChain());
+            if (i < 2) {
+                assertEquals(200, res.getStatus());
+                assertEquals("2", res.getHeader("X-RateLimit-Limit"));
+            } else {
+                assertEquals(429, res.getStatus());
+                assertNotNull(res.getHeader("Retry-After"));
+                assertTrue(res.getContentAsString().contains("TOO_MANY_REQUESTS"));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("19. Spring Boot Actuator /actuator/health 및 /actuator/metrics가 커스텀 지표를 노출해야 한다")
+    void testActuatorHealthAndCustomMetrics() throws Exception {
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            HttpResponse<String> healthRes = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/actuator/health")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            assertEquals(200, healthRes.statusCode());
+            assertTrue(healthRes.body().contains("\"UP\""));
+
+            HttpResponse<String> metricsRes = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/actuator/metrics")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            assertEquals(200, metricsRes.statusCode());
+            assertTrue(metricsRes.body().contains("yonsei119.hospitals.cached.count"));
+
+            HttpResponse<String> customMetric = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/actuator/metrics/yonsei119.hospitals.cached.count")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            assertEquals(200, customMetric.statusCode());
+            assertTrue(customMetric.body().contains("measurements"));
+        }
     }
 }

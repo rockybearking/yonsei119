@@ -9,11 +9,42 @@
         void storageErr;
     }
 
+    const isDark = initialTheme === 'dark';
+    const root = document.documentElement;
+    root.dataset.theme = initialTheme;
+    root.classList.toggle('dark-mode', isDark);
+
     const colorSchemeMeta = document.querySelector('meta[name="color-scheme"]');
     if (colorSchemeMeta) {
         colorSchemeMeta.content = initialTheme;
     }
-    document.documentElement.dataset.theme = initialTheme;
+
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) {
+        themeColorMeta.content = isDark ? '#0f172a' : '#f6f8fc';
+    }
+
+    const promoteFontStylesheet = () => {
+        const fontLink = document.getElementById('nanum-webfont-link');
+        if (!fontLink || fontLink.media === 'all') {
+            return;
+        }
+        const activate = () => {
+            fontLink.media = 'all';
+        };
+        if (fontLink.sheet) {
+            activate();
+            return;
+        }
+        fontLink.addEventListener('load', activate, { once: true });
+        fontLink.addEventListener('error', activate, { once: true });
+        setTimeout(activate, 1500);
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', promoteFontStylesheet, { once: true });
+    } else {
+        promoteFontStylesheet();
+    }
 })();
 /*
  * [JS 문법]

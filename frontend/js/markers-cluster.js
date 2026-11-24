@@ -1,7 +1,6 @@
 import {
     CARD_HEIGHT,
-    CARD_WIDTH,
-    SYMPTOM_PRESETS
+    CARD_WIDTH
 } from './constants.js';
 import {
     state,
@@ -14,7 +13,6 @@ import {
     getBedTrafficInfo,
     integerValue,
     isMissing,
-    matchesSymptomPresetClient,
     node,
     radiusExtent
 } from './utils.js';
@@ -42,7 +40,7 @@ import {
  * - 키 비교 DOM 오버레이 재사용(updateMarkers), 병상 도트, 클러스터 모달(openCluster)을 구현함.
  */
 
-export function visualGroup(hospital) {
+function visualGroup(hospital) {
     return hospital._vGroup || (hospital.regional ? 'regional' : hospital.type?.group || 'other');
 }
 /*
@@ -75,29 +73,11 @@ export function hospitalLabel(hospital) {
  * - hospital.regional 거짓 -> 기본 hospital.type.label 그대로 반환
  */
 
-export function matchesFilters(hospital, enabled) {
-    const matchesType = Boolean(
+function matchesFilters(hospital, enabled) {
+    return Boolean(
         enabled[hospital.type.group] ||
         (hospital.regional && enabled.regional)
     );
-    if (!matchesType) {
-        return false;
-    }
-
-    if (state.onlyAvailableBeds) {
-        const erCount = integerValue(hospital.beds?.hvec);
-        if (erCount === null || erCount <= 0) {
-            return false;
-        }
-    }
-
-    if (state.symptomPreset && state.symptomPreset !== 'all') {
-        if (!matchesSymptomPresetClient(hospital, state.symptomPreset)) {
-            return false;
-        }
-    }
-
-    return true;
 }
 /*
  * [JS 내장 함수·문법]
@@ -115,7 +95,7 @@ export function matchesFilters(hospital, enabled) {
  * - 3단 필터 모두 통과 -> true 반환
  */
 
-export function groupCards(points) {
+function groupCards(points) {
     const groups = [];
     const cellW = CARD_WIDTH + 10;
     const cellH = CARD_HEIGHT + 14;
@@ -186,7 +166,7 @@ export function groupCards(points) {
  *   └── 겹침 없음 -> 새 그룹(_idx: groups.length) 생성 후 groups와 grid[cellKey]에 등록
  */
 
-export function bindHospitalCard(card, open) {
+function bindHospitalCard(card, open) {
     card._onActivate = open;
     if (card._hospitalCardBound) {
         return;
@@ -278,39 +258,6 @@ export function bindHospitalCard(card, open) {
  * - window 'pointerup' / 'pointercancel' -> finish(next): cardPointerDown = false, tracker.abort()
  *   └── state.pendingMarkerUpdate 참 -> requestAnimationFrame으로 updateMarkers() 보류분 실행
  * - card 'click' -> 포인터 드래그(detail !== 0 && moved)이면 preventDefault(), 아니면 card._onActivate?.()
- */
-
-export function clearMarkers() {
-    for (const overlay of state.markerMap.values()) {
-        try {
-            overlay.setMap(null);
-        } catch (err) {
-            void err;
-        }
-    }
-    state.markerMap.clear();
-
-    for (const marker of state.markers) {
-        try {
-            marker.setMap(null);
-        } catch (err) {
-            void err;
-        }
-    }
-    state.markers = [];
-}
-/*
- * [JS/네이버 지도 SDK 내장 API]
- * - Map.prototype.values() / Map.prototype.clear() : Map의 모든 값 순회 및 비우기 메서드임.
- * - overlay.setMap(null) : 지도 페인에서 OverlayView DOM 요소를 제거하는 SDK 메서드임.
- *
- * [프로젝트 내부 함수·변수]
- * - 함수 : clearMarkers() (매개변수 없음)
- * - 지역 변수 : overlay(state.markerMap 원소), marker(state.markers 원소), err
- *
- * [동작 흐름]
- * - state.markerMap.values() 순회 -> 각 overlay.setMap(null) 호출 후 markerMap.clear()
- * - state.markers 순회 -> 각 marker.setMap(null) 호출 후 state.markers = [] 초기화
  */
 
 function computeClusterTraffic(items) {
@@ -543,7 +490,9 @@ export function updateMarkers() {
             ? '권역응급'
             : hospital.type.label;
 
-        const nextStrongText = multiple ? `주변 ${group.items.length}개 병원` : hospital.name;
+        const nextStrongText = multiple
+            ? `주변 ${group.items.length}개 병원`
+            : hospital.name;
         const nextSmallText = multiple
             ? `가용 ${trafficInfo.availCount}곳 · 목록 선택 ›`
             : `${shortType} · 응급실 ${bedValue(hospital.beds?.hvec)}`;
@@ -622,22 +571,10 @@ export function updateMarkers() {
         }
     }
 
-    state.markers = Array.from(state.markerMap.values());
-
-    const activePresetObj = SYMPTOM_PRESETS.find(item => item.key === state.symptomPreset);
-    const filterTags = [];
-    if (state.onlyAvailableBeds) {
-        filterTags.push('가용병상만');
-    }
-    if (activePresetObj && activePresetObj.key !== 'all') {
-        filterTags.push(activePresetObj.label);
-    }
-    const filterSuffix = filterTags.length ? ` [${filterTags.join(' · ')}]` : '';
-
     const mapCountEl = byId('map-count');
     if (mapCountEl) {
         mapCountEl.textContent =
-            `현재 화면 ${candidateEntries.length}개 기관${filterSuffix} · 겹치는 카드는 묶어서 표시`;
+            `현재 화면 ${candidateEntries.length}개 기관 · 겹치는 카드는 묶어서 표시`;
     }
 }
 /*

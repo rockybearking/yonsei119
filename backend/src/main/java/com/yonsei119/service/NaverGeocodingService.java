@@ -6,6 +6,7 @@ import com.yonsei119.dto.HospitalDto;
 import com.yonsei119.dto.ReverseGeocodeResponseDto;
 import com.yonsei119.util.BoundedTtlCache;
 import com.yonsei119.util.GeoUtils;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 /*
  * [패키지 및 임포트]
@@ -77,6 +80,7 @@ public class NaverGeocodingService {
     private static final long NOMINATIM_MIN_INTERVAL_MS = 1_050L;
     private static final String REVERSE_GEOCODE_URL = "https://maps.apigw.ntruss.com/map-reversegeocode/v2/gc";
     private static final String GEOCODE_URL = "https://maps.apigw.ntruss.com/map-geocode/v2/geocode";
+    private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
     /*
      * [자바 문법]
      * - private static final : 클래스 내부에서만 공유되며 재할당이 불가능한 정적 상수 선언임.
@@ -101,7 +105,7 @@ public class NaverGeocodingService {
             new BoundedTtlCache<>(MAX_CACHE_ENTRIES, GEOCODE_CACHE_TTL_SECONDS);
     private final BoundedTtlCache<String, GeocodeResponseDto> geocodeCache =
             new BoundedTtlCache<>(MAX_CACHE_ENTRIES, GEOCODE_CACHE_TTL_SECONDS);
-    private final Object nominatimLock = new Object();
+    private final ReentrantLock nominatimLock = new ReentrantLock();
     private long lastNominatimRequestAtMs = 0L;
     /*
      * [자바 문법]
@@ -112,38 +116,43 @@ public class NaverGeocodingService {
      * [필드명 (멤버 변수)]
      * - properties : application.yml의 네이버 API 인증키(clientId, clientSecret) 설정 객체임.
      * - httpClient : 네이버 및 Nominatim HTTP GET 통신용 재사용 클라이언트 필드임.
-     * - jsonMapper : Jackson 3 기반 JSON 응답 파싱기 필드임.
+     * - jsonMapper : 스프링 부트 4 자동 구성 Jackson 3 JsonMapper 빈 필드임.
      * - reverseGeocodeCache : 좌표 키 -> 역지오코딩 결과 캐시(최대 512건, 600초 TTL)임.
      * - geocodeCache : 정규화 검색어 키 -> 지오코딩 결과 캐시(최대 512건, 600초 TTL)임.
-     * - nominatimLock : synchronized 블록에서 Nominatim 호출을 1건씩 직렬화하는 잠금 기준 객체임.
+     * - nominatimLock : 가상 스레드 친화적인 ReentrantLock으로 Nominatim 호출을 1건씩 직렬화함.
      * - lastNominatimRequestAtMs : 직전 Nominatim 요청 시각(UTC 밀리초)을 기록하는 필드임.
      */
 
-    public NaverGeocodingService(Yonsei119Properties properties) {
+    public NaverGeocodingService(Yonsei119Properties properties, JsonMapper jsonMapper) {
     /*
      * [자바 문법]
-     * - public NaverGeocodingService(...) : 스프링 컨테이너가 설정 빈을 생성자 주입하는 생성자임.
+     * - public NaverGeocodingService(...) : 스프링 컨테이너가 설정·JSON 매퍼 빈을 생성자 주입하는 생성자임.
      * - this.필드명 : 매개변수와 필드 이름이 같을 때 인스턴스 필드를 구분하는 키워드임.
      *
      * [생성자 및 매개변수명]
      * - 생성자명: NaverGeocodingService
      * - properties : application.yml 설정이 바인딩된 Yonsei119Properties 객체임.
+     * - jsonMapper : 스프링 부트 자동 구성 JsonMapper 빈임.
      */
         this.properties = properties;
+        this.jsonMapper = jsonMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(8))
                 .build();
-        this.jsonMapper = JsonMapper.builder().build();
         /*
          * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
          * - HttpClient.newBuilder() : HTTP 클라이언트 빌더 객체를 생성함.
          * - .connectTimeout(Duration.ofSeconds(8)) : TCP 연결 제한 시간을 8초로 설정함.
          * - .build() : 설정된 옵션으로 불변 HttpClient 인스턴스를 생성함.
-         * - JsonMapper.builder().build() : Jackson 3 JsonMapper 인스턴스를 생성함.
          *
          * [동작 흐름]
-         * - properties 저장 -> 8초 연결 타임아웃 HttpClient 생성 -> JsonMapper 초기화
+         * - properties·jsonMapper 주입 -> 8초 연결 타임아웃 HttpClient 생성
          */
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        httpClient.close();
     }
 
     private boolean hasNaverApiCredentials() {
@@ -154,9 +163,7 @@ public class NaverGeocodingService {
      * [메서드명]
      * - hasNaverApiCredentials : 네이버 API clientId·clientSecret 설정 여부를 검사함.
      */
-        return properties.naver() != null
-                && properties.naver().clientId() != null && !properties.naver().clientId().isBlank()
-                && properties.naver().clientSecret() != null && !properties.naver().clientSecret().isBlank();
+        return properties.naver() != null && properties.naver().hasApiCredentials();
         /*
          * [자바 문법]
          * - 논리곱(&&), 논리 부정 연산자, null 비교(!=), return
@@ -418,7 +425,7 @@ public class NaverGeocodingService {
             safeQuery = safeQuery.substring(0, MAX_QUERY_LENGTH);
         }
 
-        String cacheKey = safeQuery.replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+        String cacheKey = WHITESPACE_PATTERN.matcher(safeQuery).replaceAll(" ").toLowerCase(Locale.ROOT);
         GeocodeResponseDto cached = geocodeCache.get(cacheKey);
         if (cached != null) {
             return cached;
@@ -472,12 +479,12 @@ public class NaverGeocodingService {
         }
 
         if (hospitals != null && results.size() < 5) {
-            String compactQuery = safeQuery.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+            String compactQuery = WHITESPACE_PATTERN.matcher(safeQuery).replaceAll("").toLowerCase(Locale.ROOT);
             for (HospitalDto h : hospitals) {
                 String name = h.name() != null ? h.name() : "";
                 String addr = h.address() != null ? h.address() : "";
-                if (name.replaceAll("\\s+", "").toLowerCase(Locale.ROOT).contains(compactQuery)
-                        || addr.replaceAll("\\s+", "").toLowerCase(Locale.ROOT).contains(compactQuery)) {
+                if (WHITESPACE_PATTERN.matcher(name).replaceAll("").toLowerCase(Locale.ROOT).contains(compactQuery)
+                        || WHITESPACE_PATTERN.matcher(addr).replaceAll("").toLowerCase(Locale.ROOT).contains(compactQuery)) {
                     results.add(new GeocodeResponseDto.GeocodeItemDto(name, addr, addr, h.lat(), h.lng()));
                     if (results.size() >= 6) {
                         break;
@@ -563,7 +570,8 @@ public class NaverGeocodingService {
      * - 메서드명: sendRateLimitedNominatimRequest
      * - safeQuery : 공백 정리와 길이 제한을 마친 검색어 문자열임.
      */
-        synchronized (nominatimLock) {
+        nominatimLock.lock();
+        try {
             long now = System.currentTimeMillis();
             long waitMs = (lastNominatimRequestAtMs + NOMINATIM_MIN_INTERVAL_MS) - now;
             if (waitMs > 0L) {
@@ -576,38 +584,18 @@ public class NaverGeocodingService {
             HttpRequest nomReq = HttpRequest.newBuilder()
                     .uri(URI.create(nomUrl))
                     .timeout(Duration.ofSeconds(6))
-                    .header("User-Agent", "Yonsei119-Emergency-Service/2.1")
+                    .header("User-Agent", "Yonsei119-Emergency-Service/3.0")
                     .header("Accept", "application/json")
                     .GET()
                     .build();
-            /*
-             * [외부 API URL 조립 3단계 분해 및 요청 헤더 (3단계 OpenStreetMap Nominatim)]
-             * - 1단계 기본 URL 출처:
-             *   application.yml이 아닌 Nominatim 공개 검색 URL 리터럴 문자열을 직접 사용함.
-             * - 2단계 쿼리 파라미터(? / &) 및 URL 인코딩:
-             *   ?format=json&limit=4&countrycodes=kr&accept-language=ko로 한국어·국내 4건 제한을 둠.
-             *   &q= 뒤에 URLEncoder.encode(safeQuery, StandardCharsets.UTF_8)를 이어 URI.create(...)로 변환함.
-             * - 3단계 요청 헤더(.header(...)):
-             *   User-Agent : "Yonsei119-Emergency-Service/2.1" (정책상 앱 식별 필수, NCP 키 미전송)
-             *   Accept     : "application/json"
-             *
-             * [최종 URL 시각 구조도 (3단계 OpenStreetMap Nominatim)]
-             *   https://nominatim.openstreetmap.org/search         <-- 1단계: Nominatim 공개 검색 URL
-             *     ?format=json                                     <-- 2단계: JSON 응답 형식
-             *     &limit=4                                         <-- 2단계: 최대 4건 제한
-             *     &countrycodes=kr                                 <-- 2단계: 대한민국 국가 코드 필터
-             *     &accept-language=ko                              <-- 2단계: 한국어 지명 우선
-             *     &q=%EC%9B%90%EC%A3%BC%EC%8B%9C%EC%B2%AD          <-- 2단계: 검색어 UTF-8 URL 인코딩
-             *   HTTP Headers:
-             *     User-Agent = Yonsei119-Emergency-Service/2.1
-             *     Accept     = application/json
-             */
 
             return httpClient.send(nomReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } finally {
+            nominatimLock.unlock();
         }
         /*
          * [자바 문법]
-         * - synchronized (nominatimLock) { ... } : 동시 요청 스레드를 잠금 객체로 한 줄씩 직렬화함.
+         * - nominatimLock.lock() / try { ... } finally { unlock(); } : 동시 요청을 한 줄씩 직렬화하고 예외 시에도 락을 해제함.
          * - long, if, return
          *
          * [지역 변수명]
@@ -619,9 +607,9 @@ public class NaverGeocodingService {
          * - URLEncoder.encode(...), URI.create(...), HttpRequest.newBuilder()...build(), httpClient.send(...)
          *
          * [동작 흐름]
-         * - synchronized(nominatimLock) 진입 -> (직전 시각 + 1,050ms - 현재 시각) 계산
+         * - nominatimLock.lock() 진입 -> (직전 시각 + 1,050ms - 현재 시각) 계산
          *   ├── waitMs > 0 -> Thread.sleep(waitMs)로 초당 1회 제한 대기
-         *   └── lastNominatimRequestAtMs 갱신 -> Nominatim HTTP GET 전송 및 응답 반환
+         *   └── lastNominatimRequestAtMs 갱신 -> Nominatim HTTP GET 전송 및 응답 반환 -> finally에서 unlock()
          */
     }
 

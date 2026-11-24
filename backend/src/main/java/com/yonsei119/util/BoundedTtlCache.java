@@ -3,6 +3,7 @@ package com.yonsei119.util;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 /*
  * [자바 문법]
  * - package : 여러 서비스가 함께 쓰는 유틸리티 패키지(com.yonsei119.util) 선언문임.
@@ -208,6 +209,28 @@ public final class BoundedTtlCache<K, V> {
          *   3) map.put(key, new CacheEntry<>(...)) 저장 ──> 초과 시 가장 오래 안 쓴 1개 삭제 ──> lock.unlock()
          * - 반환값 : 반환값 없음 (갱신된 항목이 이후 get(key) 조회에 반영됨).
          */
+    }
+
+    public V getOrCompute(K key, Supplier<? extends V> creator) {
+        long now = System.currentTimeMillis();
+        lock.lock();
+        try {
+            CacheEntry<V> entry = map.get(key);
+            if (entry != null && now < entry.expiresAtMs()) {
+                return entry.value();
+            }
+            if (entry != null) {
+                map.remove(key);
+            }
+            if (map.size() >= maxEntries) {
+                map.entrySet().removeIf(item -> now >= item.getValue().expiresAtMs());
+            }
+            V created = creator.get();
+            map.put(key, new CacheEntry<>(created, now + ttlMillis));
+            return created;
+        } finally {
+            lock.unlock();
+        }
     }
 
     public int size() {

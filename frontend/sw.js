@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yonsei119-pwa-v261117-r2';
+const CACHE_NAME = 'yonsei119-pwa-v261124-r5';
 const APP_SHELL_ASSETS = [
     '/',
     '/index.html',
@@ -16,6 +16,7 @@ const APP_SHELL_ASSETS = [
     '/js/constants.js',
     '/js/state.js',
     '/js/utils.js',
+    '/js/user-features.js',
     '/js/map-engine.js',
     '/js/markers-cluster.js',
     '/js/directions-eta.js',
@@ -144,94 +145,127 @@ self.addEventListener('fetch', event => {
  *   └── `/api/directions*`, `/api/geocode*`, `/api/health` ──> 캐시 없이 항상 실시간 서버 조회
  */
 
+function isValidAssetResponse(request, response) {
+    if (!response) {
+        return false;
+    }
+    if (response.status === 304) {
+        return true;
+    }
+    if (!response.ok) {
+        return false;
+    }
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const pathname = new URL(request.url).pathname.toLowerCase();
+    if (pathname.endsWith('.css')) {
+        return contentType.includes('text/css');
+    }
+    if (pathname.endsWith('.js')) {
+        return contentType.includes('javascript');
+    }
+    if (pathname.endsWith('.webmanifest')) {
+        return contentType.includes('json') || contentType.includes('manifest');
+    }
+    if (pathname === '/' || pathname.endsWith('.html')) {
+        return contentType.includes('text/html');
+    }
+    return true;
+}
+
 async function networkFirstWithSnapshotFallback(request) {
     const cache = await caches.open(CACHE_NAME);
+    const pathname = new URL(request.url).pathname;
+    const buildOfflineResponse = cached => {
+        const headers = new Headers(cached.headers);
+        headers.set('X-Yonsei119-Offline-Fallback', '1');
+        return new Response(cached.body, {
+            status: 200,
+            statusText: 'OK (Offline Snapshot)',
+            headers
+        });
+    };
+    const matchOfflineCache = async () => {
+        if (pathname === '/api/config') {
+            return (await cache.match(request)) || (await cache.match('/api/config'));
+        }
+        return (
+            (await cache.match(request)) ||
+            (await cache.match('/api/hospitals?compact=true')) ||
+            (await cache.match('/api/hospitals'))
+        );
+    };
+
     try {
         const freshResponse = await fetch(request);
-        if (freshResponse && freshResponse.ok) {
+        if (freshResponse && freshResponse.status === 304 && request.headers.get('if-none-match')) {
+            return freshResponse;
+        }
+        const contentType = (freshResponse?.headers?.get('content-type') || '').toLowerCase();
+        if (freshResponse && freshResponse.ok && contentType.includes('application/json')) {
             cache.put(request, freshResponse.clone());
+            return freshResponse;
+        }
+        const cached = await matchOfflineCache();
+        if (cached) {
+            return buildOfflineResponse(cached);
         }
         return freshResponse;
     } catch {
-        const cached = await cache.match('/api/hospitals?compact=true')
-            || await cache.match('/api/hospitals')
-            || await cache.match(request);
+        const cached = await matchOfflineCache();
         if (cached) {
-            const headers = new Headers(cached.headers);
-            headers.set('X-Yonsei119-Offline-Fallback', '1');
-            return new Response(cached.body, {
-                status: 200,
-                statusText: 'OK (Offline Snapshot)',
-                headers
-            });
+            return buildOfflineResponse(cached);
         }
-        throw new Error('네트워크 오프라인 및 저장된 병원 스냅샷 없음');
+        throw new Error('네트워크 오프라인 및 저장된 백업 응답 없음');
     }
 }
 /*
  * [JS 문법]
  * - async function / await : 비동기 캐시·네트워크 호출을 위에서 아래로 순서대로 작성함.
- * - try { ... } catch { ... } : 예외 변수를 생략하고 네트워크 단절 오류를 잡아 처리함.
- * - && / || / if / return / throw new Error(...) : 응답 확인과 대체 경로 시도 후 실패 시 오류를 던짐.
+ * - try { ... } catch { ... } : 네트워크 단절 및 Render 기동 중 비정상 응답을 잡아 안전 캐시로 폴백함.
  *
  * [브라우저 내장 Web API (이름 변경 불가)]
- * - caches.open(cacheName) : 캐시 저장소 버킷을 비동기로 여는 메서드임.
- * - fetch(request) : 서버로 실제 HTTP 요청을 보내는 Fetch API 함수임.
- * - Response.prototype.ok / .clone() : 2xx 성공 확인과 본문 스트림 1회 읽기 제약을 우회하는 복제 메서드임.
- * - cache.put(request, response) : 요청과 응답 쌍을 캐시에 저장·갱신하는 메서드임.
- * - cache.match(key) : 저장된 캐시에서 키와 일치하는 응답을 찾는 메서드임.
- * - new Headers(init) / headers.set(name, value) : 기존 헤더를 복사해 새 헤더를 추가하는 API임.
- * - new Response(body, init) : 본문과 상태·헤더를 조합해 새 응답 객체를 만드는 생성자임.
- *
- * [함수명·매개변수명 및 지역 변수명]
- * - 함수명 및 매개변수명 : `networkFirstWithSnapshotFallback`, `request`.
- * - 지역 변수명 : `cache`(열린 캐시), `freshResponse`(서버 응답), `cached`(캐시 응답), `headers`(복제 헤더).
+ * - caches.open(cacheName) / fetch(request) / cache.put(request, response) / cache.match(key)
+ * - Response.prototype.ok / .clone() / new Headers(init) / new Response(body, init)
  *
  * [동작 흐름]
- * - 호출 출처 : `fetch` 핸들러가 `/api/hospitals*` 또는 `/api/config` 요청 시 호출함.
- * - 흐름 :
- *   ├── 온라인 성공(2xx) ──> `cache.put()` 갱신 ──> `freshResponse` 그대로 반환
- *   ├── 오프라인·실패 ──> `cache.match('/api/hospitals?compact=true')` -> `'/api/hospitals'` -> `request` 조회
- *   │   └── 캐시 발견 ──> `X-Yonsei119-Offline-Fallback: 1` 헤더 추가 후 `200` 응답 반환
- *   └── 캐시도 없음 ──> `Error` 발생 ──> `search-controls.js`가 `OFFLINE_SNAPSHOT_KEY` 2차 백업 사용
+ * - `/api/config`는 `/api/config` 캐시와만 매칭하고, `/api/hospitals*`는 병원 스냅샷 캐시와만 매칭함.
+ * - Render 콜드스타트 중 HTTP 502/503 또는 HTML 대기 페이지가 와도 JSON Content-Type 검증 후 캐시로 안전 폴백함.
  */
 
 async function networkFirstAsset(request) {
     const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
+    const controller = new AbortController();
+    const timeoutId = cached ? setTimeout(() => controller.abort(), 4500) : null;
+
     try {
-        const fresh = await fetch(request);
-        if (fresh && (fresh.ok || fresh.status === 304)) {
+        const fresh = await fetch(request, { signal: controller.signal });
+        if (isValidAssetResponse(request, fresh)) {
             if (fresh.ok) {
                 cache.put(request, fresh.clone());
             }
             return fresh;
         }
-    } catch {
-        const cached = await cache.match(request);
         if (cached) {
             return cached;
         }
+        return fresh;
+    } catch (err) {
+        if (cached) {
+            return cached;
+        }
+        throw err;
+    } finally {
+        if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+        }
     }
-    return fetch(request);
 }
 /*
  * [JS 문법]
- * - async function / await / try { ... } catch { ... } : 정적 파일 요청과 캐시 폴백을 비동기로 제어함.
- * - if / === / || / && / return : 상태 코드 조건에 따라 캐시 저장과 반환을 분기함.
- *
- * [브라우저 내장 Web API (이름 변경 불가)]
- * - caches.open(cacheName) / cache.put(request, response) / cache.match(request) : 캐시 저장·조회 메서드임.
- * - fetch(request) / Response.prototype.clone() : 네트워크 요청과 응답 복제 메서드임.
- * - Response.prototype.ok / .status : HTTP `200` 성공과 `304 Not Modified` 재검증 응답을 구분하는 속성임.
- *
- * [함수명·매개변수명 및 지역 변수명]
- * - 함수명 및 매개변수명 : `networkFirstAsset`, `request`.
- * - 지역 변수명 : `cache`(열린 캐시), `fresh`(서버 최신 응답), `cached`(캐시 저장 응답).
+ * - async function / await / try ... catch ... finally : 정적 자산 요청 타임아웃과 MIME 검증 폴백을 제어함.
  *
  * [동작 흐름]
- * - 호출 출처 : `fetch` 핸들러가 `APP_SHELL_ASSETS`에 속한 HTML·CSS·JS·매니페스트 요청 시 호출함.
- * - 흐름 :
- *   ├── 온라인 200 OK ──> `cache.put()` 갱신 ──> 최신 파일 반환
- *   ├── 온라인 304 Not Modified ──> 캐시 저장 생략 ──> `fresh` 그대로 반환 (`WebConfig` ETag 검증)
- *   └── 오프라인·단절 ──> `cache.match(request)` 조회 ──> 있으면 캐시 반환 / 없으면 `fetch` 오류 전파
+ * - 온라인 200 OK + 올바른 MIME(`text/css`, `javascript`, `text/html`) ──> `cache.put()` 갱신 후 반환
+ * - Render 기동 중 502/503, HTML 대기 페이지, 4.5초 타임아웃 ──> 저장된 정상 `cached` 애셋 반환 (다크 CSS 누락 방지)
  */

@@ -36,7 +36,7 @@ services:
 # [서비스 설정 및 환경변수명]
 # - name: yonsei119 : Render에 생성되는 웹 서비스 이름임.
 # - healthCheckPath: /api/health : EmergencyApiController.health()가 HTTP 200을 반환해 생존 여부를 알림.
-# - JAVA_OPTS : Dockerfile ENTRYPOINT로 전달되어 메모리 상한(75%)과 UTF-8 인코딩을 적용함.
+# - JAVA_OPTS : Dockerfile ENTRYPOINT로 전달되어 Java 27 메모리 상한(75%)과 UTF-8 인코딩을 적용함(JEP 534 Compact Object Headers 기본 활성).
 # - NEMC_CACHE_TTL_SECONDS="180" : yonsei119.nemc.cache-ttl-seconds로 바인딩되어 실시간 3종 캐시를 3분 유지함.
 # - NEMC_REFRESH_INTERVAL_MS="180000" : yonsei119.nemc.refresh-interval-ms로 바인딩되어 3분마다 자동 갱신함.
 # - NEMC_COLD_CACHE_TTL_SECONDS="21600" : yonsei119.nemc.cold-cache-ttl-seconds로 바인딩되어 마스터 4종을 6시간 유지함.

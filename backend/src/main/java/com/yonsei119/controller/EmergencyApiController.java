@@ -11,9 +11,14 @@ import com.yonsei119.dto.ReverseGeocodeResponseDto;
 import com.yonsei119.service.EmergencyDataService;
 import com.yonsei119.service.NaverDirectionsService;
 import com.yonsei119.service.NaverGeocodingService;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,6 +27,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 /*
  * [자바 문법]
  * - package : HTTP REST API 요청을 받는 컨트롤러 패키지(com.yonsei119.controller) 선언문임.
@@ -77,6 +83,8 @@ public class EmergencyApiController {
  *      └── NaverGeocodingService : 주소 ↔ 좌표 변환
  * - 반환값 : ResponseEntity로 감싼 DTO·컬렉션이 Jackson JSON 직렬화를 거쳐 클라이언트로 전달됨.
  */
+
+    private static final Pattern HPID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{3,24}$");
 
     private final Yonsei119Properties properties;
     private final EmergencyDataService emergencyDataService;
@@ -148,7 +156,7 @@ public class EmergencyApiController {
      */
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "UP");
-        body.put("service", "yonsei119-backend");
+        body.put("service", "yonsei119");
         body.put("timestamp", Instant.now().toString());
         body.put("javaVersion", Runtime.version().toString());
         return ResponseEntity.ok(body);
@@ -183,7 +191,7 @@ public class EmergencyApiController {
          * - 호출 예시 : 브라우저 http://localhost:8080/api/health 또는 curl http://localhost:8080/api/health
          *
          * [실행 결과 예시]
-         * - HTTP 200 OK : {"status":"UP","service":"yonsei119-backend","timestamp":"2026-11-18T10:00:00Z","javaVersion":"<실행 중인 JDK 버전 문자열>"}
+         * - HTTP 200 OK : {"status":"UP","service":"yonsei119","timestamp":"2026-11-18T10:00:00Z","javaVersion":"<실행 중인 JDK 버전 문자열>"}
          */
     }
 
@@ -255,26 +263,32 @@ public class EmergencyApiController {
          */
     }
 
-    @GetMapping("/hospitals")
-    public ResponseEntity<EmergencySnapshotDto> getHospitals(
+    @GetMapping(value = "/hospitals", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<byte[]> getHospitalsHttp(
             @RequestParam(name = "refresh", defaultValue = "false") boolean refresh,
-            @RequestParam(name = "compact", defaultValue = "false") boolean compact
+            @RequestParam(name = "compact", defaultValue = "false") boolean compact,
+            @RequestHeader(name = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch
+    ) {
+        EmergencyDataService.SerializedSnapshot serialized = emergencyDataService.getSerializedSnapshot(refresh, compact);
+        if (EmergencyDataService.matchesEtag(ifNoneMatch, serialized.etag())) {
+            emergencyDataService.recordNotModifiedHit(compact);
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .header(HttpHeaders.ETAG, serialized.etag())
+                    .cacheControl(CacheControl.noCache())
+                    .build();
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.ETAG, serialized.etag())
+                .cacheControl(CacheControl.noCache())
+                .body(serialized.jsonBytes());
+    }
+
+    public ResponseEntity<EmergencySnapshotDto> getHospitals(
+            boolean refresh,
+            boolean compact
     ) {
     /*
-     * [스프링 내장 어노테이션]
-     * - @GetMapping 정의 (출처: org.springframework.web.bind.annotation.GetMapping, 이름 변경 불가)
-     *   · 역할 : 데이터 조회용 HTTP GET 요청 URL을 특정 컨트롤러 메서드에 연결해 주는 @RequestMapping(method = GET) 축약 어노테이션임.
-     * - @GetMapping("/hospitals") 현재 코드 적용
-     *   · 적용 대상 : 바로 위 선언된 EmergencyApiController.getHospitals(boolean refresh, boolean compact) 메서드
-     *   · 작동 원리 : @RequestMapping("/api")와 합쳐 GET /api/hospitals 요청 시 DispatcherServlet이 getHospitals()를 호출함.
-     *   · 비교 : 생성 @PostMapping, 전체 교체 @PutMapping, 부분 수정 @PatchMapping, 삭제 @DeleteMapping이 있음.
-     * - @RequestParam 정의 (출처: org.springframework.web.bind.annotation.RequestParam, 이름 변경 불가)
-     *   · 역할 : 요청 URL의 쿼리스트링(?이름=값) 파라미터를 읽어 컨트롤러 메서드 매개변수 타입으로 자동 변환·전달하는 어노테이션임.
-     * - @RequestParam(name = "refresh" / "compact", defaultValue = "false") 현재 코드 적용
-     *   · 적용 대상 : getHospitals()의 refresh(boolean), compact(boolean) 매개변수
-     *   · 작동 원리 : ?refresh=...&compact=... 쿼리 문자열을 boolean으로 변환해 바인딩하며 생략 시 "false" 기본값을 적용함.
-     *   · 비교 : 경로 변수 @PathVariable, 요청 헤더 @RequestHeader, JSON 본문 @RequestBody, 폼 @ModelAttribute가 있음.
-     *
      * [자바 문법]
      * - public, 기본형 boolean, ResponseEntity<EmergencySnapshotDto> 반환 타입 선언.
      *
@@ -285,7 +299,7 @@ public class EmergencyApiController {
      * - EmergencySnapshotDto (출처: com.yonsei119.dto 패키지) : 전국 응급의료기관 통합 스냅샷 record DTO임.
      *
      * [메서드명 및 매개변수명]
-     * - 메서드명 : getHospitals.
+     * - 메서드명 : getHospitals (내부 Java/테스트 직접 호출용 DTO 반환 오버로드; HTTP 엔드포인트는 getHospitalsHttp가 사전 직렬화 + ETag 304 처리).
      * - 매개변수명 :
      *   · refresh : true면 캐시 강제 갱신 시도 여부.
      *   · compact : true면 장문 basic·미사용 병상 키를 뺀 경량 목록 반환 여부.
@@ -363,7 +377,7 @@ public class EmergencyApiController {
      * - 메서드명 : getHospitalDetail.
      * - 매개변수명 : hpid (조회할 병원 기관 고유코드, 예: "A2200001").
      */
-        if (hpid == null || !hpid.trim().matches("^[A-Za-z0-9_-]{3,24}$")) {
+        if (hpid == null || !HPID_PATTERN.matcher(hpid.trim()).matches()) {
             return ResponseEntity.badRequest().build();
         }
         HospitalDto detail = emergencyDataService.getHospitalById(hpid);

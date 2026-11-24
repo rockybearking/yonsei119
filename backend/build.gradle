@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '4.1.2'
+    id 'org.springframework.boot' version '4.2.0'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 /*
@@ -15,24 +15,30 @@ plugins {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(27)
     }
+}
+
+springBoot {
+    mainClass = 'com.yonsei119.Yonsei119Application'
 }
 /*
  * [Gradle 내장 확장 및 속성]
  * - java { ... } : 'java' 플러그인이 제공하는 자바 빌드 설정 블록임.
  * - toolchain { ... } : 컴파일과 실행에 쓸 JDK 버전을 고정하는 내장 블록임.
- * - languageVersion, JavaLanguageVersion.of(17) : JDK 17을 지정하는 내장 API임.
+ * - languageVersion, JavaLanguageVersion.of(27) : JDK 27(CVE-2026-114938 패치 포함)을 지정하는 내장 API임.
  * - 비교 속성 : 호스트 PC 버전에 의존하는 구형 sourceCompatibility가 있음.
  *
  * [동작 흐름]
- * - 빌드 시작 -> Gradle이 PC 안의 JDK 17을 찾거나 내려받음 -> Java 17 바이트코드 생성함.
- *   └── 다른 JDK(21, 25 등)가 기본으로 깔려 있어도 항상 Java 17로 컴파일됨.
+ * - 빌드 시작 -> Foojay 툴체인 리졸버가 PC 안의 JDK 27을 찾거나 자동 다운로드 -> Java 27 바이트코드 생성함.
+ *   └── 다른 JDK(17, 21 등)가 기본으로 깔려 있어도 항상 Java 27로 컴파일·테스트됨.
  */
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'com.microsoft.playwright:playwright:1.65.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 /*
@@ -117,7 +123,7 @@ tasks.named('processResources') {
  */
 
 tasks.named('bootJar') {
-    archiveFileName = 'yonsei119-backend.jar'
+    archiveFileName = 'yonsei119.jar'
 }
 /*
  * [Gradle 내장 태스크명 및 속성]
@@ -127,14 +133,14 @@ tasks.named('bootJar') {
  * - 형제 속성 : destinationDirectory, archiveBaseName, archiveVersion 등이 있음.
  *
  * [빌드 산출물 파일명]
- * - 'yonsei119-backend.jar' : 버전이 바뀌어도 파일명이 고정되도록 지정한 산출물 이름임.
+ * - 'yonsei119.jar' : 버전이 바뀌어도 파일명이 고정되도록 지정한 산출물 이름임.
  *
  * [동작 흐름]
- * - bootJar 실행 -> backend/build/libs/yonsei119-backend.jar 생성함.
+ * - bootJar 실행 -> backend/build/libs/yonsei119.jar 생성함.
  *   └── 파일명이 고정되어 Dockerfile의 COPY --from=builder 경로와 항상 일치함.
  *
  * [실행 방법]
- * - 빌드 후 단독 실행 : .\gradlew.bat bootJar 후 java -jar backend/build/libs/yonsei119-backend.jar
+ * - 빌드 후 단독 실행 : .\gradlew.bat bootJar 후 java -jar backend/build/libs/yonsei119.jar
  */
 
 tasks.named('jar') {
@@ -148,7 +154,7 @@ tasks.named('jar') {
  *
  * [동작 흐름]
  * - 빌드 실행 -> 'jar' 태스크 건너뜀 -> 실행 불가능한 *-plain.jar 파일 생성을 막음.
- *   └── 최종 결과물로 실행 가능한 yonsei119-backend.jar 하나만 깔끔하게 남김.
+ *   └── 최종 결과물로 실행 가능한 yonsei119.jar 하나만 깔끔하게 남김.
  */
 
 tasks.named('bootRun') {
@@ -170,6 +176,7 @@ tasks.named('bootRun') {
 
 tasks.named('test') {
     useJUnitPlatform()
+    environment 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1'
 }
 /*
  * [Gradle 내장 태스크명 및 함수]

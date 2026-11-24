@@ -1,3 +1,4 @@
+html.dark-mode,
 body.dark-mode {
     color-scheme: dark;
     color: #e2e8f0;
@@ -164,29 +165,6 @@ body.dark-mode .search-geocode-btn {
 body.dark-mode .filters label {
     background: #1e293b;
     border-color: #334155;
-}
-
-body.dark-mode .symptom-chip {
-    background: #1e293b;
-    border-color: #334155;
-    color: #cbd5e1;
-}
-
-body.dark-mode .symptom-chip:hover {
-    border-color: #60a5fa;
-    background: #273549;
-}
-
-body.dark-mode .symptom-chip[aria-pressed="true"] {
-    background: #2563eb;
-    border-color: #60a5fa;
-    color: #ffffff;
-}
-
-body.dark-mode .symptom-chip.avail-only-chip[aria-pressed="true"] {
-    background: #059669;
-    border-color: #34d399;
-    color: #ffffff;
 }
 /*
  * [CSS 문법]

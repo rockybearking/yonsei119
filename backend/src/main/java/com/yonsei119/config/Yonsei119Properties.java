@@ -15,8 +15,14 @@ public record Yonsei119Properties(
         Nemc nemc,
         Naver naver,
         DefaultOrigin defaultOrigin,
-        Cors cors
+        Cors cors,
+        RateLimit rateLimit
 ) {
+    public Yonsei119Properties {
+        if (rateLimit == null) {
+            rateLimit = new RateLimit(true, 60, 60);
+        }
+    }
 /*
  * [스프링 내장 어노테이션]
  * - @ConfigurationProperties 정의 (출처: org.springframework.boot.context.properties.ConfigurationProperties, 이름 변경 불가)
@@ -111,6 +117,18 @@ public record Yonsei119Properties(
              * - 전달 대상 : EmergencyDataService의 coldTtlSeconds 변수 ──> coldCachedAt 만료 비교에 쓰임.
              */
         }
+
+        public boolean hasServiceKey() {
+            return hasConfiguredValue(serviceKey);
+        }
+    }
+
+    public static boolean hasConfiguredValue(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        return !trimmed.isEmpty() && !trimmed.regionMatches(true, 0, "YOUR_", 0, 5);
     }
 
     public record Naver(
@@ -120,6 +138,9 @@ public record Yonsei119Properties(
             String directions5Url,
             String directions15Url
     ) {
+        public boolean hasApiCredentials() {
+            return hasConfiguredValue(clientId) && hasConfiguredValue(clientSecret);
+        }
     /*
      * [자바 문법]
      * - public record : 중첩 불변 record 선언임.
@@ -192,5 +213,19 @@ public record Yonsei119Properties(
      * - 흐름 : YONSEI119_CORS_ORIGINS 또는 "*" 보관 ──> WebConfig.addCorsMappings()가 콤마로 분리.
      * - 전달 대상 : /api/** 경로의 CORS 허용 규칙으로 등록됨.
      */
+    }
+
+    public record RateLimit(
+            boolean enabled,
+            int capacity,
+            int refillPerMinute
+    ) {
+        public int effectiveCapacity() {
+            return capacity > 0 ? capacity : 60;
+        }
+
+        public int effectiveRefillPerMinute() {
+            return refillPerMinute > 0 ? refillPerMinute : 60;
+        }
     }
 }

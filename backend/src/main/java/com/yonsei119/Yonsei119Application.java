@@ -49,7 +49,7 @@ public class Yonsei119Application {
  * - Yonsei119Application : 스프링 부트 애플리케이션의 메인 시작 클래스명임 (파일명 Yonsei119Application.java와 일치해야 함).
  *
  * [동작 흐름]
- * - 호출 출처 : .\gradlew.bat bootRun 또는 java -jar yonsei119-backend.jar 실행 시 JVM이 메인 클래스로 로드함.
+ * - 호출 출처 : .\gradlew.bat bootRun 또는 java -jar yonsei119.jar 실행 시 JVM이 메인 클래스로 로드함.
  * - 흐름 :
  *   1) @SpringBootApplication·@ConfigurationPropertiesScan·@EnableScheduling 해석 ──> com.yonsei119 하위 스캔
  *      ├── config : Yonsei119Properties, WebConfig, SecurityHeadersFilter 등록
@@ -58,7 +58,7 @@ public class Yonsei119Application {
  * - 전달 대상 : 내부 Yonsei119Application.main(String[] args) 메서드가 JVM에 의해 즉시 호출되어 서버 기동을 시작함.
  */
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
     /*
      * [자바 문법]
      * - public : JVM이 외부에서 제약 없이 main(String[] args) 메서드를 호출하도록 공개함.

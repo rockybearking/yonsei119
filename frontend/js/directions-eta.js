@@ -65,7 +65,7 @@ export function hasRenderedRoute() {
  * - 결과 : 모바일 시트 반열림(Half-Peek) 가능 여부와 진단 상태 판별에 쓰임.
  */
 
-export function buildRouteGeoJson(data) {
+function buildRouteGeoJson(data) {
     const validPath = (data.path || []).filter(
         pt => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])
     );
@@ -182,7 +182,7 @@ export function buildRouteGeoJson(data) {
  * - 결과 : renderGlRoute()가 반환된 FeatureCollection 객체를 WebGL 지도에 넣어 GPU로 경로를 그림.
  */
 
-export function renderGlRoute(mapbox, data) {
+function renderGlRoute(mapbox, data) {
     if (!mapbox || typeof mapbox.getStyle !== 'function' || typeof mapbox.getSource !== 'function') {
         return false;
     }
@@ -364,7 +364,7 @@ export function renderGlRoute(mapbox, data) {
  *   4) 예외 발생 ──> false 반환 ──> drawRouteOnMap()이 2D Polyline 대체 경로를 그림.
  */
 
-export function removeRouteOverlays() {
+function removeRouteOverlays() {
     try {
         const mapbox = state.map?.getMapbox?.();
         const glSource = mapbox?.getSource?.(GL_ROUTE_SOURCE_ID);
@@ -422,7 +422,7 @@ export function removeRouteOverlays() {
  * - 흐름 : WebGL 소스 비우기 ──> glRouteActive 초기화 ──> 2D 선·경유 마커 setMap(null) ──> state 참조 비움.
  */
 
-export function clearRouteOnMap() {
+function clearRouteOnMap() {
     state.activeRouteController?.abort();
     state.activeRouteController = null;
     state.activeRoute = null;
@@ -458,7 +458,7 @@ export function clearRouteOnMap() {
  * - 흐름 : activeRouteController.abort() ──> activeRoute 비움 ──> removeRouteOverlays() ──> 배너·버튼 숨김.
  */
 
-export function resetOriginAndRoute() {
+function resetOriginAndRoute() {
     state.directionsController?.abort();
     state.activeRouteController?.abort();
     state.reverseGeocodeController?.abort();
@@ -546,7 +546,7 @@ export function resetOriginAndRoute() {
  *   4) 마커·주소·열린 순위(loadEtaRanking)·열린 시트(populateWaypointSelect + loadDirections) 갱신 ──> 알림
  */
 
-export function getCongestionStyle(congestion) {
+function getCongestionStyle(congestion) {
     if (congestion === 3) {
         return {
             label: '정체',
@@ -1383,8 +1383,8 @@ export async function loadEtaRanking() {
             includeTertiary: String(includeTertiary),
             includeMedical: String(includeMedical),
             includeOther: String(includeOther),
-            onlyAvailable: String(state.onlyAvailableBeds),
-            symptom: String(state.symptomPreset || 'all'),
+            onlyAvailable: 'false',
+            symptom: 'all',
             mode,
             limit: '5',
             option: 'trafast'

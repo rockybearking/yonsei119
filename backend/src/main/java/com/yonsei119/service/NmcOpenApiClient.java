@@ -1,9 +1,12 @@
 package com.yonsei119.service;
 
 import com.yonsei119.config.Yonsei119Properties;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -28,9 +31,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 /*
  * [자바 문법]
  * - package : NmcOpenApiClient.java 파일이 속한 패키지 경로를 선언함.
@@ -83,6 +90,7 @@ public class NmcOpenApiClient {
     private static final int MAX_CONCURRENT_REQUESTS = 2;
     private static final int MAX_ATTEMPTS_PER_PAGE = 3;
     private static final long RETRY_BASE_BACKOFF_MS = 800L;
+    private static final Pattern TRAILING_SLASH_PATTERN = Pattern.compile("/+$");
     /*
      * [자바 문법]
      * - private static final : 클래스 내부에서만 공유하며 값을 바꿀 수 없는 상수 선언임.
@@ -225,7 +233,9 @@ public class NmcOpenApiClient {
     private final Yonsei119Properties properties;
     private final HttpClient httpClient;
     private final ExecutorService fetchExecutor;
+    private final Semaphore concurrencyLimiter = new Semaphore(MAX_CONCURRENT_REQUESTS);
     private final Map<String, List<Map<String, String>>> lastSuccessfulByOperation = new ConcurrentHashMap<>();
+    private final MeterRegistry meterRegistry;
     /*
      * [자바 문법]
      * - private final : 외부 접근을 막고 생성 시 1회 대입 후 변경을 금지하는 멤버 필드임.
@@ -235,20 +245,31 @@ public class NmcOpenApiClient {
      *
      * [자바/스프링/라이브러리 내장 타입]
      * - HttpClient (java.net.http) : 내부 연결 풀을 재사용하는 스레드 안전 HTTP 클라이언트임.
-     * - ExecutorService (java.util.concurrent) : 비동기 작업 제출과 종료를 관리하는 스레드 풀 인터페이스임.
+     * - ExecutorService (java.util.concurrent) : 가상 스레드 기반 비동기 작업 제출과 종료를 관리하는 실행기임.
+     * - Semaphore (java.util.concurrent) : 가상 스레드 환경에서도 외부 API 동시 호출 상한(2건)을 엄격히 유지함.
      * - Map, ConcurrentHashMap : 동시 읽기·쓰기에 안전한 맵임(HashMap은 멀티스레드 쓰기 시 충돌 위험).
      *
      * [자바/스프링 내장 생성자]
+     * - new Semaphore(2) : 동시 NEMC 요청 허가 수를 최대 2개로 제한하는 세마포어를 생성함.
      * - new ConcurrentHashMap<>() : 스레드 안전한 해시맵 기본 생성자임.
      *
      * [필드명 (멤버 변수)]
      * - properties : NEMC 기본 URL, 인증키, 타임아웃 설정을 읽는 설정 레코드 필드임.
      * - httpClient : HTTP/1.1 GET 통신에 재사용하는 클라이언트 필드임.
-     * - fetchExecutor : 최대 2개 데몬 스레드로 API 페이지를 병렬 수집하는 스레드 풀 필드임.
+     * - fetchExecutor : 오퍼레이션별 작업을 가상 스레드로 실행하는 실행기 필드임.
+     * - concurrencyLimiter : 외부 공공 API 동시 요청을 최대 2건으로 제한하는 세마포어 필드임.
      * - lastSuccessfulByOperation : 오퍼레이션별 직전 정상 수집 목록을 저장하는 폴백 캐시 필드임.
      */
 
     public NmcOpenApiClient(Yonsei119Properties properties) {
+        this(properties, null);
+    }
+
+    @Autowired
+    public NmcOpenApiClient(
+            Yonsei119Properties properties,
+            ObjectProvider<MeterRegistry> meterRegistryProvider
+    ) {
     /*
      * [자바 문법]
      * - public 생성자 : 반환 타입이 없으며 빈 생성 시 스프링 DI가 자동 호출하는 생성자임.
@@ -257,16 +278,15 @@ public class NmcOpenApiClient {
      * - Yonsei119Properties : 설정 바인딩용 프로젝트 레코드로 스프링이 자동 주입함.
      *
      * [생성자 및 매개변수명]
-     * - NmcOpenApiClient : 타임아웃·스레드 풀·HTTP 클라이언트를 초기화하는 생성자임.
-     * - properties : 스프링 의존성 주입으로 전달받는 설정 객체 매개변수임.
+     * - NmcOpenApiClient : 타임아웃·가상 스레드 실행기·HTTP 클라이언트·메트릭 레지스트리를 초기화하는 생성자임.
+     * - properties / meterRegistryProvider : 스프링 의존성 주입으로 전달받는 설정·메트릭 객체 매개변수임.
      */
         this.properties = properties;
+        this.meterRegistry = meterRegistryProvider != null ? meterRegistryProvider.getIfAvailable() : null;
         long timeoutMs = Math.max(5000L, properties.nemc().requestTimeoutMs());
-        this.fetchExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_REQUESTS, runnable -> {
-            Thread thread = new Thread(runnable, "yonsei119-nemc-fetch");
-            thread.setDaemon(true);
-            return thread;
-        });
+        this.fetchExecutor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("yonsei119-nemc-fetch-", 0).factory()
+        );
         this.httpClient = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofMillis(timeoutMs))
@@ -275,16 +295,14 @@ public class NmcOpenApiClient {
         /*
          * [자바 문법]
          * - this. : 매개변수와 이름이 겹칠 때 인스턴스 자신의 필드를 가리키는 참조 키워드임.
-         * - 람다식 runnable -> { ... } : ThreadFactory의 새 스레드 생성 메서드를 간결히 구현함.
          *
          * [자바/스프링/라이브러리 내장 타입]
          * - Math, Executors, Thread, HttpClient, HttpClient.Version, HttpClient.Redirect, Duration.
          *
          * [자바/스프링 내장 생성자·메서드]
          * - Math.max(5000L, 값) : 설정값이 5초 미만이어도 최소 5,000ms를 보장함.
-         * - Executors.newFixedThreadPool(개수, 팩토리) : 고정 개수 스레드만 재사용하는 풀을 만듦.
-         * - new Thread(작업, 이름) : 스레드 덤프·로그 식별용 이름을 지정해 스레드를 생성함.
-         * - Thread.setDaemon(true) : 메인 서버 종료 시 작업 스레드가 프로세스 종료를 막지 않게 함.
+         * - Thread.ofVirtual().name(..., 0).factory() : 작업마다 경량 가상 스레드를 만드는 팩토리를 생성함.
+         * - Executors.newThreadPerTaskExecutor(팩토리) : 블로킹 HTTP I/O 중 플랫폼 스레드를 점유하지 않도록 함.
          * - HttpClient.newBuilder() ... .build() : 빌더 체이닝으로 불변 HttpClient를 생성함.
          * - .version(HTTP_1_1) / .connectTimeout(기간) / .followRedirects(NORMAL) : 프로토콜·제한·리다이렉트 설정.
          * - Duration.ofMillis(밀리초) : 밀리초 숫자 값을 java.time.Duration 객체로 변환함.
@@ -294,7 +312,6 @@ public class NmcOpenApiClient {
          *
          * [지역 변수명]
          * - timeoutMs : 최소 5,000ms 하한이 적용된 연결 제한 시간(ms) 변수임.
-         * - thread : 스레드 풀 팩토리 람다에서 생성·설정한 데몬 스레드 변수임.
          */
     }
 
@@ -314,13 +331,14 @@ public class NmcOpenApiClient {
      * - public void : 외부·컨테이너가 호출할 수 있고 반환값이 없는 메서드 선언임.
      *
      * [메서드명 및 매개변수명]
-     * - shutdown : 매개변수 없이 서버 종료 시 전용 스레드 풀을 닫는 정리 메서드임.
+     * - shutdown : 매개변수 없이 서버 종료 시 실행기와 HttpClient 연결 자원을 닫는 정리 메서드임.
      */
         fetchExecutor.shutdownNow();
+        httpClient.close();
         /*
          * [자바/스프링 내장 메서드]
          * - ExecutorService.shutdownNow() : 대기 작업을 취소하고 실행 중 스레드에 인터럽트를 걸어 즉시 종료함.
-         *   - 비교 : 진행 중인 작업 완료까지 기다리고 싶을 때는 shutdown()을 씀.
+         * - HttpClient.close() (Java 21+) : 내부 연결 풀과 선택자 스레드 자원을 안전하게 닫음.
          */
     }
 
@@ -383,7 +401,10 @@ public class NmcOpenApiClient {
         for (Map.Entry<String, String> entry : targetEndpoints.entrySet()) {
             String key = entry.getKey();
             String operation = entry.getValue();
-            futures.put(key, CompletableFuture.supplyAsync(() -> fetchAllPages(operation), fetchExecutor));
+            futures.put(key, CompletableFuture.supplyAsync(
+                    () -> runWithPermit(concurrencyLimiter, () -> fetchAllPages(operation)),
+                    fetchExecutor
+            ));
         }
 
         Map<String, List<Map<String, String>>> results = new LinkedHashMap<>();
@@ -428,6 +449,22 @@ public class NmcOpenApiClient {
          *   ├── 성공 시: results.put(key, 수집결과)
          *   └── 예외 시: results.put(key, lastSuccessfulByOperation 직전 정상 데이터)
          */
+    }
+
+    private static <T> T runWithPermit(Semaphore semaphore, Supplier<T> task) {
+        boolean acquired = false;
+        try {
+            semaphore.acquire();
+            acquired = true;
+            return task.get();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new CompletionException(ie);
+        } finally {
+            if (acquired) {
+                semaphore.release();
+            }
+        }
     }
 
     public List<Map<String, String>> fetchAllPages(String operation) {
@@ -526,12 +563,18 @@ public class NmcOpenApiClient {
      * - fetchSinglePage : 지정된 오퍼레이션·페이지 범위의 XML을 조회·재시도·파싱함.
      * - operation / pageNo / numOfRows : NEMC 오퍼레이션 영문명, 페이지 번호(1 이상), 행 수임.
      */
+        if (properties.nemc() == null || !properties.nemc().hasServiceKey()) {
+            log.warn("NEMC_API_SERVICE_KEY 미설정 또는 예시 값으로 OpenAPI 호출 생략 (operation={}).", operation);
+            recordOpenApiOutcome(operation, "skipped");
+            return new ParsedXmlPage(0, List.of(), false);
+        }
         String encodedKey = ensureUrlEncodedServiceKey(properties.nemc().serviceKey());
         if (encodedKey.isEmpty()) {
             log.warn("NEMC_API_SERVICE_KEY 미설정으로 OpenAPI 호출 생략 (operation={}).", operation);
+            recordOpenApiOutcome(operation, "skipped");
             return new ParsedXmlPage(0, List.of(), false);
         }
-        String baseUrl = properties.nemc().baseUrl().replaceAll("/+$", "");
+        String baseUrl = TRAILING_SLASH_PATTERN.matcher(properties.nemc().baseUrl()).replaceAll("");
         String requestUrl = String.format(
                 "%s/%s?serviceKey=%s&pageNo=%d&numOfRows=%d",
                 baseUrl, operation, encodedKey, pageNo, numOfRows
@@ -610,6 +653,7 @@ public class NmcOpenApiClient {
                     }
                     log.warn("NEMC OpenAPI HTTP 비정상 응답 (최종 실패): operation={}, status={}",
                             operation, response.statusCode());
+                    recordOpenApiOutcome(operation, "failure");
                     return new ParsedXmlPage(0, List.of(), false);
                 }
 
@@ -618,6 +662,7 @@ public class NmcOpenApiClient {
                     sleepBeforeRetry(attempt);
                     continue;
                 }
+                recordOpenApiOutcome(operation, parsed.success() ? "success" : "failure");
                 return parsed;
             } catch (Exception ex) {
                 if (attempt < MAX_ATTEMPTS_PER_PAGE) {
@@ -629,6 +674,7 @@ public class NmcOpenApiClient {
                 }
             }
         }
+        recordOpenApiOutcome(operation, "failure");
         return new ParsedXmlPage(0, List.of(), false);
         /*
          * [자바 문법]
@@ -658,6 +704,13 @@ public class NmcOpenApiClient {
          *   ├── 2xx 아님 / XML 에러 / 예외 & attempt < 3 -> sleepBeforeRetry(attempt) 대기 후 재시도
          *   └── 3회 모두 실패 -> 경고 로그 기록 후 실패 ParsedXmlPage(0, [], false) 반환
          */
+    }
+
+    private void recordOpenApiOutcome(String operation, String outcome) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("yonsei119.nemc.openapi.calls", "operation", operation, "outcome", outcome)
+                    .increment();
+        }
     }
 
     private static void sleepBeforeRetry(int attempt) {

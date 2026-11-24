@@ -57,8 +57,6 @@ export const state = {
     originLabel: DEFAULT_ORIGIN.label,
     originAddress: '',
     selectedDirectionOption: 'trafast',
-    symptomPreset: 'all',
-    onlyAvailableBeds: false,
     etaRankMode: 'optimal',
     sheetHalfPeek: false,
     offlineMode: false,
@@ -73,10 +71,11 @@ export const state = {
     locationAccuracy: null,
     locationUpdated: null,
     lastUpdated: null,
+    lastSnapshotEtag: null,
     hospitals: [],
-    markers: [],
     markerMap: new Map(),
     detailCache: new Map(),
+    speakingHospitalId: null,
     selected: null,
     sources: {},
     controller: null,
@@ -140,7 +139,7 @@ export const state = {
  *   · `initialDeepLinkHandled` / `mobileMenuOpen` / `etaRankOpen` : 딥링크·모바일 메뉴·순위 패널 열림 상태.
  *   · `locationKnown` / `locationAccuracy` / `locationUpdated` / `lastUpdated` : 위치 확인 여부와 갱신 시각.
  * - 병원 데이터·마커·캐시 속성 :
- *   · `hospitals` / `markers` / `clusterItems` : 병원 목록, 레거시 마커, 클러스터 모달 목록.
+ *   · `hospitals` / `clusterItems` : 병원 목록과 클러스터 모달 목록.
  *   · `markerMap` / `detailCache` : 병원 ID별 오버레이 `Map`과 단건 상세 캐시 `Map`.
  *   · `selected` / `sources` / `previousFocus` : 선택 병원, 7대 데이터 소스 상태, 이전 포커스 요소.
  *   · `renderedDevHospitalRef` / `hasFitted` : 개발자 모드 중복 렌더 방지와 초기 맞춤 여부.

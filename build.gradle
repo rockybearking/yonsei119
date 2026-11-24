@@ -1,6 +1,6 @@
 allprojects {
     group = 'com.yonsei119'
-    version = '2.1.0'
+    version = '3.0.0'
 
     repositories {
         mavenCentral()
@@ -17,7 +17,7 @@ allprojects {
  *
  * [프로젝트 그룹 및 버전]
  * - 'com.yonsei119' : 프로젝트의 Maven 그룹 ID이자 자바 기본 패키지 이름임.
- * - '2.1.0' : 현재 프로젝트의 릴리스 버전 문자열임.
+ * - '3.0.0' : Java 27 및 Spring Boot 4.2 업그레이드 릴리스 버전 문자열임.
  *
  * [동작 흐름]
  * - 루트 build.gradle 평가 -> allprojects 실행 -> 루트와 ':backend'가 공통 설정 상속함.
@@ -66,13 +66,13 @@ tasks.register('bootJar') {
  *
  * [동작 흐름]
  * - 루트 bootJar 실행 -> ':backend:bootJar' 호출 -> 통합 실행 JAR 생성함.
- *   ├── 산출물 경로 : backend/build/libs/yonsei119-backend.jar
+ *   ├── 산출물 경로 : backend/build/libs/yonsei119.jar
  *   └── 내부 구성 : frontend/ 정적 파일 + 백엔드 클래스 + 의존 라이브러리.
  *
  * [실행 방법]
  * - 빌드 : .\gradlew.bat bootJar (Linux/macOS는 ./gradlew bootJar)
- * - 실행 : java -jar backend/build/libs/yonsei119-backend.jar
- * - 포트 변경 실행 : java -Dserver.port=9090 -jar backend/build/libs/yonsei119-backend.jar
+ * - 실행 : java -jar backend/build/libs/yonsei119.jar
+ * - 포트 변경 실행 : java -Dserver.port=9090 -jar backend/build/libs/yonsei119.jar
  */
 
 tasks.register('checkAll') {

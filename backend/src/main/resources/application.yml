@@ -1,6 +1,11 @@
 spring:
   application:
-    name: yonsei119-backend
+    name: yonsei119
+  threads:
+    virtual:
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
   config:
     import:
       - optional:file:.env[.properties]
@@ -12,6 +17,8 @@ spring:
         period: 0
 # [Spring Boot 내장 설정 키 및 YAML 문법]
 # - spring.application.name : 스프링 애플리케이션 식별 이름을 정하는 내장 키임.
+# - spring.threads.virtual.enabled : Java 21+/27 가상 스레드(Virtual Threads)를 Tomcat 요청과 @Scheduled 작업에 활성화함.
+# - spring.lifecycle.timeout-per-shutdown-phase : 우아한 종료(Graceful Shutdown) 시 진행 중 요청 완료를 기다릴 최대 유예 시간(15초)임.
 # - 형제 키 : 실행 환경을 나누는 spring.profiles.active가 있음.
 # - spring.config.import : 외부 설정 파일을 순서대로 불러오는 내장 배열 키임.
 # - '-' 기호 : YAML에서 배열(목록)의 한 항목을 뜻하는 표기임.
@@ -22,7 +29,7 @@ spring:
 # - 형제 키 : 정적 폴더를 지정하는 spring.web.resources.static-locations가 있음.
 #
 # [설정 값 및 경로]
-# - yonsei119-backend : 앱 식별 이름임 (EmergencyApiController.health()에서도 같은 이름을 반환함).
+# - yonsei119 : 앱 식별 이름임 (EmergencyApiController.health()에서도 같은 이름을 반환함).
 # - optional:file:.env[.properties] : 루트 폴더에서 실행할 때 .env를 읽는 경로임.
 # - optional:file:../.env[.properties] : backend/ 폴더에서 실행할 때 상위 .env를 읽는 경로임.
 # - optional:classpath:application-local.yml : 로컬 전용 추가 설정 파일이 있으면 읽는 경로임.
@@ -34,12 +41,17 @@ spring:
 
 server:
   port: ${PORT:8080}
+  http2:
+    enabled: true
+  shutdown: graceful
   compression:
     enabled: true
     mime-types: application/json,application/javascript,text/javascript,text/css,text/html,text/xml,application/manifest+json
     min-response-size: 1024
 # [Spring Boot 내장 설정 키 및 치환 문법]
 # - server.port : 내장 Tomcat 웹 서버가 열 TCP 포트 번호를 정하는 내장 키임.
+# - server.http2.enabled : HTTP/2 다중 스트림 전송을 활성화해 CSS/JS 병렬 로드를 가속함.
+# - server.shutdown: graceful : 종료 신호(SIGTERM) 수신 시 새 요청을 막고 처리 중인 요청 완료까지 대기함.
 # - 형제 키 : 바인딩 IP를 정하는 server.address, 기본 경로 server.servlet.context-path가 있음.
 # - server.compression.enabled : HTTP 응답 GZIP 압축 기능을 켜거나 끄는 내장 키임.
 # - server.compression.mime-types : GZIP으로 압축할 응답 콘텐츠 종류(MIME) 목록 키임.
@@ -53,7 +65,7 @@ server:
 #   └── /api/hospitals 등 큰 JSON과 HTML/CSS/JS 전송 크기를 줄여 로딩 속도를 높임.
 #
 # [실행 방법]
-# - 로컬 실행 : .\gradlew.bat bootRun (또는 java -jar backend/build/libs/yonsei119-backend.jar)
+# - 로컬 실행 : .\gradlew.bat bootRun (또는 java -jar backend/build/libs/yonsei119.jar)
 # - 기본 접속 : http://localhost:8080 및 헬스체크 http://localhost:8080/api/health
 
 yonsei119:
@@ -116,11 +128,26 @@ yonsei119:
 
   cors:
     allowed-origin-patterns: ${YONSEI119_CORS_ORIGINS:*}
+  rate-limit:
+    enabled: ${YONSEI119_RATE_LIMIT_ENABLED:true}
+    capacity: ${YONSEI119_RATE_LIMIT_CAPACITY:60}
+    refill-per-minute: ${YONSEI119_RATE_LIMIT_REFILL_PER_MINUTE:60}
   # [설정 키 이름]
   # - yonsei119.cors.allowed-origin-patterns : Yonsei119Properties.Cors.allowedOriginPatterns에 연결되는 키임.
   #   └── YONSEI119_CORS_ORIGINS 환경변수가 없으면 기본값 '*'를 사용함.
+  # - yonsei119.rate-limit.* : ApiRateLimitFilter가 네이버 대리 호출 API(`/api/directions*`, `/api/geocode*`)에
+  #   IP별 토큰 버킷 요청률 제한을 적용할 때 참조하는 설정 키임.
   #
   # [동작 흐름]
   # - allowed-origin-patterns -> WebConfig.addCorsMappings(...)가 콤마(,)로 잘라 배열로 만듦.
   #   └── /api/** 엔드포인트의 GET, OPTIONS 교차 출처(CORS) 허용 도메인 규칙에 적용함.
-  # - 로컬 개발 시 다른 포트 접근을 허용하고, 운영 시 환경변수로 특정 도메인만 제한할 수 있음.
+  # - rate-limit -> enabled=true 시 IP당 분당 capacity(60회) 버스트 및 refill-per-minute(60회/분) 보충 제한.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always

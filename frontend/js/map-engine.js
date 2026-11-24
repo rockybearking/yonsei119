@@ -28,6 +28,9 @@ import {
 
 let sdkLoadPromise = null;
 let loadedSdkClientId = DEFAULT_NAVER_CLIENT_ID;
+let mapMountGeneration = 0;
+let glWaitTimerId = null;
+let glReadyTimerId = null;
 /*
  * [JS 문법]
  * - let : 모듈 실행 중 값이 다시 할당되어야 하는 변수를 모듈 스코프에 선언하는 키워드임.
@@ -35,6 +38,8 @@ let loadedSdkClientId = DEFAULT_NAVER_CLIENT_ID;
  * [프로젝트 내부 변수]
  * - sdkLoadPromise : 비동기 SDK <script> 로드 중 같은 Promise를 돌려줘 중복 삽입을 막음.
  * - loadedSdkClientId : 현재 로드되었거나 로드 중인 네이버 Client ID를 추적함(기본 DEFAULT_NAVER_CLIENT_ID).
+ * - mapMountGeneration : 비동기 타이머·glReady 콜백과 최신 지도 마운트 세대를 대조하는 단조 증가 카운터임.
+ * - glWaitTimerId / glReadyTimerId : 재마운트 시 이전 GL 대기 타이머를 취소하기 위한 핸들임.
  */
 
 export function ensureNaverMapSdkLoaded(targetClientId = state.naverClientId) {
@@ -60,6 +65,10 @@ export function ensureNaverMapSdkLoaded(targetClientId = state.naverClientId) {
             resolve(true);
             return;
         }
+
+        state._glWaitFinished = false;
+        state._glCallbackBound = false;
+        state._glPermanentUnsupported = false;
 
         if (window.naver) {
             try {
@@ -520,7 +529,7 @@ export function updateLocationMarker() {
  * - 조건 충족 -> div.location-marker 조립 -> createNaverDomOverlay(xAnchor:0.5, yAnchor:0.5, zIndex:1000)
  */
 
-export function syncGlTrafficLayers(mapbox, visible) {
+function syncGlTrafficLayers(mapbox, visible) {
     if (!mapbox || typeof mapbox.getStyle !== 'function') {
         return;
     }
@@ -641,7 +650,7 @@ export function syncGlTrafficLayers(mapbox, visible) {
  *   └── 레이어 존재 -> setLayoutProperty()로 visibility만 전환
  */
 
-export function syncTrafficLayer() {
+function syncTrafficLayer() {
     const naverMaps = window.naver?.maps;
     if (!state.map || !naverMaps?.TrafficLayer) {
         return;
@@ -889,7 +898,8 @@ export function focusHospitalOnMap(hospital, targetZoom = 15) {
  * - 준비 완료 -> morph(450ms, easeOutCubic) -> updateBy -> setCenter + setZoom 순으로 폴백 이동
  */
 
-export function mountNaverMap() {
+export function mountNaverMap(options = {}) {
+    const { temporary2dFallback = false } = options;
     const naverMaps = window.naver?.maps;
     if (!naverMaps) {
         return;
@@ -898,6 +908,16 @@ export function mountNaverMap() {
     const mapContainer = byId('map');
     if (!mapContainer) {
         return;
+    }
+
+    const mountGen = ++mapMountGeneration;
+    if (glWaitTimerId) {
+        clearTimeout(glWaitTimerId);
+        glWaitTimerId = null;
+    }
+    if (glReadyTimerId) {
+        clearTimeout(glReadyTimerId);
+        glReadyTimerId = null;
     }
 
     let prevCenter = new naverMaps.LatLng(state.origin.lat, state.origin.lng);
@@ -931,7 +951,6 @@ export function mountNaverMap() {
         }
     }
     state.markerMap.clear();
-    state.markers = [];
 
     try {
         state.circle?.setMap(null);
@@ -1003,32 +1022,67 @@ export function mountNaverMap() {
      * - 지역 변수 : naverMaps, prevCenter, prevZoom, currentCenter, currentZoom, savedActiveRoute, baseOptions
      */
 
-    if (!naverMaps.glEnabled && !state._glWaitFinished) {
+    if (!naverMaps.glEnabled && !state._glPermanentUnsupported && !temporary2dFallback) {
         if (!state._glCallbackBound) {
             state._glCallbackBound = true;
-            const finishGlWait = () => {
-                if (state._glWaitFinished) {
-                    return;
-                }
+            const handleGlSubmoduleLoaded = () => {
                 state._glWaitFinished = true;
-                mountNaverMap();
+                if (glWaitTimerId) {
+                    clearTimeout(glWaitTimerId);
+                    glWaitTimerId = null;
+                }
+                if (window.naver?.maps?.glEnabled) {
+                    const glSupportedNow =
+                        typeof window.naver.maps.Util?.glSupported !== 'function' ||
+                        window.naver.maps.Util.glSupported();
+                    if (!glSupportedNow) {
+                        state._glPermanentUnsupported = true;
+                        if (!state.map) {
+                            mountNaverMap({ temporary2dFallback: true });
+                        }
+                        return;
+                    }
+                    if (!state.map || state.map.get?.('renderMode') !== 2) {
+                        mountNaverMap();
+                    }
+                } else if (!state.map) {
+                    mountNaverMap({ temporary2dFallback: true });
+                }
             };
             const prevCallback = naverMaps.onJSContentLoaded;
             naverMaps.onJSContentLoaded = (...args) => {
                 if (typeof prevCallback === 'function') {
                     prevCallback(...args);
                 }
-                finishGlWait();
+                handleGlSubmoduleLoaded();
             };
-            setTimeout(finishGlWait, 1500);
         }
-        return;
+        if (!state._glWaitFinished) {
+            glWaitTimerId = setTimeout(() => {
+                glWaitTimerId = null;
+                if (mountGen !== mapMountGeneration || state._glWaitFinished) {
+                    return;
+                }
+                state._glWaitFinished = true;
+                mountNaverMap({ temporary2dFallback: !window.naver?.maps?.glEnabled });
+            }, 3500);
+            return;
+        }
+    }
+
+    let glSupported = false;
+    if (naverMaps.glEnabled) {
+        glSupported = typeof naverMaps.Util?.glSupported !== 'function' || naverMaps.Util.glSupported();
+        if (!glSupported) {
+            state._glPermanentUnsupported = true;
+        }
     }
 
     const glSubmoduleReady = Boolean(
-        !state._force2dFallback &&
+        !temporary2dFallback &&
+        !state._glPermanentUnsupported &&
         naverMaps.glEnabled &&
-        (typeof naverMaps.Util?.glSupported !== 'function' || naverMaps.Util.glSupported())
+        glSupported
     );
 
     let usingGlEngine = false;
@@ -1054,19 +1108,19 @@ export function mountNaverMap() {
      * [네이버 지도 SDK 내장 API]
      * - naver.maps.glEnabled : submodules=gl 서브모듈 스크립트 로드 완료 여부 플래그임.
      * - naver.maps.onJSContentLoaded : 비동기 서브모듈 로드 완료 시 호출되는 SDK 콜백 훅임.
-     * - naver.maps.Util.glSupported() : 현재 브라우저의 WebGL 렌더링 지원 여부를 판별함.
+     * - naver.maps.Util.glSupported() : GL 서브모듈 로드 후(naverMaps.glEnabled === true)에만 WebGL 지원 여부를 판별함(로드 전 스텁 false 오판 방지).
      * - new naver.maps.Map(container, options) : 지도 인스턴스 생성자(gl, customStyleId 지원).
      * - map.get('renderMode') : 반환값이 2이면 WebGL 벡터 엔진이 실제 가동 중임을 뜻함.
      *
      * [프로젝트 내부 변수]
-     * - 상태 플래그 : state._glWaitFinished, state._glCallbackBound, state._force2dFallback
-     * - 지역 변수 : finishGlWait, prevCallback, glSubmoduleReady, usingGlEngine, glOptions
+     * - 상태 플래그 : state._glWaitFinished, state._glCallbackBound, state._glPermanentUnsupported
+     * - 매개·지역 변수 : temporary2dFallback, mountGen, glSupported, handleGlSubmoduleLoaded, glSubmoduleReady, usingGlEngine
      *
      * [동작 흐름]
-     * - !naverMaps.glEnabled && !state._glWaitFinished -> 서브모듈 로드 대기 분기
-     *   └── onJSContentLoaded 훅 + 1500ms 안전 타임아웃 -> _glWaitFinished = true 후 mountNaverMap()
+     * - !naverMaps.glEnabled && !state._glPermanentUnsupported -> 서브모듈 로드 대기 (3.5초 타임아웃)
+     *   └── 임시 2D 전환 뒤에도 onJSContentLoaded가 도착하면 glSupported() 확인 후 GL 업그레이드(또는 미지정 시 2D 마운트)를 수행함.
      * - glSubmoduleReady 참 -> glOptions(gl: true, 다크 모드 시 customStyleId)로 GL 지도 생성
-     * - 생성 예외 또는 GL 미지원·강제 폴백 -> baseOptions 기반 2D 일반 지도로 자동 생성
+     * - 일시적 지연 폴백 시 temporary2dFallback만 사용하고 영구 잠금을 걸지 않아 콜드스타트 라이트 고착을 방지함.
      */
 
     const syncMapOverlays = () => {
@@ -1085,9 +1139,15 @@ export function mountNaverMap() {
     if (usingGlEngine) {
         const currentGlMap = state.map;
         let glSettled = false;
-
-        naverMaps.Event.addListener(currentGlMap, 'glReady', () => {
+        const finishGlReady = () => {
+            if (glSettled || mountGen !== mapMountGeneration || state.map !== currentGlMap) {
+                return;
+            }
             glSettled = true;
+            if (glReadyTimerId) {
+                clearTimeout(glReadyTimerId);
+                glReadyTimerId = null;
+            }
             syncMapOverlays();
             if (savedActiveRoute) {
                 uiCallbacks.onDrawRouteOnMap?.(savedActiveRoute.hospital, savedActiveRoute.data, {
@@ -1097,14 +1157,25 @@ export function mountNaverMap() {
                     rawWaypoint: savedActiveRoute.rawWaypoint
                 });
             }
-        });
+        };
 
-        setTimeout(() => {
-            if (!glSettled && state.map === currentGlMap && !currentGlMap.isGLReady?.()) {
-                state._force2dFallback = true;
-                mountNaverMap();
-            }
-        }, 2200);
+        naverMaps.Event.addListener(currentGlMap, 'glReady', finishGlReady);
+
+        if (currentGlMap.isGLReady?.()) {
+            finishGlReady();
+        } else {
+            glReadyTimerId = setTimeout(() => {
+                glReadyTimerId = null;
+                if (
+                    !glSettled &&
+                    mountGen === mapMountGeneration &&
+                    state.map === currentGlMap &&
+                    !currentGlMap.isGLReady?.()
+                ) {
+                    mountNaverMap({ temporary2dFallback: true });
+                }
+            }, 10000);
+        }
     } else {
         naverMaps.Event.addListener(state.map, 'init', syncMapOverlays);
         syncMapOverlays();
@@ -1152,16 +1223,16 @@ export function mountNaverMap() {
  * - coord.lat() / coord.lng() : 이벤트 좌표 객체에서 위도와 경도 실수를 꺼내는 메서드임.
  *
  * [프로젝트 내부 함수·변수]
- * - 함수·내부 콜백 : mountNaverMap(), syncMapOverlays()
+ * - 함수·내부 콜백 : mountNaverMap(options), syncMapOverlays(), finishGlReady()
  * - 지역 변수 : currentGlMap, glSettled, event, coord, eventName
  *
  * [동작 흐름]
- * - 호출 : init(), syncFrontendConfig(), applyTheme(), GL 대기·폴백 타임아웃에서 호출함.
- * - 1단계 백업·정리 -> 중심·줌·savedActiveRoute 백업 -> 기존 오버레이·지도 해제 -> canvasHost 교체
- * - 2단계 엔진 마운트 -> GL 준비 시 glReady, 2D 모드 시 init + 즉시 syncMapOverlays() 실행
+ * - 호출 : init(), syncFrontendConfig(), applyTheme(), GL 대기·임시 폴백 타임아웃에서 호출함.
+ * - 1단계 백업·정리 -> 중심·줌·savedActiveRoute 백업 -> 이전 대기 타이머·오버레이·지도 해제 -> canvasHost 교체
+ * - 2단계 엔진 마운트 -> GL 준비 시 glReady(또는 동기 isGLReady()), 2D 모드 시 init + 즉시 syncMapOverlays() 실행
  *   ├── syncMapOverlays() -> fitRadius -> updateCircle -> updateLocationMarker -> onUpdateMarkers
  *   ├── savedActiveRoute 존재 시 -> uiCallbacks.onDrawRouteOnMap?.(..., { fitMap: false }) 복원
- *   └── GL 2200ms 내 미준비 -> state._force2dFallback = true 설정 후 mountNaverMap() 재실행
+ *   └── GL 10000ms 내 미준비 -> 영구 차단 없이 일시 mountNaverMap({ temporary2dFallback: true }) 폴백 실행
  * - 3단계 이벤트 연결 -> 지도 생성 뒤 상시 상호작용 리스너를 등록함
  *   ├── 'idle' -> uiCallbacks.onUpdateMarkers?.()로 화면 마커 갱신
  *   ├── 'rightclick' / 'longtap' -> uiCallbacks.onCustomOrigin?.(lat, lng, 라벨)로 출발지 이동

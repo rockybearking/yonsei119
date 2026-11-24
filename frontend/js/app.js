@@ -16,6 +16,9 @@ import {
     updateMarquees
 } from './utils.js';
 import {
+    loadPersistedUserPrefs
+} from './user-features.js';
+import {
     ensureNaverMapSdkLoaded,
     fitBounds,
     getHospitalLatLng,
@@ -51,7 +54,6 @@ import {
     loadData,
     locate,
     registerServiceWorker,
-    renderSymptomChips,
     setCustomOrigin,
     syncFrontendConfig,
     syncMobileMenuPlacement,
@@ -221,11 +223,11 @@ function bindGlobalKeyboardNavigation() {
  */
 
 async function init() {
+    loadPersistedUserPrefs();
     initThemeToggle();
     initSearchFocus();
     initPanels();
     initRadius();
-    renderSymptomChips();
     initDirectionsControls();
     updateSummary();
 

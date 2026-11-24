@@ -6,6 +6,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponseWrapper;
 import org.jspecify.annotations.NonNull;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -31,6 +33,7 @@ import java.util.Locale;
  */
 
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class SecurityHeadersFilter extends OncePerRequestFilter {
 /*
  * [스프링 내장 어노테이션]
@@ -54,6 +57,8 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
  */
 
     private static final String WEB_MANIFEST_CONTENT_TYPE = "application/manifest+json;charset=UTF-8";
+    public static final String CONTENT_SECURITY_POLICY = buildCsp(false);
+    public static final String LOCAL_HTTP_CONTENT_SECURITY_POLICY = buildCsp(true);
     /*
      * [자바 문법]
      * - private static final : 클래스 내부에서만 쓰고 실행 중 값이 바뀌지 않는 공용 상수 선언임.
@@ -104,6 +109,10 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
         response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)");
         response.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+        response.setHeader(
+                "Content-Security-Policy",
+                isHttpsRequest(request) ? CONTENT_SECURITY_POLICY : LOCAL_HTTP_CONTENT_SECURITY_POLICY
+        );
         /*
          * [서블릿 내장 메서드 (이름 변경 불가)]
          * - response.setHeader(String name, String value) (출처: jakarta.servlet.http 패키지)
@@ -192,5 +201,43 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
          * - 흐름 : request·targetResponse 전달 ──> 다음 필터 통과 ──> 정적 파일 서빙 또는 EmergencyApiController 실행.
          * - 반환값 : 반환값 없음 (체인 실행 완료 시 보안 헤더와 보정된 Content-Type이 포함된 응답이 클라이언트로 전송됨).
          */
+    }
+
+    private static boolean isHttpsRequest(HttpServletRequest request) {
+        if (request.isSecure()) {
+            return true;
+        }
+        String forwardedProto = request.getHeader("X-Forwarded-Proto");
+        return forwardedProto != null && "https".equalsIgnoreCase(forwardedProto.trim());
+    }
+
+    /**
+     * 운영 HTTPS 환경과 로컬 HTTP 개발 환경(Naver Maps SDK의 프로토콜 상대 {@code //} 하위 요청 포함)에 맞는 CSP 정책을 생성한다.
+     */
+    private static String buildCsp(boolean allowHttpNaverSubresources) {
+        String scriptHttpNaver = allowHttpNaverSubresources
+                ? " http://oapi.map.naver.com http://*.map.naver.com http://*.map.naver.net http://*.pstatic.net"
+                : "";
+        String imgHttpNaver = allowHttpNaverSubresources
+                ? " http://*.naver.com http://*.naver.net http://*.pstatic.net"
+                : "";
+        String connectHttpNaver = allowHttpNaverSubresources
+                ? " http://oapi.map.naver.com http://*.map.naver.com http://*.map.naver.net http://*.pstatic.net http://*.naver.com http://*.naver.net http://*.nelo.navercorp.com http://*.navercorp.com"
+                : "";
+
+        return String.join("; ",
+                "default-src 'self'",
+                "script-src 'self' https://oapi.map.naver.com https://*.map.naver.com https://*.map.naver.net https://*.pstatic.net" + scriptHttpNaver,
+                "style-src 'self' 'unsafe-inline' https://hangeul.pstatic.net https://*.pstatic.net",
+                "img-src 'self' data: blob: https://*.naver.com https://*.naver.net https://*.pstatic.net" + imgHttpNaver,
+                "font-src 'self' data: https://hangeul.pstatic.net https://*.pstatic.net",
+                "connect-src 'self' https://oapi.map.naver.com https://*.map.naver.com https://*.map.naver.net https://*.pstatic.net https://hangeul.pstatic.net https://*.naver.com https://*.naver.net https://*.nelo.navercorp.com https://*.navercorp.com" + connectHttpNaver,
+                "worker-src 'self' blob:",
+                "child-src 'self' blob:",
+                "manifest-src 'self'",
+                "object-src 'none'",
+                "base-uri 'self'",
+                "frame-ancestors 'self'"
+        );
     }
 }

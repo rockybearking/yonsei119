@@ -5,19 +5,28 @@ import com.yonsei119.dto.EmergencySnapshotDto;
 import com.yonsei119.dto.HospitalDto;
 import com.yonsei119.dto.HospitalTypeDto;
 import com.yonsei119.util.GeoUtils;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.json.JsonMapper;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,6 +36,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 /*
  * [자바 문법]
  * - package : EmergencyDataService 클래스가 속한 패키지 경로를 선언함.
@@ -129,47 +139,45 @@ public class EmergencyDataService {
     private final NmcOpenApiClient openApiClient;
     private final HospitalClassifier classifier;
     private final Yonsei119Properties properties;
-    private final Object cacheLock = new Object();
+    private final JsonMapper jsonMapper;
+    private final MeterRegistry meterRegistry;
+    private final ReentrantLock cacheLock = new ReentrantLock();
     private final AtomicBoolean backgroundRefreshInProgress = new AtomicBoolean(false);
-    private final ExecutorService backgroundRefreshExecutor = Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "yonsei119-cache-warmer");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final ExecutorService backgroundRefreshExecutor =
+            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("yonsei119-cache-warmer-", 0).factory());
     /*
      * [자바 문법]
      * - private final : 생성 시 1회 초기화 후 다른 참조로 바꿀 수 없는 멤버 필드임.
-     * - 람다식 runnable -> { ... } : ThreadFactory 인터페이스의 스레드 생성 메서드를 구현함.
      *
      * [프로젝트 내부 타입]
      * - NmcOpenApiClient, HospitalClassifier, Yonsei119Properties : 생성자로 주입받는 프로젝트 타입들임.
      *
      * [자바/스프링/라이브러리 내장 타입]
-     * - Object (java.lang) : synchronized 블록의 잠금(모니터 락) 기준으로 쓰는 최상위 객체임.
+     * - ReentrantLock (java.util.concurrent.locks) : 가상 스레드 환경에서도 권장되는 재진입 상호배제 락 클래스임.
      * - AtomicBoolean (java.util.concurrent.atomic) : 락 없이 동시성 안전하게 boolean을 바꾸는 클래스임.
-     * - ExecutorService, Executors, Thread : 비동기 작업을 순서대로 실행하는 스레드 풀과 스레드 클래스임.
+     * - ExecutorService, Executors, Thread : Java 21+/27 가상 스레드 기반 작업 실행기와 팩토리임.
      *
      * [자바/스프링 내장 생성자·메서드]
-     * - new Object() : synchronized (락객체) 전용 모니터 락 객체를 생성함.
+     * - new ReentrantLock() : 명시적 lock()/unlock()으로 캐시 갱신을 직렬화하는 락 객체를 생성함.
      * - new AtomicBoolean(false) : 초기값 false를 가진 원자적 불리언 객체를 만듦.
-     * - Executors.newSingleThreadExecutor(팩토리) : 1개 워커 스레드로 작업을 FIFO 순차 실행하는 풀을 만듦.
-     * - new Thread(작업, 이름) : 로그·프로파일러 구분이 쉽도록 스레드 이름을 지정해 생성함.
-     * - Thread.setDaemon(true) : 데몬 스레드로 지정해 서버 종료 시 작업 스레드가 프로세스 종료를 붙잡지 않게 설정함.
+     * - Thread.ofVirtual().name(..., 0).factory() : 요청마다 경량 가상 스레드를 만드는 스레드 팩토리를 생성함.
+     * - Executors.newThreadPerTaskExecutor(팩토리) : 작업당 가상 스레드 1개를 배정해 I/O 블로킹 비용을 줄임.
      *
      * [필드명 (멤버 변수)]
      * - openApiClient : NEMC 7대 OpenAPI 수집 클라이언트 필드임.
      * - classifier : 상급종합·권역응급·의료원·기타 종별 판별기 필드임.
      * - properties : Hot/Cold 캐시 TTL과 자동 갱신 설정을 읽는 레코드 필드임.
-     * - cacheLock : synchronized 동기화 블록으로 동시 캐시 갱신을 직렬화하는 락 객체임.
+     * - cacheLock : lock()/unlock()으로 동시 캐시 갱신을 직렬화하는 ReentrantLock 필드임.
      * - backgroundRefreshInProgress : 백그라운드 갱신이 이미 돌고 있는지 확인해 중복 제출을 막는 플래그임.
-     * - backgroundRefreshExecutor : 서버 기동 워밍과 주기적 갱신을 실행하는 단일 데몬 스레드 풀임.
-     *
-     * [지역 변수명]
-     * - thread : 람다 스레드 팩토리 안에서 생성·설정한 데몬 스레드 변수임.
+     * - backgroundRefreshExecutor : 서버 기동 워밍과 주기적 갱신을 가상 스레드로 실행하는 실행기임.
      */
 
     private volatile EmergencySnapshotDto cachedSnapshot;
     private volatile EmergencySnapshotDto cachedCompactSnapshot;
+    private volatile byte[] cachedFullJsonBytes;
+    private volatile byte[] cachedCompactJsonBytes;
+    private volatile String cachedFullEtag;
+    private volatile String cachedCompactEtag;
     private volatile Map<String, HospitalDto> cachedHospitalById = Map.of();
     private volatile Map<String, List<Map<String, String>>> cachedColdDatasets = Map.of();
     private volatile Instant cachedAt = Instant.EPOCH;
@@ -202,6 +210,17 @@ public class EmergencyDataService {
             HospitalClassifier classifier,
             Yonsei119Properties properties
     ) {
+        this(openApiClient, classifier, properties, null, null);
+    }
+
+    @Autowired
+    public EmergencyDataService(
+            NmcOpenApiClient openApiClient,
+            HospitalClassifier classifier,
+            Yonsei119Properties properties,
+            ObjectProvider<JsonMapper> jsonMapperProvider,
+            ObjectProvider<MeterRegistry> meterRegistryProvider
+    ) {
     /*
      * [자바 문법]
      * - public 생성자 : 스프링 컨테이너가 필요한 빈을 매개변수로 넣어 자동 호출하는 생성자임.
@@ -216,6 +235,15 @@ public class EmergencyDataService {
         this.openApiClient = openApiClient;
         this.classifier = classifier;
         this.properties = properties;
+        JsonMapper resolvedMapper = jsonMapperProvider != null ? jsonMapperProvider.getIfAvailable() : null;
+        this.jsonMapper = resolvedMapper != null ? resolvedMapper : JsonMapper.builder().build();
+        this.meterRegistry = meterRegistryProvider != null ? meterRegistryProvider.getIfAvailable() : null;
+        if (this.meterRegistry != null) {
+            Gauge.builder("yonsei119.hospitals.cached.count", this,
+                            service -> service.cachedSnapshot != null ? service.cachedSnapshot.totalCount() : 0)
+                    .description("Currently cached emergency hospitals count")
+                    .register(this.meterRegistry);
+        }
         /*
          * [자바 문법]
          * - this. : 매개변수명과 이름이 같은 인스턴스 필드를 구별해 값을 대입하는 참조 키워드임.
@@ -362,6 +390,7 @@ public class EmergencyDataService {
             if (now.isAfter(this.cachedAt.plusSeconds(hotTtlSeconds))) {
                 triggerAsyncBackgroundRefresh("Hot TTL 경과에 따른 비동기 Stale-While-Revalidate 갱신");
             }
+            recordSnapshotMetric("hit", compact);
             EmergencySnapshotDto target = compact && this.cachedCompactSnapshot != null
                     ? this.cachedCompactSnapshot
                     : currentFull;
@@ -370,12 +399,14 @@ public class EmergencyDataService {
 
         if (forceRefresh && currentFull != null
                 && now.isBefore(this.cachedAt.plusSeconds(MIN_FORCE_REFRESH_COOLDOWN_SECONDS))) {
+            recordSnapshotMetric("hit", compact);
             EmergencySnapshotDto target = compact && this.cachedCompactSnapshot != null
                     ? this.cachedCompactSnapshot
                     : currentFull;
             return asCachedSnapshot(target);
         }
 
+        recordSnapshotMetric("miss", compact);
         EmergencySnapshotDto refreshed = refreshCacheSynchronously(
                 forceRefresh ? "사용자 수동 새로고침 요청" : "최초 콜드 스타트 동기 수집",
                 forceRefresh,
@@ -479,7 +510,8 @@ public class EmergencyDataService {
      * - refreshCacheSynchronously : 락 안에서 중복 수집을 막으며 최신 스냅샷을 조립·교체함.
      * - reason / respectForceCooldown / requestEnteredAt : 로그 사유, 쿨다운 적용 여부, 요청 진입 시각임.
      */
-        synchronized (cacheLock) {
+        cacheLock.lock();
+        try {
             EmergencySnapshotDto current = this.cachedSnapshot;
             Instant currentCachedAt = this.cachedAt;
             if (current != null) {
@@ -512,10 +544,12 @@ public class EmergencyDataService {
                 }
                 throw ex;
             }
+        } finally {
+            cacheLock.unlock();
         }
         /*
          * [자바 문법]
-         * - synchronized (모니터객체) { ... } : 락을 잡은 스레드 1개만 블록에 들어가고 나머지는 대기하게 함.
+         * - try { ... } finally { cacheLock.unlock(); } : 예외 여부와 무관하게 ReentrantLock 해제를 보장함.
          * - try { ... } catch (Exception ex) { ... } / throw ex : 예외 시 직전 캐시로 폴백하거나 전파함.
          *
          * [자바/스프링/라이브러리 내장 타입]
@@ -537,7 +571,7 @@ public class EmergencyDataService {
          * - startMs / elapsedMs / fresh / ex : 소요 시간, 새 스냅샷, 예외 객체임.
          *
          * [동작 흐름]
-         * - 1) synchronized (cacheLock) 진입 -> 선행 스레드가 이미 갱신했거나 쿨다운 내면 기존 캐시 반환
+         * - 1) cacheLock.lock() 진입 -> 선행 스레드가 이미 갱신했거나 쿨다운 내면 기존 캐시 반환
          * - 2) buildFreshSnapshot(respectForceCooldown) -> NmcOpenApiClient 수집 -> mergeDatasetsIntoSnapshot()로 fresh 생성
          * - 3) !fresh.hospitals().isEmpty() 또는 current == null -> storeSnapshotIndexes(fresh) & cachedAt 갱신
          * - 4) 빈 목록 또는 예외 발생 ──> 직전 스냅샷이 있으면 asCachedSnapshot(current) 반환(무중단 폴백)
@@ -564,6 +598,10 @@ public class EmergencyDataService {
         if (fullSnapshot == null) {
             this.cachedSnapshot = null;
             this.cachedCompactSnapshot = null;
+            this.cachedFullJsonBytes = null;
+            this.cachedCompactJsonBytes = null;
+            this.cachedFullEtag = null;
+            this.cachedCompactEtag = null;
             this.cachedHospitalById = Map.of();
             return;
         }
@@ -577,9 +615,7 @@ public class EmergencyDataService {
             compactList.add(hospital.toCompactSummary(ESSENTIAL_UI_BED_KEYS));
         }
 
-        this.cachedSnapshot = fullSnapshot;
-        this.cachedHospitalById = Map.copyOf(byId);
-        this.cachedCompactSnapshot = new EmergencySnapshotDto(
+        EmergencySnapshotDto compactSnapshot = new EmergencySnapshotDto(
                 fullSnapshot.updatedAt(),
                 fullSnapshot.cached(),
                 fullSnapshot.totalCount(),
@@ -592,6 +628,17 @@ public class EmergencyDataService {
                 fullSnapshot.endpointCounts(),
                 List.copyOf(compactList)
         );
+
+        SerializedPayload fullPayload = serializeAndComputeEtag(asCachedSnapshot(fullSnapshot));
+        SerializedPayload compactPayload = serializeAndComputeEtag(asCachedSnapshot(compactSnapshot));
+
+        this.cachedSnapshot = fullSnapshot;
+        this.cachedHospitalById = Map.copyOf(byId);
+        this.cachedCompactSnapshot = compactSnapshot;
+        this.cachedFullJsonBytes = fullPayload.bytes();
+        this.cachedFullEtag = fullPayload.etag();
+        this.cachedCompactJsonBytes = compactPayload.bytes();
+        this.cachedCompactEtag = compactPayload.etag();
         /*
          * [자바 문법]
          * - if (fullSnapshot == null) / return : null 입력 시 모든 캐시 참조를 비우고 즉시 종료함.
@@ -635,17 +682,20 @@ public class EmergencyDataService {
      * - setCachedSnapshotForTest : 통합 테스트에서 초기 캐시를 넣거나 테스트 후 비우는 메서드임.
      * - snapshot : 테스트에서 주입할 스냅샷 객체(캐시를 완전히 비우려면 null 전달)임.
      */
-        synchronized (cacheLock) {
+        cacheLock.lock();
+        try {
             storeSnapshotIndexes(snapshot);
             this.cachedAt = snapshot != null ? Instant.now() : Instant.EPOCH;
             if (snapshot == null) {
                 this.cachedColdDatasets = Map.of();
                 this.coldCachedAt = Instant.EPOCH;
             }
+        } finally {
+            cacheLock.unlock();
         }
         /*
          * [자바 문법]
-         * - synchronized (락객체) / ?: / if : 락 안에서 캐시를 일관되게 주입하거나 null로 초기화함.
+         * - cacheLock.lock() / try ... finally { unlock(); } / ?: / if : 락 안에서 캐시를 일관되게 주입하거나 null로 초기화함.
          *
          * [자바/스프링/라이브러리 내장 타입]
          * - Instant, Map.
@@ -655,7 +705,7 @@ public class EmergencyDataService {
          * - Map.of() : null 초기화 시 Cold 원시 캐시 맵도 빈 불변 맵으로 비움.
          *
          * [동작 흐름]
-         * - synchronized (cacheLock) -> storeSnapshotIndexes(snapshot) 호출 ──> fullSnapshot = snapshot 참조 전달
+         * - cacheLock.lock() -> storeSnapshotIndexes(snapshot) 호출 ──> fullSnapshot = snapshot 참조 전달
          *   └── 마스터·경량·해시맵 인덱스와 cachedAt(null이면 coldCachedAt까지) 동시 교체
          */
     }
@@ -1108,7 +1158,7 @@ public class EmergencyDataService {
             if (rawId == null || rawId.isBlank()) {
                 continue;
             }
-            map.computeIfAbsent(rawId.trim(), k -> new ArrayList<>()).add(Map.copyOf(item));
+            map.computeIfAbsent(rawId.trim(), _ -> new ArrayList<>()).add(Map.copyOf(item));
         }
         return map;
         /*
@@ -1225,6 +1275,82 @@ public class EmergencyDataService {
          * [자바/스프링 내장 메서드]
          * - String.isBlank() / trim() : null·공백이면 "미정보"를, 유효하면 앞뒤 공백만 지워 반환함.
          */
+    }
+
+    public SerializedSnapshot getSerializedSnapshot(boolean forceRefresh, boolean compact) {
+        EmergencySnapshotDto dto = getSnapshot(forceRefresh, compact);
+        byte[] bytes = compact ? this.cachedCompactJsonBytes : this.cachedFullJsonBytes;
+        String etag = compact ? this.cachedCompactEtag : this.cachedFullEtag;
+        if (bytes == null || etag == null) {
+            SerializedPayload fallback = serializeAndComputeEtag(dto);
+            bytes = fallback.bytes();
+            etag = fallback.etag();
+        }
+        return new SerializedSnapshot(dto, bytes, etag);
+    }
+
+    public void recordNotModifiedHit(boolean compact) {
+        recordSnapshotMetric("not_modified", compact);
+    }
+
+    public static boolean matchesEtag(String ifNoneMatchHeader, String currentEtag) {
+        if (ifNoneMatchHeader == null || ifNoneMatchHeader.isBlank() || currentEtag == null || currentEtag.isBlank()) {
+            return false;
+        }
+        String normalizedCurrent = normalizeEtagToken(currentEtag);
+        for (String candidate : ifNoneMatchHeader.split(",")) {
+            String trimmed = candidate.trim();
+            if ("*".equals(trimmed) || normalizedCurrent.equals(normalizeEtagToken(trimmed))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeEtagToken(String raw) {
+        String s = raw.trim();
+        if (s.startsWith("W/") || s.startsWith("w/")) {
+            s = s.substring(2).trim();
+        }
+        if (s.startsWith("\"") && s.endsWith("\"") && s.length() >= 2) {
+            s = s.substring(1, s.length() - 1);
+        }
+        if (s.endsWith("-gzip")) {
+            s = s.substring(0, s.length() - 5);
+        }
+        return s;
+    }
+
+    private void recordSnapshotMetric(String result, boolean compact) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("yonsei119.cache.snapshot.requests",
+                            "result", result,
+                            "compact", String.valueOf(compact))
+                    .increment();
+        }
+    }
+
+    private SerializedPayload serializeAndComputeEtag(EmergencySnapshotDto dto) {
+        try {
+            byte[] jsonBytes = jsonMapper.writeValueAsBytes(dto);
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(jsonBytes);
+            String shortHex = HexFormat.of().formatHex(digest, 0, 10);
+            String etag = "W/\"" + shortHex + "-" + Long.toHexString(jsonBytes.length) + "\"";
+            return new SerializedPayload(jsonBytes, etag);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        } catch (Exception ex) {
+            log.warn("스냅샷 사전 직렬화 실패, 빈 폴백 사용: {}", ex.getMessage());
+            byte[] fallback = "{}".getBytes(StandardCharsets.UTF_8);
+            return new SerializedPayload(fallback, "W/\"0\"");
+        }
+    }
+
+    private record SerializedPayload(byte[] bytes, String etag) {
+    }
+
+    public record SerializedSnapshot(EmergencySnapshotDto dto, byte[] jsonBytes, String etag) {
     }
 
     private static EmergencySnapshotDto asCachedSnapshot(EmergencySnapshotDto snapshot) {

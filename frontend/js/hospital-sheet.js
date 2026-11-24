@@ -45,6 +45,10 @@ import {
     loadDirectionsForHospital,
     populateWaypointSelect
 } from './directions-eta.js';
+import {
+    stopHospitalSpeech,
+    toggleHospitalSpeech
+} from './user-features.js';
 /*
  * [JS 문법]
  * - import { ... } from './모듈.js' : 다른 JS 파일에서 공개한 상수·함수를 가져오는 ES 모듈 문법임.
@@ -65,6 +69,18 @@ import {
  * - 3사 내비 딥링크(네이버·카카오·T맵), 직통 공유 URL(?hospital=...), E-Gen 병상·장비·질환 보드를 그림.
  * - 개발자 모드 원본 인스펙터와 필요 시 GET /api/hospitals/{hpid} 상세 보충 조회를 처리함.
  */
+
+let marqueeTimerId = null;
+
+function scheduleMarqueeRefresh() {
+    if (marqueeTimerId !== null) {
+        clearTimeout(marqueeTimerId);
+    }
+    marqueeTimerId = setTimeout(() => {
+        marqueeTimerId = null;
+        updateMarquees();
+    }, 260);
+}
 
 function contactLink(text, href, className) {
     const link = node('a', className, text);
@@ -90,7 +106,7 @@ function contactLink(text, href, className) {
  * - 흐름 : node('a', className, text) 생성 ──> link.href = href 지정 ──> link 반환.
  */
 
-export function openMobileApp(scheme, androidPackage, fallback) {
+function openMobileApp(scheme, androidPackage, fallback) {
     if (/Android/i.test(navigator.userAgent)) {
         const intent = scheme.replace(/^[a-z]+:\/\//, 'intent://');
         const protocol = scheme.split(':')[0];
@@ -175,7 +191,7 @@ export function openMobileApp(scheme, androidPackage, fallback) {
  *      └── scheme 실행 후 1.8초 내 백그라운드 미전환 시 cleanup() 후 fallback 이동
  */
 
-export function navigationLink(provider, hospital) {
+function navigationLink(provider, hospital) {
     const name = encodeURIComponent(hospital.name);
     const lat = hospital.lat;
     const lng = hospital.lng;
@@ -305,7 +321,7 @@ function launchNavigation(provider, hospital) {
  * - 흐름 : navigationLink(provider, hospital) ──> link 생성 ──> openMobileApp(scheme, package, fallback) 실행.
  */
 
-export async function shareHospital(hospital) {
+async function shareHospital(hospital) {
     if (!hospital?.id) {
         return;
     }
@@ -380,7 +396,7 @@ export async function shareHospital(hospital) {
  *   2) 미지원·실패 ──> clipboard.writeText() 복사 시도 ──> setStatus() 안내(복사 실패 시 주소 직접 표시)
  */
 
-export function renderContacts(hospital) {
+function renderContacts(hospital) {
     const target = byId('contact-actions');
     if (!target) {
         return;
@@ -426,6 +442,19 @@ export function renderContacts(hospital) {
     shareBtn.addEventListener('click', () => shareHospital(hospital));
     maps.append(shareBtn);
 
+    const isSpeaking = state.speakingHospitalId === hospital.id;
+    const ttsBtn = node(
+        'button',
+        'map-button tts-hospital-btn',
+        isSpeaking ? '⏹ 음성 중지' : '🔊 음성 안내'
+    );
+    ttsBtn.id = 'sheet-tts-btn';
+    ttsBtn.type = 'button';
+    ttsBtn.setAttribute('aria-pressed', String(isSpeaking));
+    ttsBtn.title = '병원 요약·병상 현황을 음성으로 읽어 줍니다';
+    ttsBtn.addEventListener('click', () => toggleHospitalSpeech(hospital));
+    maps.append(ttsBtn);
+
     target.replaceChildren(phones, maps);
 }
 /*
@@ -454,7 +483,7 @@ export function renderContacts(hospital) {
  *   └── shareBtn(.share-hospital-btn) 'click' ──> shareHospital(hospital)
  */
 
-export function renderMessages(hospital) {
+function renderMessages(hospital) {
     const target = byId('messages');
     const countEl = byId('message-count');
     if (!target) {
@@ -572,7 +601,7 @@ export function renderMessages(hospital) {
  *   2) 정상 ──> getActiveMessages(hospital) 정렬 ──> #message-count 건수 표시 ──> 공지 카드(#messages) 조립
  */
 
-export function renderSevere(hospital) {
+function renderSevere(hospital) {
     const target = byId('severe');
     const severeTimeEl = byId('severe-time');
     if (!target) {
@@ -916,7 +945,7 @@ function renderInpatientBeds(hospital) {
  * - 흐름 : INPATIENT_BED_SECTIONS 6개 섹션 순회 ──> 소제목 + createBedCell() 조립 ──> #inpatient-beds-board에 삽입.
  */
 
-export function renderBeds(hospital) {
+function renderBeds(hospital) {
     const bedTimeEl = byId('bed-time');
     if (bedTimeEl) {
         bedTimeEl.textContent = '보고 시각 미정보';
@@ -1017,7 +1046,7 @@ function createEquipmentCell(fields, item) {
  * - 흐름 : rawVal === 'Y' 또는 양수면 'Y / N' 초록 배지, 'N*'·0·빈 값이면 '-' 배지 ──> 장비 셀 조립 후 반환.
  */
 
-export function renderEquipment(hospital) {
+function renderEquipment(hospital) {
     const target = byId('equipment');
     if (!target) {
         return;
@@ -1508,7 +1537,7 @@ export async function renderDeveloperInspector(hospital) {
  *   2) !_detailHydrated ──> hydrateHospitalDetailIfNeeded() 호출 ──> 같은 병원·열린 상태면 4종 다시 그리기
  */
 
-export function setBackgroundInert(value) {
+function setBackgroundInert(value) {
     for (const selector of ['#map', '#search-panel', '#active-route-banner', '#mobile-top-left-menu']) {
         const el = document.querySelector(selector);
         if (el) {
@@ -1644,6 +1673,9 @@ export function openHospital(hospital, focus = true, options = {}) {
     }
 
     const isDifferentHospital = state.selected?.id !== hospital.id;
+    if (isDifferentHospital && state.speakingHospitalId) {
+        stopHospitalSpeech();
+    }
     const devModeEl = byId('developer-mode');
     if (isDifferentHospital && devModeEl) {
         devModeEl.open = false;
@@ -1726,8 +1758,7 @@ export function openHospital(hospital, focus = true, options = {}) {
         byId('sheet-close').focus();
     }
 
-    setTimeout(updateMarquees, 100);
-    setTimeout(updateMarquees, 350);
+    scheduleMarqueeRefresh();
 }
 /*
  * [JS 문법]
@@ -1761,6 +1792,11 @@ export function openHospital(hospital, focus = true, options = {}) {
  */
 
 export function closeSheet() {
+    stopHospitalSpeech();
+    if (marqueeTimerId !== null) {
+        clearTimeout(marqueeTimerId);
+        marqueeTimerId = null;
+    }
     const sheet = byId('sheet');
     if (!sheet) {
         return;

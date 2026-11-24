@@ -11,6 +11,7 @@ import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 /*
@@ -151,8 +152,8 @@ public class WebConfig implements WebMvcConfigurer {
      */
         registry.addResourceHandler("/Assets/**")
                 .addResourceLocations(
-                        "file:./frontend/Assets/",
-                        "file:../frontend/Assets/",
+                        fileResourceLocation("./frontend/Assets"),
+                        fileResourceLocation("../frontend/Assets"),
                         "classpath:/static/Assets/"
                 )
                 .setCacheControl(CacheControl.maxAge(Duration.ofDays(7)).cachePublic())
@@ -161,8 +162,8 @@ public class WebConfig implements WebMvcConfigurer {
 
         registry.addResourceHandler("/**")
                 .addResourceLocations(
-                        "file:./frontend/",
-                        "file:../frontend/",
+                        fileResourceLocation("./frontend"),
+                        fileResourceLocation("../frontend"),
                         "classpath:/static/"
                 )
                 .setCacheControl(CacheControl.noCache())
@@ -315,6 +316,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedOriginPatterns(patterns.length > 0 ? patterns : new String[]{"*"})
                 .allowedMethods("GET", "OPTIONS")
                 .allowedHeaders("Accept", "Content-Type", "If-None-Match", "Cache-Control")
+                .exposedHeaders("ETag", "X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After")
                 .maxAge(3600);
         /*
          * [자바 문법]
@@ -350,5 +352,16 @@ public class WebConfig implements WebMvcConfigurer {
          *   2) /api/** 경로 등록 ──> 허용 출처(비어 있으면 {"*"}) ──> GET·OPTIONS만 허용 ──> 헤더 4종 및 3600초 캐시 적용
          * - 반환값 : 조건에 맞는 요청에는 Access-Control-Allow-* 헤더를 붙이고, POST·DELETE 등은 CORS 단계에서 차단함.
          */
+    }
+
+    /**
+     * 상대 정적 리소스 디렉터리 문자열에 {@code ../} 세그먼트가 남지 않도록 절대 {@code file:///} URI로 정규화한다.
+     *
+     * <p>Gradle 테스트 등 작업 디렉터리가 {@code backend/}일 때도 Spring Framework의
+     * {@code PathResourceResolver}가 인코딩된 한글 파일명을 정상 서빙할 수 있게 한다.
+     */
+    private static String fileResourceLocation(String relativeDir) {
+        String uri = Path.of(relativeDir).toAbsolutePath().normalize().toUri().toString();
+        return uri.endsWith("/") ? uri : uri + "/";
     }
 }

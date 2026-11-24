@@ -157,15 +157,14 @@ public final class GeoUtils {
         if (!Double.isFinite(value)) {
             return min;
         }
-        return Math.max(min, Math.min(max, value));
+        return Math.clamp(value, min, max);
         /*
          * [자바 문법]
          * - if, 논리 부정(!Double.isFinite(value)), return : 비정상 숫자가 들어오면 최솟값 min을 바로 돌려줌.
          *
          * [자바 표준 내장 메서드 (이름 변경 불가)]
          * - Double.isFinite(double d) (출처: java.lang 패키지) : value가 NaN이나 무한대인지 먼저 확인함.
-         * - Math.min(double a, double b) (출처: java.lang 패키지) : 둘 중 작은 값을 골라 상한 max를 넘지 않게 자름.
-         * - Math.max(double a, double b) (출처: java.lang 패키지) : 둘 중 큰 값을 골라 하한 min 아래로 내려가지 않게 올림.
+         * - Math.clamp(double value, double min, double max) (출처: Java 21+ java.lang 패키지) : [min, max] 범위로 값을 제한함.
          *
          * [동작 흐름]
          * - 호출 출처 : NaverDirectionsService.rankHospitalsByDrivingTime()이 반경 radiusKm를 [1.0, 200.0]으로 제한할 때 호출함.

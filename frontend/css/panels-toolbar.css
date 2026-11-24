@@ -1,12 +1,12 @@
 .search-panel {
     --search-font-size: 12px;
-    --action-size: clamp(38px, 9.8vw, 45px);
+    --action-size: clamp(42px, 9.2vw, 48px);
     position: fixed;
     z-index: 10;
     right: calc(var(--edge) + env(safe-area-inset-right, 0px));
     bottom: calc(var(--edge) + env(safe-area-inset-bottom, 0px));
     width: min(
-            444px,
+            496px,
             calc(100vw - 2 * var(--edge) - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))
     );
     padding: var(--panel-padding);
@@ -75,14 +75,14 @@
     flex: 0 0 auto;
     white-space: nowrap;
     color: #43576c;
-    font-size: 13px;
+    font-size: 14px;
     font-family: var(--font-bold), sans-serif;
 }
 
 .search-panel #map-actions {
     flex: 1 1 auto;
     justify-content: space-between;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     margin-left: 2px;
     gap: 6px;
 }
@@ -226,8 +226,8 @@
 
 .map-action svg {
     display: block;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.85;
@@ -267,7 +267,7 @@
  */
 
 .traffic-toggle-btn {
-    font-size: 11.5px;
+    font-size: 13px;
     font-family: var(--font-bold), sans-serif;
 }
 
@@ -275,6 +275,11 @@
     background: #03c75a;
     border-color: #029f48;
     color: #ffffff;
+}
+
+.search-panel .search-updated-pill {
+    min-height: 36px;
+    padding: 4px 10px;
 }
 /*
  * [CSS 문법]
@@ -303,12 +308,12 @@
 }
 
 .radius-button-label {
-    font-size: 9.5px;
+    font-size: 10.5px;
     color: #607895;
 }
 
 #radius-value {
-    font-size: 10.5px;
+    font-size: 12px;
     font-family: var(--font-bold), sans-serif;
     white-space: nowrap;
 }
@@ -639,90 +644,6 @@
  * - style.css / dark-theme.css : 각 <label>의 --hospital-color가 글자와 체크 색으로 상속됨.
  * - js/app.js : 체크박스 change 시 updateMarkers()와 loadEtaRanking()을 호출해 필터를 맞춤.
  * - responsive.css : 360px 이하 또는 저높이 가로 화면에서는 2열(2×2)로 바뀜.
- */
-
-.symptom-filter-wrap {
-    margin-top: 7px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.symptom-chips-bar {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-    padding: 2px 1px;
-    touch-action: pan-x;
-}
-
-.symptom-chips-bar::-webkit-scrollbar {
-    display: none;
-}
-
-.symptom-chip {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    min-height: 29px;
-    padding: 4px 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 999px;
-    background: #f8fafc;
-    color: #334155;
-    font-size: 11.5px;
-    font-family: var(--font-bold), sans-serif;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
-}
-
-.symptom-chip:hover {
-    border-color: #2563eb;
-    background: #eff6ff;
-}
-
-.symptom-chip[aria-pressed="true"] {
-    background: #2563eb;
-    border-color: #1d4ed8;
-    color: #ffffff;
-}
-
-.symptom-chip.avail-only-chip[aria-pressed="true"] {
-    background: #059669;
-    border-color: #047857;
-    color: #ffffff;
-}
-/*
- * [CSS 문법]
- * - [aria-pressed="true"] : 눌려 활성화된 상태의 버튼만 골라 강조 색상을 적용하는 선택자임.
- *
- * [표준 CSS 속성·단위·함수]
- * - display: flex / flex-direction: column / flex: 0 0 auto : 버튼들이 찌그러지지 않게 나열함.
- * - overflow-x: auto / overscroll-behavior-x: contain : 가로 스크롤 시 뒤로가기 전파를 방지함.
- * - touch-action: pan-x : 가로 스와이프 제스처를 우선 인식해 지도 드래그와 충돌을 줄임.
- * - scrollbar-width: none / display: none : 지원 브라우저에서 가로 스크롤바 막대를 숨김.
- * - border-radius: 999px / white-space: nowrap / transition : 둥근 알약 모양과 색상 전환 효과임.
- *
- * [브라우저 확장 CSS 의사 요소]
- * - ::-webkit-scrollbar : Chrome·Safari 등 WebKit 계열에서 스크롤바를 숨기는 확장 선택자임.
- *
- * [CSS 선택자명]
- * - .symptom-filter-wrap / .symptom-chips-bar : 증상 필터 칩 영역 래퍼와 가로 스크롤 바임.
- * - .symptom-chip / .avail-only-chip : 증상 프리셋 버튼과 녹색(#059669) '가용병상만' 버튼임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : <div id="symptom-chips-bar" class="symptom-chips-bar" role="group">에 매칭됨.
- * - js/search-controls.js : renderSymptomChips()가 '가용병상만'과 SYMPTOM_PRESETS 8개 칩을 만듦.
- *
- * [동작 흐름]
- * - 초기 부팅 -> app.js:init()이 renderSymptomChips() 호출 -> 9개 칩 버튼 생성함.
- * - 사용자가 칩 클릭 -> state.onlyAvailableBeds 또는 state.symptomPreset과 aria-pressed 변경됨
- *   ──> updateMarkers()와 loadEtaRanking()(열려 있을 때)이 즉시 호출되어 필터가 반영됨.
  */
 
 .map-count {

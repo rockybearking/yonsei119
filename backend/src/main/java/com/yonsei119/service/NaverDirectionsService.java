@@ -29,9 +29,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 /*
  * [패키지 및 임포트]
  * - com.yonsei119.service : 응급실 추천·경로 탐색·혼잡도·지오코딩 서비스 패키지 선언임.
@@ -90,6 +94,9 @@ public class NaverDirectionsService {
     private static final int MAX_ROUTE_CACHE_ENTRIES = 256;
     private static final int MAX_ETA_CACHE_ENTRIES = 512;
     private static final int MAX_WAYPOINTS_LENGTH = 256;
+    private static final int MAX_BATCH_CONCURRENCY = 6;
+    private static final int MAX_ETA_CONCURRENCY = 8;
+    private static final Pattern WAYPOINT_PATTERN = Pattern.compile("^[0-9.,:|\\-]+$");
     /*
      * [자바 문법]
      * - private static final : 클래스 내부에서만 공유되며 실행 중 변경되지 않는 정적 상수임.
@@ -134,6 +141,8 @@ public class NaverDirectionsService {
     private final JsonMapper jsonMapper;
     private final ExecutorService httpBatchExecutor;
     private final ExecutorService etaRankExecutor;
+    private final Semaphore batchConcurrencyLimiter = new Semaphore(MAX_BATCH_CONCURRENCY);
+    private final Semaphore etaConcurrencyLimiter = new Semaphore(MAX_ETA_CONCURRENCY);
     private final BoundedTtlCache<String, DirectionsResponseDto> routeCache =
             new BoundedTtlCache<>(MAX_ROUTE_CACHE_ENTRIES, ROUTE_CACHE_TTL_SECONDS);
     private final BoundedTtlCache<String, EtaSummary> etaCache =
@@ -147,9 +156,9 @@ public class NaverDirectionsService {
      * - congestionAnalyzer : 구간별 주행 속도·혼잡도 세분화 분석을 담당하는 빈 필드임.
      * - recommendationScorer : 병원 병상·공지 평가와 증상 필터링을 담당하는 빈 필드임.
      * - httpClient : 네이버 Directions HTTP GET 요청을 실행하는 재사용 클라이언트 필드임.
-     * - jsonMapper : Jackson 3 JSON 파싱·병합용 매퍼 필드임.
-     * - httpBatchExecutor : 단건 경로 탐색의 2개 배치를 병렬 호출하는 6스레드 풀 필드임.
-     * - etaRankExecutor : 주변 병원 ETA 순위 계산용 최대 8건 병렬 호출 8스레드 풀 필드임.
+     * - jsonMapper : 스프링 부트 4 자동 구성 JsonMapper 빈을 주입받는 Jackson 3 파서·직렬화기 필드임.
+     * - httpBatchExecutor / batchConcurrencyLimiter : 단건 경로 배치를 가상 스레드로 실행(최대 6동시)함.
+     * - etaRankExecutor / etaConcurrencyLimiter : 주변 병원 ETA 계산을 가상 스레드로 실행(최대 8동시)함.
      * - routeCache : 전체 경로 응답 DTO를 최대 256건·60초간 보관하는 캐시 필드임.
      * - etaCache : 병원 순위 계산용 경량 ETA 요약을 최대 512건·60초간 보관하는 캐시 필드임.
      */
@@ -157,56 +166,45 @@ public class NaverDirectionsService {
     public NaverDirectionsService(
             Yonsei119Properties properties,
             RouteCongestionAnalyzer congestionAnalyzer,
-            HospitalRecommendationScorer recommendationScorer
+            HospitalRecommendationScorer recommendationScorer,
+            JsonMapper jsonMapper
     ) {
     /*
      * [자바 문법]
-     * - public NaverDirectionsService(...) : 스프링 컨테이너가 3개 빈을 생성자 주입하는 생성자임.
+     * - public NaverDirectionsService(...) : 스프링 컨테이너가 4개 빈을 생성자 주입하는 생성자임.
      * - this.필드명 : 매개변수를 멤버 필드에 대입함.
      *
      * [생성자 및 매개변수명]
      * - 생성자명: NaverDirectionsService
-     * - 매개변수명: properties, congestionAnalyzer, recommendationScorer
+     * - 매개변수명: properties, congestionAnalyzer, recommendationScorer, jsonMapper
      */
         this.properties = properties;
         this.congestionAnalyzer = congestionAnalyzer;
         this.recommendationScorer = recommendationScorer;
+        this.jsonMapper = jsonMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
-        this.jsonMapper = JsonMapper.builder().build();
 
-        AtomicInteger batchSeq = new AtomicInteger(1);
-        this.httpBatchExecutor = Executors.newFixedThreadPool(6, runnable -> {
-            Thread thread = new Thread(runnable, "yonsei119-naver-batch-" + batchSeq.getAndIncrement());
-            thread.setDaemon(true);
-            return thread;
-        });
-
-        AtomicInteger etaSeq = new AtomicInteger(1);
-        this.etaRankExecutor = Executors.newFixedThreadPool(8, runnable -> {
-            Thread thread = new Thread(runnable, "yonsei119-naver-eta-" + etaSeq.getAndIncrement());
-            thread.setDaemon(true);
-            return thread;
-        });
+        this.httpBatchExecutor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("yonsei119-naver-batch-", 1).factory()
+        );
+        this.etaRankExecutor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("yonsei119-naver-eta-", 1).factory()
+        );
         /*
          * [자바 문법]
-         * - new, 람다 표현식(runnable -> { ... }) : ThreadFactory를 람다로 구현해 스레드 설정함.
-         *
-         * [지역 변수명]
-         * - batchSeq (배치 스레드 순번기), etaSeq (ETA 스레드 순번기), runnable, thread
+         * - new, Thread.ofVirtual() : Java 21+/27 가상 스레드 실행기로 HTTP I/O 대기를 경량화함.
          *
          * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
          * - HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build() : 10초 타임아웃 HTTP 클라이언트 생성.
-         * - JsonMapper.builder().build() : Jackson 3 JsonMapper 인스턴스를 생성함.
-         * - new AtomicInteger(1), .getAndIncrement() : 스레드 안전하게 1부터 번호를 증가시킴.
-         * - Executors.newFixedThreadPool(int, ThreadFactory) : 고정 크기 스레드풀을 생성함.
-         * - new Thread(Runnable, String), .setDaemon(true) : 이름 있는 데몬 스레드를 생성함.
+         * - Thread.ofVirtual().name(..., 1).factory() : 가상 스레드 이름 접두사와 시작 순번을 설정함.
+         * - Executors.newThreadPerTaskExecutor(ThreadFactory) : 작업당 가상 스레드 1개를 할당해 블로킹 I/O 효율을 높임.
          *
          * [동작 흐름]
-         * - ForkJoinPool.commonPool 고갈을 막기 위해 용도별 전용 고정 스레드풀 2개 분리 생성
-         *   ├── httpBatchExecutor: 6스레드 데몬 풀("yonsei119-naver-batch-1..N")
-         *   └── etaRankExecutor: 8스레드 데몬 풀("yonsei119-naver-eta-1..N")
+         * - ForkJoinPool.commonPool 고갈과 플랫폼 스레드 점유를 막기 위해 가상 스레드 실행기 2개 + Semaphore 상한을 조합함.
+         *   ├── httpBatchExecutor: 가상 스레드 + Semaphore(6)
+         *   └── etaRankExecutor: 가상 스레드 + Semaphore(8)
          */
     }
 
@@ -217,7 +215,7 @@ public class NaverDirectionsService {
      * - @PreDestroy 정의 (출처: jakarta.annotation.PreDestroy, 이름 변경 불가)
      *   · 역할 : 스프링 컨테이너가 종료되면서 빈을 소멸시키기 직전에 자원 정리용 메서드를 1회 자동 실행해 주는 생명주기 어노테이션임.
      * - @PreDestroy 현재 코드 적용
-     *   · 적용 대상 : NaverDirectionsService.shutdown() 메서드 — 2개 전용 스레드풀 자원을 해제하는 종료 정리 메서드임.
+     *   · 적용 대상 : NaverDirectionsService.shutdown() 메서드 — 2개 가상 스레드 실행기와 HttpClient 자원을 해제함.
      *   · 작동 원리 : CommonAnnotationBeanPostProcessor가 @PreDestroy 대상인 NaverDirectionsService.shutdown() 메서드를 자동 실행함.
      *   · 실행 시점 : 서버 종료나 Spring ApplicationContext가 닫히며 싱글톤 빈이 제거되기 직전에 1회만 호출됨.
      *   · 비교 : 빈 생성 직후 초기화 콜백 @PostConstruct, 인터페이스 구현 방식 DisposableBean.destroy()와 역할·구현 방식이 다름.
@@ -230,13 +228,31 @@ public class NaverDirectionsService {
      */
         httpBatchExecutor.shutdownNow();
         etaRankExecutor.shutdownNow();
+        httpClient.close();
         /*
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - ExecutorService.shutdownNow() : 대기·실행 중인 작업에 인터럽트를 걸어 스레드를 해제함.
+         * [자바/스프링 내장 메서드 (이름 변경 불가)]
+         * - ExecutorService.shutdownNow() : 대기·실행 중인 작업에 인터럽트를 걸어 실행기를 정리함.
+         * - HttpClient.close() (Java 21+) : 내부 HTTP 연결 풀과 선택자 자원을 정리함.
          *
          * [동작 흐름]
-         * - 빈 종료 콜백 호출 -> httpBatchExecutor.shutdownNow() -> etaRankExecutor.shutdownNow() 자원 해제
+         * - 빈 종료 콜백 호출 -> httpBatchExecutor·etaRankExecutor.shutdownNow() -> httpClient.close() 자원 해제
          */
+    }
+
+    private static <T> T runWithPermit(Semaphore semaphore, Supplier<T> task) {
+        boolean acquired = false;
+        try {
+            semaphore.acquire();
+            acquired = true;
+            return task.get();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new CompletionException(ie);
+        } finally {
+            if (acquired) {
+                semaphore.release();
+            }
+        }
     }
 
     private boolean isMissingNaverApiCredentials() {
@@ -247,9 +263,7 @@ public class NaverDirectionsService {
      * [메서드명]
      * - isMissingNaverApiCredentials
      */
-        return properties.naver() == null
-                || properties.naver().clientId() == null || properties.naver().clientId().isBlank()
-                || properties.naver().clientSecret() == null || properties.naver().clientSecret().isBlank();
+        return properties.naver() == null || !properties.naver().hasApiCredentials();
         /*
          * [자바 문법]
          * - 논리합(||), null 비교(==), return
@@ -336,11 +350,13 @@ public class NaverDirectionsService {
 
         try {
             CompletableFuture<HttpResponse<String>> future1 = CompletableFuture.supplyAsync(
-                    () -> sendDirectionsHttpRequest(baseEndpoint, startParam, goalParam, batch1Options, safeWaypoints),
+                    () -> runWithPermit(batchConcurrencyLimiter, () ->
+                            sendDirectionsHttpRequest(baseEndpoint, startParam, goalParam, batch1Options, safeWaypoints)),
                     httpBatchExecutor
             );
             CompletableFuture<HttpResponse<String>> future2 = CompletableFuture.supplyAsync(
-                    () -> sendDirectionsHttpRequest(baseEndpoint, startParam, goalParam, batch2Options, safeWaypoints),
+                    () -> runWithPermit(batchConcurrencyLimiter, () ->
+                            sendDirectionsHttpRequest(baseEndpoint, startParam, goalParam, batch2Options, safeWaypoints)),
                     httpBatchExecutor
             );
 
@@ -438,7 +454,7 @@ public class NaverDirectionsService {
         if (trimmed.length() > MAX_WAYPOINTS_LENGTH) {
             trimmed = trimmed.substring(0, MAX_WAYPOINTS_LENGTH);
         }
-        if (!trimmed.matches("^[0-9.,:|\\-]+$")) {
+        if (!WAYPOINT_PATTERN.matcher(trimmed).matches()) {
             return "";
         }
         return trimmed;
@@ -776,7 +792,7 @@ public class NaverDirectionsService {
             return List.of();
         }
 
-        int safeLimit = Math.max(1, Math.min(limit, 8));
+        int safeLimit = Math.clamp(limit, 1, 8);
         double safeRadius = radiusKm > 0 ? GeoUtils.clamp(radiusKm, 1.0, 200.0) : 0.0;
         String normalizedOption = normalizeOption(option);
         boolean useOptimalScore = !"fastest".equalsIgnoreCase(rankMode != null ? rankMode.trim() : "");
@@ -817,7 +833,7 @@ public class NaverDirectionsService {
         }
 
         List<CompletableFuture<HospitalEtaRankDto>> futures = candidates.stream()
-                .map(hospital -> CompletableFuture.supplyAsync(() -> {
+                .map(hospital -> CompletableFuture.supplyAsync(() -> runWithPermit(etaConcurrencyLimiter, () -> {
                     double straightKm = Math.round(GeoUtils.haversineKm(startLat, startLng, hospital.lat(), hospital.lng()) * 10.0) / 10.0;
                     EtaSummary eta = getDrivingEtaSummary(startLat, startLng, hospital.lat(), hospital.lng(), normalizedOption);
 
@@ -847,7 +863,7 @@ public class NaverDirectionsService {
                             straightKm, drvKm, durMin, durText, toll, taxi, hospital.lat(), hospital.lng(),
                             eval.availabilityStatus(), eval.hasBlockingNotice(), eval.recommendationScore(), eval.recommendationReason()
                     );
-                }, etaRankExecutor))
+                }), etaRankExecutor))
                 .toList();
 
         Comparator<HospitalEtaRankDto> rankComparator = useOptimalScore

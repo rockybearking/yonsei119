@@ -60,6 +60,8 @@ public class HospitalRecommendationScorer {
             Pattern.compile("(불가능|불가|차단|수용\\s*불가|진료\\s*불가|수술\\s*불가|시술\\s*불가|부재|중단|마감)");
     private static final Pattern POSITIVE_ONLY_PATTERN =
             Pattern.compile("(제한\\s*없음|정상\\s*진료|정상\\s*운영|(?<!불)가능|원활)");
+    private static final Pattern INTEGER_PATTERN = Pattern.compile("^-?\\d+$");
+    private static final Pattern API_DTM_14_PATTERN = Pattern.compile("^\\d{14}$");
     /*
      * [자바 문법]
      * - private static final : 클래스 내부에서만 공유되며 한 번 초기화 후 바꿀 수 없는 상수임.
@@ -154,7 +156,7 @@ public class HospitalRecommendationScorer {
             return null;
         }
         String trimmed = rawErBeds.trim();
-        if (!trimmed.matches("^-?\\d+$")) {
+        if (!INTEGER_PATTERN.matcher(trimmed).matches()) {
             return null;
         }
         try {
@@ -550,11 +552,15 @@ public class HospitalRecommendationScorer {
      * - 메서드명: parseApiDateMillis
      * - rawDtm : 공공데이터 공지 일시 14자리 문자열(예: "20261117183000")임.
      */
-        if (rawDtm == null || !rawDtm.trim().matches("^\\d{14}$")) {
+        if (rawDtm == null) {
+            return null;
+        }
+        String trimmed = rawDtm.trim();
+        if (!API_DTM_14_PATTERN.matcher(trimmed).matches()) {
             return null;
         }
         try {
-            LocalDateTime ldt = LocalDateTime.parse(rawDtm.trim(), API_DTM_FORMAT);
+            LocalDateTime ldt = LocalDateTime.parse(trimmed, API_DTM_FORMAT);
             return ldt.atZone(KST_ZONE).toInstant().toEpochMilli();
         } catch (Exception ex) {
             return null;

@@ -1,7 +1,6 @@
 import {
     NOTICE_KEY,
-    OFFLINE_SNAPSHOT_KEY,
-    SYMPTOM_PRESETS
+    OFFLINE_SNAPSHOT_KEY
 } from './constants.js';
 import {
     DEFAULT_ORIGIN,
@@ -296,79 +295,6 @@ export function initRadius() {
  *   └── panel(#radius-popover) 'keydown'(Escape) -> preventDefault()·stopPropagation() -> closeRadius(true)
  */
 
-export function renderSymptomChips() {
-    const bar = byId('symptom-chips-bar');
-    if (!bar) {
-        return;
-    }
-    bar.replaceChildren();
-
-    const syncChipStatesAndRefresh = () => {
-        const availBtn = bar.querySelector('[data-chip-role="avail-only"]');
-        if (availBtn) {
-            availBtn.setAttribute('aria-pressed', String(state.onlyAvailableBeds));
-        }
-        for (const btn of bar.querySelectorAll('[data-preset-key]')) {
-            const isSelected = btn.dataset.presetKey === state.symptomPreset;
-            btn.setAttribute('aria-pressed', String(isSelected));
-        }
-        updateMarkers();
-        if (state.etaRankOpen) {
-            loadEtaRanking();
-        }
-    };
-
-    const availChip = node('button', 'symptom-chip avail-only-chip', '가용병상만');
-    availChip.type = 'button';
-    availChip.dataset.chipRole = 'avail-only';
-    availChip.title = '응급실 일반병상(hvec)이 1석 이상 남아 있는 병원만 지도에 표시합니다';
-    availChip.setAttribute('aria-pressed', String(state.onlyAvailableBeds));
-    availChip.addEventListener('click', () => {
-        state.onlyAvailableBeds = !state.onlyAvailableBeds;
-        syncChipStatesAndRefresh();
-    });
-    bar.append(availChip);
-
-    for (const preset of SYMPTOM_PRESETS) {
-        const chip = node('button', 'symptom-chip', preset.label);
-        chip.type = 'button';
-        chip.dataset.presetKey = preset.key;
-        chip.title = preset.title;
-        chip.setAttribute('aria-pressed', String(state.symptomPreset === preset.key));
-        chip.addEventListener('click', () => {
-            state.symptomPreset = (state.symptomPreset === preset.key && preset.key !== 'all')
-                ? 'all'
-                : preset.key;
-            syncChipStatesAndRefresh();
-        });
-        bar.append(chip);
-    }
-}
-/*
- * [JS 문법]
- * - for ... of 반복문, 화살표 함수, 논리 부정(`!`), 논리곱(&&), 삼항 연산자(? :).
- *
- * [브라우저 및 JS 표준 내장 API]
- * - Element.replaceChildren() : 인자 없이 호출해 컨테이너의 기존 자식 노드를 모두 비움.
- * - Element.querySelector() / querySelectorAll() : CSS 선택자로 단일·전체 자식 요소를 찾음.
- * - HTMLElement.dataset : HTML data-* 속성을 카멜 표기(dataset.chipRole 등)로 읽고 씀.
- * - Element.setAttribute('aria-pressed', ...) : 토글 버튼의 선택 상태를 보조기기에 알림.
- * - Element.append() / String() / HTMLButtonElement.type / EventTarget.addEventListener().
- *
- * [프로젝트 상수·상태·함수]
- * - 함수·지역 변수 : renderSymptomChips(), bar(#symptom-chips-bar), syncChipStatesAndRefresh.
- * - 상수·상태 : SYMPTOM_PRESETS(8개 증상 프리셋), state.onlyAvailableBeds, state.symptomPreset.
- * - 참조 함수 : byId(), node(), updateMarkers(), loadEtaRanking(), state.etaRankOpen.
- *
- * [동작 흐름]
- * - 호출 출처 : app.js init() 초기화 단계에서 1회 호출됨.
- * - 실행 단계 :
- *   1) #symptom-chips-bar 초기화 -> '가용병상만' 버튼 및 SYMPTOM_PRESETS 8개 버튼 생성
- *   2) availChip([data-chip-role="avail-only"]) 'click' -> state.onlyAvailableBeds 반전 -> syncChipStatesAndRefresh()
- *   3) chip([data-preset-key]) 'click' -> state.symptomPreset 전환(재클릭 시 'all') -> syncChipStatesAndRefresh()
- *   4) syncChipStatesAndRefresh() -> aria-pressed 동기화 -> updateMarkers() -> ETA 재조회
- */
-
 export async function syncFrontendConfig() {
     try {
         const response = await fetch('/api/config', {
@@ -422,6 +348,14 @@ export async function syncFrontendConfig() {
             if (state.darkMode) {
                 needMapRemount = true;
             }
+        } else if (
+            state.darkMode &&
+            state.naverDarkStyleId &&
+            window.naver?.maps?.glEnabled &&
+            !state._glPermanentUnsupported &&
+            state.map?.get?.('renderMode') !== 2
+        ) {
+            needMapRemount = true;
         }
 
         if (cfg.naverClientId && cfg.naverClientId !== state.naverClientId) {
@@ -608,6 +542,9 @@ async function applySnapshotToState(snapshot, currentController, isOfflineFallba
     for (let i = 0; i < incomingHospitals.length; i++) {
         const hospital = incomingHospitals[i];
         hospital._vGroup = hospital.regional ? 'regional' : hospital.type?.group;
+        hospital._searchKey = `${hospital.name || ''} ${hospital.address || ''} ${hospital.id || ''}`
+            .replace(/\s+/g, '')
+            .toLowerCase();
         if (canPrebuildLatLng && Number.isFinite(hospital.lat) && Number.isFinite(hospital.lng)) {
             getHospitalLatLng(hospital);
         }
@@ -741,7 +678,7 @@ async function parseSnapshotResponse(response) {
  * - fetchData()에서 호출 -> !response.ok 시 Error throw -> 정상이면 response.json() 반환
  */
 
-export async function fetchData(forceRefresh = false) {
+async function fetchData(forceRefresh = false) {
     state.loading = true;
 
     const refreshBtn = byId('refresh-button');
@@ -770,15 +707,32 @@ export async function fetchData(forceRefresh = false) {
             ? '/api/hospitals?refresh=true&compact=true'
             : '/api/hospitals?compact=true';
         const isBackgroundRefresh = !forceRefresh && state.hospitals.length > 0;
+        const headers = {
+            Accept: 'application/json'
+        };
+        if (state.lastSnapshotEtag && state.hospitals.length > 0) {
+            headers['If-None-Match'] = state.lastSnapshotEtag;
+        }
 
         const response = await fetch(endpointUrl, {
             signal: currentController.signal,
             cache: 'no-store',
             priority: isBackgroundRefresh ? 'low' : 'high',
-            headers: {
-                Accept: 'application/json'
-            }
+            headers
         });
+
+        if (response.status === 304) {
+            if (currentController.signal.aborted) {
+                return;
+            }
+            state.lastUpdated = new Date();
+            updateSummary();
+            if (devStatus) {
+                devStatus.textContent = `변경 없음 · 최신 스냅샷 유지 (${state.hospitals.length.toLocaleString('ko-KR')}개 기관 · 304 Not Modified)`;
+            }
+            setStatus('');
+            return;
+        }
         /*
          * [브라우저 표준 내장 API]
          * - AbortController.signal : 진행 중 네트워크 요청을 중간에 취소할 수 있는 신호 객체임.
@@ -813,6 +767,7 @@ export async function fetchData(forceRefresh = false) {
         }
 
         if (!fromSwOffline) {
+            state.lastSnapshotEtag = response.headers.get('ETag') || null;
             saveOfflineSnapshot(snapshot);
         }
 
@@ -824,12 +779,23 @@ export async function fetchData(forceRefresh = false) {
         const missing = Object.entries(state.sources)
             .filter(([, ok]) => !ok)
             .map(([key]) => key);
+        const totalSources = Object.keys(state.sources).length;
+        const allSourcesUnavailable =
+            totalSources > 0 && missing.length === totalSources && state.hospitals.length === 0;
 
         if (fromSwOffline) {
             if (devStatus) {
                 devStatus.textContent = `오프라인 저장본 표시 중 (${state.hospitals.length.toLocaleString('ko-KR')}개 기관)`;
             }
             setStatus('오프라인 상태 · 마지막 저장된 병원 스냅샷을 표시합니다. 방문 전 반드시 전화로 확인하세요.');
+        } else if (allSourcesUnavailable) {
+            if (devStatus) {
+                devStatus.textContent =
+                    '공공데이터 수집 불가 (0개 기관) · 서버 NEMC_API_SERVICE_KEY(.env) 또는 외부 API 상태를 확인하세요.';
+            }
+            setStatus(
+                '응급의료 데이터를 불러오지 못했습니다. 로컬 실행 중이라면 프로젝트 루트의 .env API 키 설정을 확인해 주세요.'
+            );
         } else {
             if (devStatus) {
                 devStatus.textContent = missing.length
@@ -1175,7 +1141,7 @@ export function setCustomOrigin(lat, lng, customLabel = '지정 출발지') {
  *   3) ETA 순위(열린 경우) -> 선택 병원 경로·경유지·활성 경로를 새 출발점 기준으로 재계산
  */
 
-export async function geocodeAndMoveOrigin(rawQuery) {
+async function geocodeAndMoveOrigin(rawQuery) {
     const trimmed = String(rawQuery || '').trim();
     if (!trimmed) {
         return;
@@ -1301,16 +1267,14 @@ export function updateSearch() {
     }
 
     const matches = state.hospitals
-        .filter(item =>
-            item.name
-                .replace(/\s+/g, '')
-                .toLowerCase()
-                .includes(query) ||
-            String(item.address || '')
-                .replace(/\s+/g, '')
-                .toLowerCase()
-                .includes(query)
-        )
+        .filter(item => {
+            if (!item._searchKey) {
+                item._searchKey = `${item.name || ''} ${item.address || ''} ${item.id || ''}`
+                    .replace(/\s+/g, '')
+                    .toLowerCase();
+            }
+            return item._searchKey.includes(query);
+        })
         .slice(0, 25);
 
     const fragment = document.createDocumentFragment();
@@ -1414,7 +1378,7 @@ function noticeHidden() {
  * - 실행 단계 : localStorage.getItem(NOTICE_KEY) 조회 -> '1'이면 true, 미설정·예외 시 false 반환.
  */
 
-export function openNotice() {
+function openNotice() {
     const skipBtn = byId('notice-skip');
     const dialog = byId('notice-dialog');
     if (!dialog) {
@@ -1778,14 +1742,19 @@ export function syncMobileMenuPlacement() {
  *   └── 뷰포트 > 640px(데스크톱) -> #search-panel-heading으로 복귀 -> 열린 모바일 메뉴 닫기
  */
 
-export function applyTheme(isDark, remountMap = true) {
+function applyTheme(isDark, remountMap = true) {
     state.darkMode = Boolean(isDark);
     const themeValue = state.darkMode ? 'dark' : 'light';
 
     document.documentElement.dataset.theme = themeValue;
+    document.documentElement.classList.toggle('dark-mode', state.darkMode);
     const colorSchemeMeta = document.querySelector('meta[name="color-scheme"]');
     if (colorSchemeMeta) {
         colorSchemeMeta.content = themeValue;
+    }
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeColorMeta) {
+        themeColorMeta.content = state.darkMode ? '#0f172a' : '#f6f8fc';
     }
 
     document.body.classList.toggle('dark-mode', state.darkMode);
