@@ -44,26 +44,20 @@ RUN ./gradlew :backend:bootJar --no-daemon -x test
 FROM eclipse-temurin:27.0.1.1_4-jre
 WORKDIR /app
 COPY --from=builder /workspace/backend/build/libs/yonsei119.jar /app/app.jar
-RUN java -XX:AOTCacheOutput=/app/app.aot -XX:MaxRAMPercentage=75.0 -Dfile.encoding=UTF-8 \
-    -Dspring.context.exit=onRefresh -Dyonsei119.nemc.auto-refresh-enabled=false -Dserver.port=0 \
-    -jar /app/app.jar
 # [Docker 내장 명령어 및 옵션]
-# - FROM, WORKDIR, RUN : 실행 전용 2단계 이미지, 작업 폴더, AOT 캐시 학습 명령임.
+# - FROM, WORKDIR : 실행 전용 2단계 경량 JRE 이미지 및 작업 폴더 설정 명령임.
 # - COPY --from=<별칭> : 앞선 빌드 스테이지에서 만든 결과물만 꺼내 복사하는 옵션임.
 # - 비교 옵션 : 외부 공개 이미지 경로를 지정해 파일을 가져올 수도 있음.
 #
-# [스테이지, 경로명 및 Java 27 AOT Cache (JEP 483 / 514)]
-# - eclipse-temurin:27.0.1.1_4-jre : CVE-2026-114938 패치가 적용된 Java 27.0.1.1 경량 JRE 이미지임.
-#   └── Java 27(JEP 534) Compact Object Headers 및 JEP 514 단일 명령 AOT 캐시(-XX:AOTCacheOutput)를 적용함.
-# - /app, /app/app.jar, /app/app.aot : 실행 작업 폴더, Spring Boot JAR, 사전 학습된 AOT 캐시 파일 경로임.
+# [스테이지 및 경로명]
+# - eclipse-temurin:27.0.1.1_4-jre : CVE-2026-114938 패치가 적용된 Java 27.0.1.1 경량 JRE 이미지임 (JEP 534 Compact Object Headers 지원).
+# - /app, /app/app.jar : 실행 작업 폴더와 복사된 Spring Boot 단일 JAR 파일 경로임.
 #
 # [동작 흐름]
-# - 1단계(builder)의 빌드 JAR -> COPY --from=builder로 복사 -> 2단계 /app/app.jar 배치함.
-# - 빌드 중 -XX:AOTCacheOutput=/app/app.aot + -Dspring.context.exit=onRefresh로 클래스 로딩·링킹 정보를 1회 사전 저장함.
-# - 컨테이너 기동 시 -XX:AOTCache=/app/app.aot로 즉시 로드되어 Render 무료 플랜 콜드스타트 지연이 크게 단축됨.
+# - 1단계(builder)의 빌드 JAR -> COPY --from=builder로 복사 -> 2단계 /app/app.jar 배치로 이미지 크기를 최소화함.
 
 ENV PORT=8080
-ENV JAVA_OPTS="-XX:AOTCache=/app/app.aot -XX:MaxRAMPercentage=75.0 -Dfile.encoding=UTF-8"
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -Dfile.encoding=UTF-8"
 EXPOSE 8080
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Dserver.port=${PORT:-8080} -jar /app/app.jar"]
 # [Docker 내장 명령어 및 셸 문법]

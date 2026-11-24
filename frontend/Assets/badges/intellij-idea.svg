@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="152" height="28" viewBox="0 0 152 28">
+  <title>IntelliJ IDEA</title>
+  <rect x="0.5" y="0.5" width="151" height="27" fill="#0D1117" stroke="#30363D" stroke-width="1"/>
+  <g transform="translate(10, 7)">
+    <rect x="0.8" y="0.8" width="12.4" height="12.4" rx="1.2" fill="#FFFFFF"/>
+    <path d="M3.1 2.8 H5.5 V3.8 H4.9 V6.9 H5.5 V7.9 H3.1 V6.9 H3.7 V3.8 H3.1 Z" fill="#0D1117"/>
+    <path d="M6.4 6.6 H7.6 C7.7 6.9, 7.9 7.1, 8.2 7.1 C8.5 7.1, 8.7 6.8, 8.7 6.4 V2.8 H9.9 V6.4 C9.9 7.5, 9.2 8.1, 8.2 8.1 C7.1 8.1, 6.5 7.5, 6.4 6.6 Z" fill="#0D1117"/>
+    <rect x="3.0" y="10.2" width="4.8" height="1.2" fill="#0D1117"/>
+  </g>
+  <text x="89" y="17.5" fill="#FFFFFF" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="10" font-weight="700" letter-spacing="1.1" text-anchor="middle">INTELLIJ IDEA</text>
+</svg>

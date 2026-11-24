@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="84" height="28" viewBox="0 0 84 28">
+  <title>CSS3</title>
+  <rect width="84" height="28" fill="#1572B6"/>
+  <g transform="translate(10, 7)">
+    <polygon points="1.5,0.8 12.5,0.8 11.5,11.6 7,13.2 2.5,11.6" fill="#FFFFFF"/>
+    <path d="M4.1 3.3 H9.9 L9.3 10.6 L7.0 11.2 L4.7 10.6 L4.6 9.1 H6.2 L6.3 9.8 L7.0 10.0 L7.7 9.8 L7.9 8.1 H5.6 V6.6 H8.0 L8.2 5.0 H4.3 Z" fill="#1572B6"/>
+  </g>
+  <text x="54" y="17.5" fill="#FFFFFF" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="10" font-weight="700" letter-spacing="1.1" text-anchor="middle">CSS3</text>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="184" height="28" viewBox="0 0 184 28">
+  <title>NEMC OpenAPI V13</title>
+  <rect width="184" height="28" fill="#005BAC"/>
+  <g transform="translate(10, 7)">
+    <path d="M0.6 7.4 H3.5 L5.1 2.0 L7.6 12.2 L9.7 5.0 L11.1 7.4 H13.4" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="105" y="17.5" fill="#FFFFFF" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="10" font-weight="700" letter-spacing="1.1" text-anchor="middle">NEMC OPENAPI V13</text>
+</svg>

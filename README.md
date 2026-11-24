@@ -1,16 +1,20 @@
 # 융합캡스톤디자인: 응급실 핑퐁 방지를 위한 위치 기반 실시간 응급의료 최적 추천 서비스
 
-![Java 27](https://img.shields.io/badge/Java_27.0.1.1-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot_4.2-6DB33F?style=for-the-badge&logo=springboot&logoColor=white)
-![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white)
-![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
-![NAVER Maps API](https://img.shields.io/badge/NAVER_Maps_v3_%26_Directions_5%2F15-03C75A?style=for-the-badge&logo=naver&logoColor=white)
-![Public Data OpenAPI](https://img.shields.io/badge/NEMC_OpenAPI_V13-005BAC?style=for-the-badge)
-![IntelliJ IDEA](https://img.shields.io/badge/IntelliJ_IDEA-000000?style=for-the-badge&logo=intellijidea&logoColor=white)
+<div align="center">
+
+![Java 27](./frontend/Assets/badges/java.svg)
+![Spring Boot](./frontend/Assets/badges/spring-boot.svg)
+![HTML5](./frontend/Assets/badges/html5.svg)
+![CSS3](./frontend/Assets/badges/css3.svg)
+![JavaScript](./frontend/Assets/badges/javascript.svg)  
+![NAVER Maps API](./frontend/Assets/badges/naver-maps.svg)
+![Public Data OpenAPI](./frontend/Assets/badges/nemc-openapi.svg)
+![IntelliJ IDEA](./frontend/Assets/badges/intellij-idea.svg)
 
 **위치 기반 실시간 응급의료기관 최적 추천 · 다차원 의료 자원 인스펙션 · 네이버 자동차 경로(Directions 5/15) 관제 시스템**  
 *저장소 명칭: `yonsei119` · 개발 팀명: `닥터피쉬 (Doctor Fish)`*
+
+</div>
 
 ---
 
@@ -30,11 +34,17 @@
 
 ### 지도교수
 
+<div align="center">
+
 | 교수명 | 소속 / 직함 |
 | :---: | :---: |
 | **최병관** | 연세대학교 미래캠퍼스 소프트웨어학부 교수 |
 
+</div>
+
 ### 팀 구성원 및 역할 (팀명: 닥터피쉬)
+
+<div align="center">
 
 | 이름 | 학과 | 학번 | 담당 역할 |
 | :---: | :---: | :---: | :---: |
@@ -42,55 +52,65 @@
 | **이재원** | 소프트웨어학과 | 2023245138 | OpenAPI 백엔드 메모리 캐시<br>네이버 지도(v3) 구현<br>내비게이션(네이버/카카오/티맵) 라우터 구현 |
 | **장안나** | 컴퓨터정보통신공학부 | 2020253074 | XML 전수 분석 & 매핑 테이블 수립<br>상급종합병원(47개소) 분류기 및 중증질환-공지 교차 검증<br>데이터 무결성 검증 |
 
+</div>
+
 ---
 
 ## 2. 프로젝트 폴더 구조
 
-하나의 저장소 안에 사용자 화면을 담당하는 프론트엔드(`frontend/`)와 데이터 수집·가공을 담당하는 백엔드 서버(`backend/`)를 함께 구성한 통합 웹 프로젝트입니다.
+하나의 저장소(`yonsei119`) 아래에 클라이언트 PWA(`frontend/`)와 Spring Boot 4.2 서버(`backend/`), 자동화 테스트 및 컨테이너 배포 설정을 모듈 단위로 분리해 구성했습니다.
 
-```text
-yonsei119/
-├── frontend/                           # 프론트엔드 화면 (HTML5 / CSS3 / ES Modules PWA)
-│   ├── Assets/                         # 화면 아이콘 및 참고 이미지 폴더
-│   ├── css/                            # 기능별 8개 병렬 CSS (dark-theme, sheet-egen, responsive 등)
-│   ├── js/                             # 11개 ES 모듈 (app, theme-init, map-engine, user-features 등)
-│   ├── index.html                      # 메인 웹 페이지 (지도, 필터 바, 검색 패널, 상세 시트)
-│   ├── manifest.webmanifest            # PWA 매니페스트
-│   └── sw.js                           # 오프라인 앱 쉘 & 스냅샷 폴백 서비스 워커
-├── backend/                            # 백엔드 서버 (Java 27.0.1.1 + Spring Boot 4.2.0)
-│   ├── build.gradle                    # 백엔드·Actuator·Playwright 의존성 및 통합 빌드 설정
-│   └── src/
-│       ├── main/
-│       │   ├── java/com/yonsei119/
-│       │   │   ├── Yonsei119Application.java       # 스프링 부트 서버 메인 실행 파일
-│       │   │   ├── config/
-│       │   │   │   ├── Yonsei119Properties.java    # 환경설정(NEMC/Naver/CORS/RateLimit) 관리
-│       │   │   │   ├── WebConfig.java              # 정적 리소스(Weak ETag) 및 CORS 설정
-│       │   │   │   ├── SecurityHeadersFilter.java  # 5대 보안 헤더 + 엄격한 CSP + webmanifest 보호
-│       │   │   │   └── ApiRateLimitFilter.java     # IP 기반 토큰 버킷 요청률 제한 (429)
-│       │   │   ├── controller/
-│       │   │   │   └── EmergencyApiController.java # 공개 REST API + ETag/304 조건부 응답
-│       │   │   ├── dto/                            # 응답 데이터 형식(DTO) 레코드 모음
-│       │   │   ├── util/                           # BoundedTtlCache, GeoUtils 유틸리티
-│       │   │   └── service/
-│       │   │       ├── HospitalClassifier.java     # 상급종합·권역·의료원 자동 분류기
-│       │   │       ├── HospitalRecommendationScorer.java # 병상·공지 교차 검증 및 추천 점수 산정
-│       │   │       ├── NmcOpenApiClient.java       # 7대 공공데이터 병렬 수집 및 XML 해석기
-│       │   │       ├── EmergencyDataService.java   # 병합·사전 직렬화 ETag·Micrometer 지표 서비스
-│       │   │       ├── NaverDirectionsService.java # 네이버 자동차 길찾기 및 ETA 추천 순위
-│       │   │       ├── NaverGeocodingService.java  # 3단계 하이브리드 지오코딩·역지오코딩
-│       │   │       └── RouteCongestionAnalyzer.java# 주행 구간 속도·혼잡도 분석기
-│       │   └── resources/
-│       │       └── application.yml                 # 가상 스레드, HTTP/2, Actuator, rate-limit 설정
-│       └── test/java/com/yonsei119/
-│           ├── Yonsei119BackendTests.java          # 백엔드 19개 통합 테스트 (JUnit 5)
-│           └── Yonsei119PlaywrightE2ETests.java    # 실브라우저 Chromium E2E 자동화 테스트
-├── .env.example                        # 로컬 실행용 API 키 템플릿 (.env / .env.backup 참고)
-├── Dockerfile                          # Java 27.0.1.1 JEP 514 AOT 캐시 학습 포함 멀티스테이지 빌드
-├── render.yaml                         # Render 클라우드 자동 배포 설정 파일
-├── settings.gradle                     # Gradle 9.9.2 + Foojay JDK 27 툴체인 설정
-└── build.gradle                        # 전체 프로젝트 빌드 및 checkAll / bootJar 설정
-```
+<div align="center">
+
+| 영역 | 기준 경로 | 기술 구성 | 핵심 책임 |
+| :---: | :--- | :--- | :--- |
+| **클라이언트 웹 · PWA** | `frontend/` | HTML5 · 8 CSS · 11 ES Modules · Service Worker | 네이버 지도 v3 관제 UI, 병상·질환 인스펙션, 음성 안내, 오프라인 앱 쉘 폴백 |
+| **백엔드 API · 수집 엔진** | `backend/src/main/` | Java 27.0.1.1 · Spring Boot 4.2.0 · Actuator | NEMC 7대 OpenAPI 병렬 수집, 메모리 캐시·사전 직렬화 ETag, Directions/Geocoding 프록시, 보안 헤더·레이트 리미트 |
+| **자동화 검증 스위트** | `backend/src/test/` | JUnit 5 · MockMvc · Playwright Chromium | 백엔드 API·캐시·보안 회귀 테스트 19건 및 실브라우저 E2E 테스트 2건 |
+| **빌드 · 컨테이너 · 배포** | 루트 설정 파일 | Gradle 9.9.2 · Foojay JDK 27 · Docker | 단일 JAR(`yonsei119.jar`) 패키징, 경량 멀티스테이지 JRE 이미지 빌드, Render 자동 배포 |
+
+</div>
+
+<details open>
+<summary><strong>프론트엔드 모듈 명세 (<code>frontend/</code>) — 진입 문서 · 8종 CSS · 11종 ES 모듈</strong></summary>
+
+| 구분 | 파일명 | 주요 역할 |
+| :---: | :--- | :--- |
+| **문서 / PWA** | `index.html`, `manifest.webmanifest`, `sw.js` | 지도·필터·검색 패널·상세 시트 HTML 구조, PWA 매니페스트, 오프라인 스냅샷 서비스 워커 |
+| **시각 자산** | `Assets/` · `Assets/badges/` | 앱 아이콘·다이어그램·발표 화면 15종 및 GitHub README 로컬 SVG 배지 8종 |
+| **스타일시트 (`css/`)** | `style.css`, `panels-toolbar.css`, `map-overlays.css`, `sheet-egen.css` | 디자인 토큰, 필터 바·48×48 툴바, 반경 원·클러스터 배지, E-Gen 바텀시트 스타일 |
+| **스타일시트 (`css/`)** | `directions-eta.css`, `dialogs-toast.css`, `dark-theme.css`, `responsive.css` | 주행 경로 배너·ETA 카드, 모달·토스트, 다크 관제 테마, 모바일 반응형 뷰포트 분기 |
+| **초기화 · 상태 (`js/`)** | `theme-init.js`, `constants.js`, `state.js`, `utils.js`, `app.js` | 페인트 전 다크모드 초기화, NEMC 필드 사전, 전역 상태 store, 결측/초과수용 판별, 앱 부트스트랩 |
+| **지도 · 탐색 (`js/`)** | `map-engine.js`, `markers-cluster.js`, `search-controls.js` | 네이버 지도 v3 엔진·현위치 탐색, 종별 클러스터 마커·반경 원, 키워드·주소 검색 제어 |
+| **상세 · 경로 (`js/`)** | `hospital-sheet.js`, `directions-eta.js`, `user-features.js` | 병원 상세 시트·개발자 모드 원시 인스펙터, Directions 5/15 경로선·ETA 순위, Web Speech 한국어 음성 안내 |
+
+</details>
+
+<details open>
+<summary><strong>백엔드 패키지 명세 (<code>backend/src/main/</code>) — Java 27.0.1.1 · Spring Boot 4.2.0</strong></summary>
+
+| 패키지 | 클래스 / 리소스 | 주요 역할 |
+| :---: | :--- | :--- |
+| **`com.yonsei119`** | `Yonsei119Application` | `.env` 환경변수 자동 로드, 스케줄링 활성화 및 애플리케이션 부트스트랩 |
+| **`...config`** | `Yonsei119Properties`, `WebConfig`, `SecurityHeadersFilter`, `ApiRateLimitFilter` | API 키·CORS·레이트 리미트 바인딩, 정적 리소스(Weak ETag), CSP 보안 헤더, IP 토큰 버킷 제한(429) |
+| **`...controller`** | `EmergencyApiController` | `/api/config`, `/api/hospitals` (`ETag`/`304`), `/api/directions*`, `/api/geocode*`, `/api/health` 공개 REST API |
+| **`...service`** | `NmcOpenApiClient`, `EmergencyDataService`, `HospitalClassifier`, `HospitalRecommendationScorer` | 7대 NEMC OpenAPI 병렬 XML 파싱, 45초 스냅샷 갱신·사전 직렬화·Micrometer 지표, 47개 상급종합 분류 및 추천 점수 |
+| **`...service`** | `NaverDirectionsService`, `NaverGeocodingService`, `RouteCongestionAnalyzer` | 네이버 Directions 5/15 길찾기·ETA 순위, 3단계 하이브리드 지오코딩·역지오코딩, 구간 혼잡도 분석 |
+| **`...dto` / `util`** | DTO 레코드 8종 · `BoundedTtlCache`, `GeoUtils` | API 응답 불변 레코드 스키마, 용량 상한 TTL 인메모리 캐시, Haversine 구면 거리 연산 |
+| **`resources/`** | `application.yml` | 가상 스레드(Virtual Threads), HTTP/2, Actuator 지표, 캐시·레이트 리미트 기본 구성 |
+
+</details>
+
+<details>
+<summary><strong>테스트 · 빌드 · 클라우드 배포 명세 (<code>backend/src/test/</code> · 루트)</strong></summary>
+
+| 영역 | 경로 / 파일 | 주요 역할 |
+| :---: | :--- | :--- |
+| **자동화 테스트** | `Yonsei119BackendTests`, `Yonsei119PlaywrightE2ETests` | JUnit 5 기반 백엔드 통합 검증 19건 + Chromium 실브라우저 E2E 2건 |
+| **Gradle 멀티프로젝트** | `build.gradle`, `settings.gradle`, `backend/build.gradle` | Gradle 9.9.2 + Foojay JDK 27 툴체인, 프론트 정적 복사(`copyFrontendToStatic`), `checkAll`·`bootJar` 태스크 |
+| **배포 · 환경 설정** | `Dockerfile`, `render.yaml`, `.env.example` | Java 27 경량 멀티스테이지 JRE 도커 빌드, Render 배포 정의, API 키 템플릿 |
+
+</details>
 
 ---
 
@@ -103,7 +123,11 @@ yonsei119/
 ### 2. 핵심 목표: "단순 거리순이 아닌 실시간 수용이 가능한지? 그리고 '실도로' 소요시간 기반의 최적의 경로 안내"
 * **Java Spring Boot 백엔드 서버**를 이용해 국립중앙의료원(NEMC) OpenAPI와 **네이버 지도(NAVER Maps v3) 와 함께 지원하는 Directions 5 / 15 경로 API**를 이용하여 목적지까지 경로를 시각적으로 보여줍니다.
 
+<div align="center">
+
 ![핵심 목표 다이어그램](./frontend/Assets/core_goal_diagram.png)
+
+</div>
 
 ---
 
@@ -113,12 +137,19 @@ yonsei119/
 * 그러나, 본 포털 사이트의 단점은 각 병원들의 위치를 정확히 알아내기가 어렵고 제공하는 서비스도 빈약하다는 것을 알 수 있습니다.
 * 우린 이 단점들을 보완하고자 '네이버 지도 API'를 연동하였고 검색반경을 추가하여 보다 쉽게 알아볼 수 있는 서비스 구축을 우선으로 잡았습니다.
 
+<div align="center">
+
 [![NEMC Logo](./frontend/Assets/20260921_182637.jpg)](https://mediboard.nemc.or.kr/)
 
-**[중앙응급의료센터 응급의료포털 대시보드 (내 손안의 응급실)](https://mediboard.nemc.or.kr/)** — 전국 응급실 실시간 가용 병상 현황 및 중증 응급환자 수용 가능 정보를 제공하는 공식 대시보드
+**[중앙응급의료센터 응급의료포털 대시보드 (내 손안의 응급실)](https://mediboard.nemc.or.kr/)**  
+전국 응급실 실시간 가용 병상 현황 및 중증 응급환자 수용 가능 정보를 제공하는 공식 대시보드
+
+</div>
+
+<div align="center">
 
 | 비교 항목 | 기존 공식 대시보드 (E-Gen) | 본 프로젝트 (`yonsei119`) |
-| :---: | :---: | :---: |
+| :---: | :---: | :--- |
 | **데이터 응답 속도** | 페이지 전환 시마다 개별 조회로 로딩 지연 | **Spring Boot 사전 로딩 및 메모리 캐싱으로 즉시(0.05초 내) 응답** |
 | **지도 시각화** | 단순 리스트 및 텍스트 위주, 위치 파악 지연 | **네이버 지도(v3) 다크/일반 관제 뷰, 클러스터링 및 반경 원 표출** |
 | **경로 및 소요시간** | 단순 직선거리 표기 또는 길찾기 연계 미흡 | **네이버 Directions 5/15 주행 경로선, 예상 소요시간(분) 및 3사 내비 연동** |
@@ -126,18 +157,26 @@ yonsei119/
 | **데이터 무결성** | 결측치 및 기준 차이에 대한 설명 부재 | **결측치(`-`) vs `0`석(만실) vs 음수(`초과수용`) 분리, '개발자 모드' 공개** |
 | **교차 검증** | 공지사항과 질환 수용 여부가 분리 표기됨 | **실시간 긴급 공지를 파싱하여 차단된 질환을 `[불가능]`으로 자동 전환** |
 
+</div>
+
 ---
 
 ## 5. 시스템 아키텍처 및 핵심 API
 
 ### 1. 백엔드와 프론트엔드 통합
 
+<div align="center">
+
 ![백엔드-프론트엔드 통합 아키텍처](./frontend/Assets/architecture_diagram.png)
+
+</div>
 
 ### 2. REST API (`EmergencyApiController` / Controller 패키지로 구축)
 
+<div align="center">
+
 | HTTP 경로 | 담당 클래스 | 주요 기능 |
-| :---: | :---: | :---: |
+| :---: | :---: | :--- |
 | `GET /api/config` | `EmergencyApiController` | 네이버 지도 클라이언트 ID, 다크모드 스타일 ID 및 기본 출발 좌표 반환 |
 | `GET /api/hospitals` | `EmergencyDataService` | 전국 530여 개 기관 통합 데이터 반환 (`?compact=true`, `?refresh=true`, 사전 직렬화 + Weak `ETag` / `304 Not Modified`) |
 | `GET /api/hospitals/{hpid}` | `EmergencyApiController` | 단건 병원 전체 원본 필드(개발자 모드 온디맨드 보강) 반환 |
@@ -146,10 +185,14 @@ yonsei119/
 | `GET /api/geocode` · `/reverse-geocode` | `NaverGeocodingService` | 3단계 하이브리드 주소 검색 및 출발 좌표 역지오코딩 *(IP Rate Limit 적용)* |
 | `GET /api/health` · `/actuator/*` | `EmergencyApiController` · Actuator | 서버 가동 상태(`UP`) 및 `/actuator/metrics` 커스텀 지표(`yonsei119.hospitals.cached.count` 등) 노출 |
 
+</div>
+
 ### 3. OpenAPI 파이프라인 (`NmcOpenApiClient` / service 패키지로 구축)
 
+<div align="center">
+
 | 오퍼레이션 명 | 서비스 기능 | 수집 및 활용 목적 |
-| :---: | :---: | :---: |
+| :---: | :---: | :--- |
 | `getEgytListInfoInqire` | **응급의료기관 목록정보** | 전국 응급의료기관 마스터 데이터, 고유코드(`HPID`) 및 WGS84 좌표 확보 |
 | `getEgytBassInfoInqire` | **응급의료기관 기본정보** | 응급실 대표전화, 인허가 병상 규모 및 진료과목 데이터 |
 | `getEmrrmRltmUsefulSckbdInfoInqire` | **실시간 가용병상정보** | 일반/소아/격리/중환자실/입원실 가용 병상(`hvec` 등) 및 11종 장비 현황 |
@@ -157,6 +200,8 @@ yonsei119/
 | `getSrsillDissAceptncPosblInfoInqire` | **중증질환자 수용가능정보** | 뇌출혈, 심근경색, 대동맥, 투석 등 28종 중증질환별 처치 가능 여부 |
 | `getStrmListInfoInqire` | **권역외상센터 목록정보** | 전국 권역외상센터 지정 기관 식별 및 마스터 정보 확보 |
 | `getStrmBassInfoInqire` | **권역외상센터 기본정보** | 권역외상센터 상세 운영 정보 및 외상전용 병상/수술실 데이터 연동 |
+
+</div>
 
 ---
 
@@ -270,11 +315,15 @@ gantt
 
 ## 7. 기술적 문제점 & 해결 방법
 
+<div align="center">
+
 | 구분 | \[난제 1\] API 호출 지연 및 시차 | \[난제 2\] AI 도구 의존의 맹점 | \[난제 3\] 결측치 및 집계 불일치 |
 | :---: | :---: | :---: | :---: |
 | **핵심 이슈** | 브라우저 직접 호출 시 로딩 지연<br>E-Gen 중앙망 vs 공공 API 시차 | 인증키 이중 인코딩 오류<br>불명확한 필드명(`hvs` 등) 오해석 가능성 | 결측치(`null`)를 `0`석(만실)으로 오인<br>음수 병상값 및 공지 불일치 |
 | **원인 분석** | 개별 요청의 병목 현상으로 의심됨 | 실제 생성 코드와<br>기준 병상수를 질환 번호로 오분류하는 환각 발견 | XML 태그 누락 빈번<br>현장 공지와 질환 API 간 갱신 시차 |
 | **자체 해결** | **Spring Boot 사전 로딩 & 자동 캐싱 구현** | **개발자 모드**를 구현하여 원본값과 수신값이 서로 일치하는지 무결성 추가 | **결측치 `-` vs `0`석 엄격 분리 표기**<br>**음수 `'초과수용'` 파싱 및 교차검증** |
+
+</div>
 
 ### 클라이언트 다중 API 호출 병목 및 공공데이터 동기화 시차
 * **현상**: 기존 브라우저 직접 호출 구조에서는 접속 시마다 7개의 대용량 XML을 내려받아야 했고, 병원 현장 상황이 공공데이터포털로 미러링되기까지 구조적인 시차가 존재했습니다.
@@ -296,7 +345,7 @@ gantt
   3. **긴급 공지 교차 검증**: 질환 API가 `'가능(Y)'`이어도 활성 공지에 `'불가/차단/부재'` 키워드가 있으면 `[불가능]`으로 자동 오버라이드합니다.
 
 ```javascript
-// 결측치(공란)와 음수 초과수용을 엄격히 구분하는 핵심 로직 (frontend/app.js)
+// 결측치(공란)와 음수 초과수용을 엄격히 구분하는 핵심 로직 (frontend/js/utils.js)
 if (isBlankOrNull(rawVal)) {
     return { className: 'egen-badge-dash', text: '-' }; // 미정보(결측치)
 }
@@ -326,8 +375,7 @@ if (current < 0) {
 * 모바일 환경에서 상단 핸들을 스와이프하면 바텀시트가 자연스럽게 닫히며, `translate3d(0, delta, 0)`와 Safe Area Inset 패딩을 적용했습니다.
 * 모달 및 바텀시트 활성화 시 백그라운드 요소에 `inert` 속성을 부여하고, `Escape` 키 닫기 및 시트 내부 `Tab` 키 포커스 트랩(Focus Trap)을 완비했습니다.
 
-### 5. Java 27 AOT 캐시 · `/api/hospitals` 사전 직렬화 ETag · 관측(Actuator)
-* **Java 27 AOT Cache (`JEP 483 / JEP 514`)**: `Dockerfile` 2단계 JRE 이미지 빌드 과정에서 `-XX:AOTCacheOutput=/app/app.aot` 사전 학습을 수행하고 기동 시 `-XX:AOTCache=/app/app.aot`를 적용해 클라우드 콜드스타트 지연 자체를 단축했습니다.
+### 5. `/api/hospitals` 사전 직렬화 ETag · 관측(Actuator)
 * **스냅샷 사전 직렬화 & `ETag` (`304 Not Modified`)**: `EmergencyDataService`가 스냅샷 갱신 시 전체·경량 JSON 바이트와 SHA-256 기반 Weak `ETag`를 1회 사전 생성해 다중 클라이언트 재요청 시 CPU·대역폭 소모를 최소화합니다.
 * **Spring Boot Actuator & Micrometer**: `/actuator/health`, `/actuator/metrics`에서 캐시 병원 수(`yonsei119.hospitals.cached.count`), 스냅샷 적중·`304` 비율, NEMC OpenAPI 호출 결과 및 레이트 리미트 차단 건수를 관측할 수 있습니다.
 
