@@ -1,24 +1,34 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 첫 화면이 그려지기 직전 저장된 다크·라이트 테마를 즉시 확정해 흰 화면 깜빡임(FOUC)을 막는 선발대 스크립트
- * - 실행 시점: `index.html`의 `<head>` 최상단에서 일반 동기 `<script src="js/theme-init.js">`로 CSS보다 먼저 즉시 1회 실행(IIFE)됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 첫 화면이 그려지기 전 저장된 다크·라이트 테마를 즉시 적용하여
+ *          흰 화면 깜빡임(FOUC)을 막고 한글 웹폰트를 비차단 활성화하는 선발대 스크립트
+ * - 실행 시점 : `index.html`의 `<head>` 최상단에서 동기 `<script>`로 즉시 1회 실행됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   `<head>` 파싱 시작 ──> `applyInitialThemeBeforePaint()` 즉시 실행
- *   ├── `localStorage.getItem('yonsei119-theme')` 조회 (미저장·차단 시 기본 `'dark'`)
- *   ├── `<html data-theme>`·`.dark-mode` 클래스·`<meta name="color-scheme">`·`<meta name="theme-color">` 동기화
- *   └── `DOMContentLoaded` 이후 `#nanum-webfont-link`(`media="print"` -> `'all'`)를 비차단 활성화해 초기 렌더링 지연을 예방함
+ * [2. 전체 실행 흐름 (시퀀스 다이어그램)]
  *
- * [내장 API 및 보안 특징]
- * - 브라우저 내장 API: `localStorage`, `document.documentElement`, `document.querySelector`, `addEventListener`, `setTimeout`
- * - 보안(CSP): 인라인 `<script>` 대신 외부 파일로 분리하여 `SecurityHeadersFilter`의 엄격한 `script-src 'self'` 정책을 100% 준수함
+ *    [index.html <head>]      [theme-init.js]            [localStorage]      [DOM <html>]
+ *             |                      |                          |                  |
+ *             |-- 1. sync execute -->|                          |                  |  CSS 렌더링 전 즉시 실행
+ *             |                      |-- 2. getItem(theme) ---->|                  |  저장된 테마 조회
+ *             |                      |<-- 'dark' or 'light' ----|                  |  미저장 시 'dark' 기본값
+ *             |                      |-- 3. set data-theme -----|----------------->|  .dark-mode · meta 반영
+ *             |                      |-- 4. font media='all' ---|----------------->|  로드 후 웹폰트 비차단 적용
+ *             v                      v                          v                  v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 로드 위치: `frontend/index.html` (`<script src="js/theme-init.js"></script>`)
- * - 테마 토글 연동: `frontend/js/search-controls.js` -> `initThemeToggle()`, `applyTheme()` (`yonsei119-theme` 키 공유)
- * - IntelliJ 추적 팁: `Ctrl + Shift + F`로 `yonsei119-theme` 또는 `nanum-webfont-link` 검색
+ * [3. 사용된 요소 구분 (표준 내장)]
+ * - JS / 브라우저 표준 내장
+ *   ㄴ IIFE (function(){})()    : 전역 변수 오염 없이 즉시 1회 실행하는 표준 함수 패턴
+ *   ㄴ localStorage.getItem()   : 브라우저 영구 저장소에서 테마 설정을 읽는 내장 메서드
+ *   ㄴ document.documentElement : `<html>` 루트 요소를 가리키는 표준 DOM 속성
+ *   ㄴ classList.toggle()       : `.dark-mode` 클래스를 켜고 끄는 표준 DOM 메서드
+ *   ㄴ document.querySelector() : `<meta>` 태그를 탐색하는 표준 DOM 메서드
+ *
+ * [4. 실제 사용처 (연결 위치) 및 IDE 추적 가이드]
+ * - 연결 파일
+ *   ㄴ frontend/index.html            : `<script src="js/theme-init.js"></script>`
+ *   ㄴ frontend/js/search-controls.js : `initThemeToggle()`, `applyTheme()`과 키 공유
+ *   ㄴ SecurityHeadersFilter.java     : 인라인 스크립트 제거로 `script-src 'self'` 준수
  * ============================================================================
  */
 (function applyInitialThemeBeforePaint() {

@@ -1,15 +1,19 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 3단 반응형 병원 상세 시트(`#sheet`), 대학교병원 정적 배경 로고 워터마크(`#sheet-univ-watermark`),
- *   직통 전화·3사 내비게이션 버튼, E-Gen 스타일 실시간 병상·장비·중증질환 보드, 진료 공지 카드, 개발자 모드 원본 대조표 스타일시트
+ * [1. 역할 및 적용 시점]
+ * - 역할 : 3단 반응형 병원 상세 시트(`#sheet`), 대학교병원 정적 배경 로고 워터마크,
+ *          직통 전화·3사 내비 버튼, E-Gen 병상·장비·중증질환 보드, 개발자 모드 스타일시트
  *
- * [전체 연결 흐름]
- * - `index.html` `#sheet`
- *   ├── `.sheet` / `.sheet.open` / `.half-peek` ──> `js/hospital-sheet.js` (`openHospital`, `closeSheet`, `snapSheetToHalfPeek`, `syncResponsiveSheetLayout`)
- *   ├── `.sheet-univ-watermark` / `.has-univ-logo` ──> `js/hospital-sheet.js:syncSheetUniversityWatermark()`, `js/user-features.js`
- *   ├── `.egen-table-card` / `.egen-badge-*` ──> `js/hospital-sheet.js` (`renderBeds`, `renderEquipment`, `renderSevere`)
- *   └── `.developer-mode` / `.raw-grid` ──> `js/hospital-sheet.js:renderDeveloperInspector()`
+ * [2. 워터마크 스크롤 고정 레이어 구조]
+ *   ㄴ `.sheet` (`isolation: isolate`)
+ *       ㄴ `#sheet-univ-watermark` (`position : absolute; z-index: 0; pointer-events: none`)
+ *       ㄴ `.sheet-scroll` (`position         : relative; z-index: 1; overflow-y: auto`)
+ *           -> 내용을 위아래로 스크롤해도 대학교 로고는 배경 제자리에 정적으로 고정됨!
+ *
+ * [3. 연결된 HTML / JS 사용처]
+ *   ㄴ frontend/index.html           : `#sheet`, `#sheet-univ-watermark`, `#developer-mode`
+ *   ㄴ frontend/js/hospital-sheet.js : 시트 열기/닫기, 대학로고 적용, 병상·질환 보드 렌더링
+ *   ㄴ frontend/js/user-features.js  : 대학교병원 로고 파일 매칭 (의료원 제외)
  * ============================================================================
  */
 

@@ -6,26 +6,42 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 유통기한(TTL)과 최대 보관 개수(LRU)를 동시에 지켜 서버 메모리 초과(OOM)를 막는 공용 스마트 냉장고 캐시
- * - 실행 시점: 각 서비스·필터가 생성될 때 필요한 크기와 유효시간으로 인스턴스가 만들어지며, 읽기/쓰기 호출 시 동작함
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 유효시간(TTL)과 최대 저장 개수(LRU)를 동시에 지켜 메모리 누수(OOM)를 막는
+ *          공용 스마트 냉장고 인메모리 캐시 클래스
+ * - 실행 시점 : 각 서비스·필터 초기화 시 생성되며, `get` / `put` / `getOrCompute` 호출 시 동작함
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   ├── get(key)          ──> ReentrantLock 잠금 ──> 항목 조회 ──> 만료 시 삭제 후 null / 유효 시 값 반환(최근 사용 순서 갱신)
- *   ├── put(key, value)   ──> 만료 항목 청소 ──> 새 항목 저장 ──> maxEntries 초과 시 가장 오래 안 쓴(LRU) 항목 자동 퇴거
- *   └── getOrCompute(...) ──> 유효 항목 있으면 즉시 반환 / 없으면 creator로 생성·저장 후 반환 (원자적 실행)
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [내장 / 자동생성 구분]
- * - Java 표준 내장: LinkedHashMap(`accessOrder = true`로 LRU 구현), ReentrantLock(가상 스레드 친화적 동기화), Supplier
- * - Java record 자동 생성: 내부 `CacheEntry<V>(value, expiresAtMs)` 불변 포장 레코드
+ *       [Service / Filter]             [BoundedTtlCache]           [LinkedHashMap (LRU)]
+ *                |                             |                             |
+ *                |-- 1. get(k) / put(k, v) --->|                             |  캐시 조회 또는 저장 요청
+ *                |                             |-- 2. ReentrantLock.lock()   |  가상 스레드 안전 동기화
+ *                |                             |-- 3. check TTL & order ---->|  만료 확인 및 최근 사용 갱신
+ *           +----+-----------------------------+-----------------------------+------------------------+
+ *           | [opt : size() > maxEntries]                                                             |  최대 보관 용량 초과 시
+ *           |    |                             |                             |-- removeEldestEntry()  |  가장 오래 안 쓴(LRU) 항목 삭제
+ *           +----+-----------------------------+-----------------------------+------------------------+
+ *                |<-- 4. valid value or null --|                             |  잠금 해제 후 결과 반환
+ *                v                             v                             v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 실제 사용처 3곳:
- *   1) NaverDirectionsService (`routeCache`, `etaCache` — 60초 캐시)
- *   2) NaverGeocodingService (`reverseGeocodeCache`, `geocodeCache` — 600초 캐시)
- *   3) ApiRateLimitFilter (`buckets` — IP별 토큰 버킷 600초 보관)
- * - Java 호출 추적: 클래스명이나 메서드명 위에서 `Ctrl + Alt + H`
+ * [3. 사용된 요소 구분 (표준 내장)]
+ * - Java 표준 내장
+ *   ㄴ record                   : 내부 `CacheEntry<V>(value, expiresAtMs)` 선언 키워드 (자동생성)
+ *   ㄴ LinkedHashMap            : `accessOrder = true`로 LRU 순서를 자동 관리하는 표준 내장 클래스
+ *   ㄴ Map.Entry                : 가장 오래된 항목 검사(`removeEldestEntry`)에 쓰이는 표준 인터페이스
+ *   ㄴ ReentrantLock            : 가상 스레드 고정(Pinning) 없이 안전하게 동기화하는 잠금 클래스
+ *   ㄴ Supplier                 : 캐시 미스 시 새 값을 지연 생성하는 표준 함수형 인터페이스
+ *   ㄴ System.currentTimeMillis : 만료 여부를 비교하는 표준 내장 현재 시각 메서드
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ NaverDirectionsService.java : `routeCache`(256개), `etaCache`(512개) 60초 캐시
+ *   ㄴ NaverGeocodingService.java  : `reverseGeocodeCache`, `geocodeCache` 600초 캐시
+ *   ㄴ ApiRateLimitFilter.java     : `buckets` IP별 요청 제한 버킷 600초 캐시
+ *   ㄴ Yonsei119BackendTests.java  : Test 11 LRU 자동 퇴거 검증
+ * - IntelliJ 추적 단축키
+ *   ㄴ 호출 계층 보기 : `BoundedTtlCache` 위에서 `Ctrl + Alt + H`
  */
 public final class BoundedTtlCache<K, V> {
 
@@ -37,7 +53,7 @@ public final class BoundedTtlCache<K, V> {
     public BoundedTtlCache(int maxEntries, long ttlSeconds) {
         this.maxEntries = Math.max(1, maxEntries);
         this.ttlMillis = Math.max(1L, ttlSeconds) * 1000L;
-        // [Java 내장 동작] 세 번째 인자 accessOrder=true 설정 시 get()으로 읽힌 항목이 맨 뒤(최신)로 이동하며,
+        // [Java 표준 내장 동작] 세 번째 인자 accessOrder=true 설정 시 get()으로 읽힌 항목이 맨 뒤(최신)로 이동하며,
         // removeEldestEntry가 true를 반환할 때 맨 앞(가장 오래 미사용) 항목이 자동으로 제거됨
         this.map = new LinkedHashMap<>(16, 0.75f, true) {
             @Override

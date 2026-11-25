@@ -1,21 +1,45 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 전 모듈이 공통으로 꺼내 쓰는 만능 조리도구 상자 (DOM 생성, 병상·결측·초과수용 판독, 실시간 공지 차단 판별, 구면 거리, 토스트 알림)
- * - 실행 시점: 페이지 시작 시 자동 실행되는 코드는 없으며, 각 화면·데이터 모듈이 함수를 호출할 때마다 즉시 실행됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 안전한 DOM 생성(XSS 차단), 음수(초과수용)·결측 병상 파싱, 실시간 응급메시지
+ *          차단 여부 판별, 구면 거리 계산, 상태 토스트 표시를 수행하는 공용 도구함 모듈
+ * - 실행 시점 : 초기 자동 실행 코드는 없으며, 각 모듈이 함수를 호출할 때마다 즉시 실행됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 주요 데이터 정제 흐름:
- *   공공데이터 원시 문자열(`raw`)
- *   ├── `isMissing()` / `integerValue()` ──> 결측치(`null`) vs 만실(`0`) vs 초과수용(`음수`) 무손실 분리
- *   ├── `bedValue()` / `getBedTrafficInfo()` ──> 지도 카드·클러스터·ETA 배지 텍스트 및 신호등 점 색상 생성
- *   ├── `parseApiDate()` / `getActiveMessages()` ──> 종료된 과거 응급메시지 제외, 현재 유효 공지만 추출
- *   └── `isNoticeBlocking()` / `isDiseaseSpecificallyBlocked()` ──> 백엔드 `HospitalRecommendationScorer`와 1:1 동일한 차단 판정
+ * [2. 핵심 병상 · 공지 판독 흐름 (시퀀스 다이어그램)]
  *
- * [사용처 및 IDE 추적 가이드]
- * - 호출 모듈: `app.js`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`, `hospital-sheet.js`, `search-controls.js`
- * - 백엔드 대칭 클래스: `HospitalRecommendationScorer.java` (병상·공지 차단 기준), `GeoUtils.java` (하버사인 거리)
- * - IntelliJ 추적 팁: 각 함수명 위에서 `Ctrl + Alt + H` 또는 `Ctrl + Shift + F`로 호출 위치 검색
+ *    [Raw API Data]                      [utils.js]                     [Card / Sheet UI]
+ *           |                                 |                                 |
+ *           |-- 1. raw bed ('-4', '0', '') -->|                                 |  원시 병상 문자열 전달
+ *           |                                 |-- integerValue() / bedValue()   |  결측 · 만실 · 초과수용 분리
+ *           |                                 |-- 2. traffic dot + label ------>|  신호등 색상 · 배지 표시
+ *           |-- 3. messages[] --------------->|                                 |  실시간 응급메시지 전달
+ *           |                                 |-- isNoticeBlocking()            |  '제한 없음' 소거 후 차단 판별
+ *           |                                 |-- 4. warning override --------->|  실제 불가 공지만 경고 반영
+ *           v                                 v                                 v
+ *
+ * [3. 사용된 요소 구분 (표준 내장 / 프로젝트 내부)]
+ * - JS / 브라우저 표준 내장
+ *   ㄴ document.getElementById : ID로 DOM 요소를 찾는 브라우저 표준 메서드
+ *   ㄴ document.createElement  : 태그 생성 후 `textContent`로 XSS 없이 텍스트 주입
+ *   ㄴ RegExp                  : 병상 정수 및 차단 공지 키워드 검사 정규식 객체
+ *   ㄴ Date / Intl             : 14자리 공공데이터 시각 파싱 및 KST 포맷 변환 내장 객체
+ *   ㄴ Math                    : 하버사인 구면 거리(`sin`, `cos`, `atan2`) 계산 내장 객체
+ *   ㄴ HTMLElement.showPopover : 토스트를 최상단 레이어(Top Layer)에 띄우는 표준 API
+ * - 프로젝트 내부 모듈
+ *   ㄴ constants.js : `API_FIELD_LABELS`, `SPECIFIC_BLOCK_TARGETS` 참조
+ *   ㄴ state.js     : 출발지 라벨 및 토스트 타이머 상태 참조
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 프론트엔드 사용처
+ *   ㄴ frontend/js/app.js             : `byId()`, `setStatus()`, `updateMarquees()`
+ *   ㄴ frontend/js/map-engine.js      : `node()`, `radiusExtent()`, `blurKeyword()`
+ *   ㄴ frontend/js/markers-cluster.js : `bedValue()`, `getBedTrafficInfo()`, `distanceKm()`
+ *   ㄴ frontend/js/directions-eta.js  : `integerValue()`, `getOriginDisplayLabel()`
+ *   ㄴ frontend/js/hospital-sheet.js  : `isNoticeBlocking()`, `isDiseaseSpecificallyBlocked()`
+ *   ㄴ frontend/js/search-controls.js : `isGenuineGpsPosition()`, `installDialogLightDismiss()`
+ * - 백엔드 대칭 클래스
+ *   ㄴ HospitalRecommendationScorer.java : `isNoticeBlocking()` 동일 차단 판정 규칙 공유
+ *   ㄴ GeoUtils.java                     : `haversineKm()` 동일 거리 공식 공유
  * ============================================================================
  */
 
@@ -67,7 +91,7 @@ export function empty(container, message) {
 /*
  * [역할 및 성능 원리]
  * - 역할: 530여 개 병원 데이터를 가공하는 긴 루프 중간에 브라우저 메인 스레드 제어권을 잠깐 양보해 화면 멈춤을 막음
- * - 흐름: 최신 `window.scheduler.yield()` 지원 시 우선 사용 ──> 미지원 브라우저는 `setTimeout(resolve, 0)` 폴백
+ * - 흐름: 최신 `window.scheduler.yield()` 지원 시 우선 사용 -> 미지원 브라우저는 `setTimeout(resolve, 0)` 폴백
  * - 호출처: `search-controls.js:applySnapshotToState()`
  */
 export function yieldToMain() {
@@ -157,9 +181,9 @@ export function formatParamLabel(currentKey, baselineKey) {
  * - 역할: 중증질환·장비 가용 코드(`'Y'`, `'N'`, `'N1'`, `'불가능'`, `'정보미제공'` 등)를 표준 상태(`yes`/`no`/`unknown`)로 분류함
  * - 흐름:
  *   원본 `raw` 입력
- *   ├── 결측·`'정보미제공'`·`'-'` ──> `{ text: '-', className: 'unknown' }`
- *   ├── `'Y'`·`'가능*'`           ──> `{ text: yes, className: 'yes' }`
- *   └── `'N*'`·`'불가'` 포함      ──> `{ text: no, className: 'no' }`
+ *   ㄴ 결측·`'정보미제공'`·`'-'` -> `{ text: '-', className: 'unknown' }`
+ *   ㄴ `'Y'`·`'가능*'`           -> `{ text: yes, className: 'yes' }`
+ *   ㄴ `'N*'`·`'불가'` 포함      -> `{ text: no, className: 'no' }`
  * - 호출처: `hospital-sheet.js:renderSevere()`
  */
 export function availability(raw, yes = '가능', no = '불가능') {
@@ -214,9 +238,9 @@ export function integerValue(raw) {
  * - 역할: 응급실 일반병상(`hvec`) 원시값을 사람이 읽기 쉬운 한글 상태 문자열로 변환함
  * - 흐름:
  *   `integerValue(raw)`
- *   ├── `null` (결측) ──> `'미정보'`
- *   ├── `< 0`  (음수) ──> `'초과수용 N석'` (정원 초과 수용 중인 현장 상태 보존!)
- *   └── `>= 0`        ──> `'N석'`
+ *   ㄴ `null` (결측) -> `'미정보'`
+ *   ㄴ `< 0`  (음수) -> `'초과수용 N석'` (정원 초과 수용 중인 현장 상태 보존!)
+ *   ㄴ `>= 0`        -> `'N석'`
  * - 호출처: `markers-cluster.js` (병원 카드·클러스터 목록), `directions-eta.js` (경유지·ETA 순위 배지), `hospital-sheet.js` (공유 문구)
  */
 export function bedValue(raw) {
@@ -329,8 +353,8 @@ export function isNoticeBlocking(msg) {
  * [역할 및 데이터 흐름]
  * - 역할: 특정 중증응급질환(`mkioskty1`~`27`)에 대해 현재 유효한 진료 제한 공지가 등록되어 있는지 교차 검증함
  * - 흐름:
- *   `activeMessages` 순회 ──> `isNoticeBlocking(msg)` 통과 공지만 검사
- *   ──> `SPECIFIC_BLOCK_TARGETS[itemKey]`의 표준 질환코드(`symtypcod`) 또는 질환명(`symtypcodmag`·`symblkmsg`) 일치 시 `true` 반환
+ *   `activeMessages` 순회 -> `isNoticeBlocking(msg)` 통과 공지만 검사
+ *   -> `SPECIFIC_BLOCK_TARGETS[itemKey]`의 표준 질환코드(`symtypcod`) 또는 질환명(`symtypcodmag`·`symblkmsg`) 일치 시 `true` 반환
  * - 호출처: `hospital-sheet.js:renderSevere()`
  */
 export function isDiseaseSpecificallyBlocked(activeMessages, itemKey) {
@@ -451,8 +475,8 @@ export function hasMobileGpsHardware() {
  * [역할 및 데이터 흐름]
  * - 역할: 브라우저 측위 결과(`GeolocationPosition`)가 IP·기지국 광역 추정치가 아닌 정밀 GPS 좌표인지 검증함
  * - 판정 기준:
- *   ├── 모바일 기기: 오차 반경(`accuracy`) `100m` 이하 통과
- *   └── 데스크톱 기기: 위성 고도(`altitude !== null`) 실측 및 오차 `50m` 이하만 통과
+ *   ㄴ 모바일 기기: 오차 반경(`accuracy`) `100m` 이하 통과
+ *   ㄴ 데스크톱 기기: 위성 고도(`altitude !== null`) 실측 및 오차 `50m` 이하만 통과
  * - 호출처: `search-controls.js:locate()`
  */
 export function isGenuineGpsPosition(position) {
@@ -542,8 +566,8 @@ export function updateMarquees() {
  * - 역할: 화면 상단 알약형 토스트(`#status-toast`, HTML5 Popover Top Layer)와 스크린 리더 음성 알림 영역을 제어함
  * - 흐름:
  *   `setStatus(message)`
- *   ├── 빈 문자열(`''`) ──> `hidePopover()`로 토스트 닫기
- *   └── 안내·오류 문자열 ──> `data-tone`(`'info'`/`'error'`) 설정 + `showPopover()` 표시 + 자동 닫힘 타이머(`4.2초`/`6.5초`) 예약
+ *   ㄴ 빈 문자열(`''`) -> `hidePopover()`로 토스트 닫기
+ *   ㄴ 안내·오류 문자열 -> `data-tone`(`'info'`/`'error'`) 설정 + `showPopover()` 표시 + 자동 닫힘 타이머(`4.2초`/`6.5초`) 예약
  * - 호출처: `app.js`, `search-controls.js`, `directions-eta.js`, `hospital-sheet.js`
  */
 export function setStatus(message) {

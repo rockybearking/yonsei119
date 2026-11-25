@@ -1,26 +1,45 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 병원 상세 시트(`#sheet`)의 전담 상황실 화면 조립가
- *   · 3단 반응형 레이아웃(모달·슬라이더·바텀시트), 대학교병원 정적 배경 로고 워터마크,
- *     직통 전화·3사 내비게이션(네이버·카카오·T맵)·공유 링크, 실시간 진료 공지·응급/입원 병상·장비·28대 중증질환 보드,
- *     그리고 개발자 모드 원본 API 인스펙터(`GET /api/hospitals/{hpid}`)를 렌더링함
- * - 실행 시점: 앱 시작 시 `syncResponsiveSheetLayout()`·`initSheetDrag()`가 1회 초기화되고,
- *   사용자가 지도 병원 카드·클러스터·검색 결과·추천 순위를 클릭할 때마다 `openHospital()`이 실행됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 병원 상세 시트(`#sheet`)의 3단 반응형 레이아웃, 대학병원 정적 워터마크 배경,
+ *          직통 전화·3사 내비 연동, 실시간 병상·장비·공지·28대 중증질환 현황판,
+ *          그리고 개발자 모드 원본 대조표(`GET /api/hospitals/{hpid}`)를 조립하는 모듈
+ * - 실행 시점 : 앱 부팅 시 반응형·드래그 이벤트가 바인딩되며, 병원 선택 시 `openHospital()` 실행
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   병원 선택 ──> `openHospital(hospital)`
- *   ├── `syncSheetUniversityWatermark()` ──> 대학교병원(의료원 제외) 로고를 시트 맨 뒤 정적 배경에 고정 배치
- *   ├── `renderContacts()` ──> 응급실/대표 `tel:` 발신 + 네이버·카카오·T맵 앱/웹 길안내 + 공유 URL 복사
- *   ├── `renderMessages()` / `renderBeds()` / `renderEquipment()` / `renderSevere()` ──> 실시간 의료 자원 보드 생성
- *   ├── `loadDirectionsForHospital()` ──> `GET /api/directions` 자동차 경로·예상 소요시간 조회
- *   └── `#developer-mode` 펼침 시 ──> `renderDeveloperInspector()` ──> `GET /api/hospitals/{hpid}` 전체 원본 대조표 출력
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [사용처 및 IDE 추적 가이드]
- * - 외부 호출처: `app.js` (초기화·닫기·인스펙터 토글), `markers-cluster.js`, `directions-eta.js`, `search-controls.js`
- * - 연결 HTML/CSS: `index.html` (`#sheet`, `#sheet-dim`), `css/sheet-egen.css`, `css/dark-theme.css`, `css/responsive.css`
- * - IntelliJ 추적 팁: 함수명 위에서 `Ctrl + Alt + H` 또는 `Ctrl + Shift + F`로 `/api/hospitals/` 검색
+ *       [Card / Search]            [hospital-sheet.js]               [user-features.js]      [directions / API]
+ *              |                            |                                 |                       |
+ *              |-- 1. openHospital(hosp) -->|                                 |                       |  상세 시트 열기
+ *              |                            |-- 2. resolveUniversityLogo() -->|                       |  소속 대학교 로고 확인
+ *              |                            |<-- 3. SVG path (no medical) ----|                       |  정적 배경 워터마크 배치
+ *              |                            |-- 4. render beds & severe       |                       |  병상 · 장비 · 28대 질환 보드
+ *              |                            |-- 5. loadDirectionsFor...() ----|---------------------->|  실시간 자동차 경로 조회
+ *         +----+----------------------------+---------------------------------+-----------------------+----------+
+ *         | [opt : #developer-mode opened]                                                                       |  하단 개발자 모드 펼침 시
+ *         |    |                            |-- 6. GET /hospitals/{hpid} -----|---------------------->|          |  60개 전체 원시 태그 조회
+ *         +----+----------------------------+---------------------------------+-----------------------+----------+
+ *              v                            v                                 v                       v
+ *
+ * [3. 사용된 요소 구분 (표준 내장 / 프로젝트 내부)]
+ * - JS / 브라우저 표준 내장
+ *   ㄴ fetch()                     : 단건 상세 원본 API(`/api/hospitals/{hpid}`) 비동기 조회
+ *   ㄴ navigator.share / clipboard : 병원 공유 링크 전송 및 클립보드 복사 내장 API
+ *   ㄴ Pointer Events              : 모바일 바텀시트 터치 드래그(`pointerdown/move/up`) 처리
+ *   ㄴ URL / encodeURIComponent    : 네이버·카카오·T맵 외부 앱/웹 길안내 딥링크 생성
+ *   ㄴ requestAnimationFrame       : 시트 열림 후 전광판 마퀴 폭 계산 타이밍 동기화
+ * - 프로젝트 내부 모듈
+ *   ㄴ constants.js / state.js / utils.js / user-features.js / directions-eta.js
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 프론트엔드 호출처
+ *   ㄴ frontend/js/app.js             : 시트 초기화 · 닫기 · 개발자 모드 토글
+ *   ㄴ frontend/js/markers-cluster.js : 병원 카드 및 클러스터 항목 클릭 시 열기
+ *   ㄴ frontend/js/directions-eta.js  : 추천 순위 클릭 · 상단 경로 배너 병원 다시 열기
+ *   ㄴ frontend/js/search-controls.js : 검색 자동완성 선택 · 60초 실시간 시트 무음 갱신
+ * - 연결 HTML / CSS
+ *   ㄴ frontend/index.html         : `#sheet`, `#sheet-univ-watermark`, `#developer-mode`
+ *   ㄴ frontend/css/sheet-egen.css : 상세 시트 · 워터마크 · 병상/질환 배지 스타일
  * ============================================================================
  */
 
@@ -148,9 +167,9 @@ function contactLink(text, href, className) {
  * [역할 및 데이터 흐름]
  * - 역할: 기기 OS에 맞춰 모바일 내비게이션 앱을 실행하고, 앱이 설치되어 있지 않으면 스토어·웹 지도로 안전하게 연결함
  * - 분기 흐름:
- *   ├── Android: `intent://...#Intent;scheme=...;package=...;S.browser_fallback_url=...;end` 실행
- *   ├── 데스크톱 PC: `window.open(fallback, '_blank', 'noopener,noreferrer')` 새 탭 웹 지도 열기
- *   └── iOS/iPadOS: 커스텀 스킴 실행 후 `1.8초` 안에 앱 전환(`visibilityState === 'hidden'`)이 없으면 `fallback` 이동
+ *   ㄴ Android: `intent://...#Intent;scheme=...;package=...;S.browser_fallback_url=...;end` 실행
+ *   ㄴ 데스크톱 PC: `window.open(fallback, '_blank', 'noopener,noreferrer')` 새 탭 웹 지도 열기
+ *   ㄴ iOS/iPadOS: 커스텀 스킴 실행 후 `1.8초` 안에 앱 전환(`visibilityState === 'hidden'`)이 없으면 `fallback` 이동
  * - 호출처: `launchNavigation(provider, hospital)`
  */
 function openMobileApp(scheme, androidPackage, fallback) {
@@ -287,7 +306,7 @@ function launchNavigation(provider, hospital) {
 /*
  * [역할 및 데이터 흐름]
  * - 역할: 선택한 병원으로 바로 열리는 직통 링크(`?hospital=HPID`)를 생성해 모바일 공유창 또는 클립보드 복사로 전달함
- * - 흐름: URL 조립 ──> 모바일 `navigator.share()` 우선 시도 ──> 미지원·데스크톱은 `navigator.clipboard.writeText()` 후 토스트 안내
+ * - 흐름: URL 조립 -> 모바일 `navigator.share()` 우선 시도 -> 미지원·데스크톱은 `navigator.clipboard.writeText()` 후 토스트 안내
  * - 호출처: `renderContacts(hospital)`의 `'공유하기'` 버튼 클릭 리스너
  */
 async function shareHospital(hospital) {
@@ -391,7 +410,7 @@ function renderContacts(hospital) {
 /*
  * [역할 및 데이터 흐름]
  * - 역할: 현재 시각에 유효한 실시간 응급·중증 진료 공지(`getEmrrmSrsillDissMsgInqire`)를 중요도(`[중증]` 우선) 순으로 `#messages`에 표시함
- * - 흐름: `getActiveMessages(hospital)` ──> 중요도·진료과·본문 정렬 ──> `#message-count` 건수 갱신 및 `.message-card` 조립
+ * - 흐름: `getActiveMessages(hospital)` -> 중요도·진료과·본문 정렬 -> `#message-count` 건수 갱신 및 `.message-card` 조립
  * - 호출처: `openHospital(hospital)`
  */
 function renderMessages(hospital) {
@@ -493,7 +512,7 @@ function renderMessages(hospital) {
  * - 역할: 28대 중증응급질환 수용 여부(`mkioskty1`~`28`)와 실시간 차단 공지·비고(`*msg`)를 교차 검증해 `#severe`에 그림
  * - 배지 우선순위(실제 NEMC 응답 사례 반영):
  *   1) 의미 없는 자리표시 비고(`'.'`, `'-'`, `'정보미제공'`, `'미정보'`, `'없음'`)는 빈 비고로 정제
- *   2) 원본값이 `'N*'`(`status.className === 'no'`)이거나 실시간 차단 공지(`isBlockedByNotice`) 또는 비고가 `'불가능'`인 경우 ──> 빨강 `'불가능'` 최우선 적용!
+ *   2) 원본값이 `'N*'`(`status.className === 'no'`)이거나 실시간 차단 공지(`isBlockedByNotice`) 또는 비고가 `'불가능'`인 경우 -> 빨강 `'불가능'` 최우선 적용!
  *   3) 원본값이 `'Y'`일 때 연령·시간 조건부 비고(`'36개월 이상'`, `'문의 요망'` 등)가 있으면 노랑 `'확인 필요'`,
  *      `'연령제한없음'`·`'제한없음'`·`'0세 이상'`이거나 비고가 없으면 초록 `'가능'` 표시
  * - 호출처: `openHospital(hospital)`
@@ -603,10 +622,10 @@ function renderSevere(hospital) {
  * [역할 및 데이터 흐름]
  * - 역할: 가용 병상(`current`)과 기준 병상(`baseline`) 비율을 계산해 E-Gen 스타일 배지 클래스·문구를 산출함
  * - 판정 흐름:
- *   ├── 분만실(`type === 'delivery'`): `'Y'` 또는 양수면 초록 `'Y / 기준'`
- *   ├── 결측치(`isBlankOrNull`): 회색 `'-'` (`.egen-badge-dash`)
- *   ├── 음수(`current < 0`): 진빨강 `'초과수용 N/기준'` (`.egen-badge-overflow` 보존!)
- *   └── 가용률 비교: `<= 35%`·`0석` 빨강 `'혼잡'`, `< 70%` 주황 `'보통'`, `>= 70%` 초록 `'원활'`
+ *   ㄴ 분만실(`type === 'delivery'`): `'Y'` 또는 양수면 초록 `'Y / 기준'`
+ *   ㄴ 결측치(`isBlankOrNull`): 회색 `'-'` (`.egen-badge-dash`)
+ *   ㄴ 음수(`current < 0`): 진빨강 `'초과수용 N/기준'` (`.egen-badge-overflow` 보존!)
+ *   ㄴ 가용률 비교: `<= 35%`·`0석` 빨강 `'혼잡'`, `< 70%` 주황 `'보통'`, `>= 70%` 초록 `'원활'`
  * - 호출처: `createBedCell(fields, item)`
  */
 function getBedStatusBadge(fields, def) {

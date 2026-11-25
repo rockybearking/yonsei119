@@ -1,25 +1,47 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 프론트엔드 전체 모듈을 하나로 묶어 깨우는 총지배인(메인 부트스트랩 진입점)
- * - 실행 시점: `index.html`의 `<script type="module" src="js/app.js">`에 의해 HTML DOM 파싱 완료 직후 자동 1회 실행됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 프론트엔드 모든 모듈을 연결하고 초기 지도를 띄우는 총지배인(메인 진입점)
+ * - 실행 시점 : `index.html`의 `<script type="module" src="js/app.js">`에 의해
+ *              HTML 문서 파싱 완료 직후 자동으로 딱 1번 실행됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 부팅 순서:
- *   1) `registerUiCallbacks(...)` ──> 하위 모듈 간 순환 참조 방지용 11개 콜백 연결
- *   2) `init()` 동기 초기화 ──> 테마·검색·패널·반경(기본 50km)·길찾기·반응형 시트·이용 안내·키보드 접근성 바인딩
- *   3) 네이버 지도 SDK 확인 및 `mountNaverMap()` ──> `#map`에 WebGL/2D 지도 마운트
- *   4) 서버 연동 시작:
- *      ├── `syncFrontendConfig()`   ──> `GET /api/config`
- *      ├── `loadData(false)`        ──> `GET /api/hospitals?compact=true` 초기 스냅샷 수신
- *      ├── `startAutoRefreshLoop()` ──> 60초 주기 실시간 병상·응급메시지 무음 동기화 가동
- *      ├── `registerServiceWorker()` ──> `/sw.js` 오프라인 백업 워커 등록
- *      └── `locate()` 또는 `updateOriginAddress()` ──> 기기별 출발 좌표·주소 확정
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [사용처 및 IDE 추적 가이드]
- * - 로드 위치: `frontend/index.html` (`<script type="module" src="js/app.js" fetchpriority="high"></script>`)
- * - 런타임 진단 연결: 브라우저 콘솔 및 E2E 테스트(`Yonsei119PlaywrightE2ETests`)가 `window.__YONSEI119_DIAGNOSTICS__`를 참조함
- * - IntelliJ 추적 팁: 각 초기화 함수 위에서 `Ctrl + B`로 선언 모듈로 바로 이동 가능
+ *       [index.html]               [app.js]                       [map-engine.js]      [search-controls.js]
+ *             |                        |                                 |                       |
+ *             |-- 1. load ES module -->|                                 |                       |  DOM 파싱 직후 진입
+ *             |                        |-- 2. registerUiCallbacks()      |                       |  12개 콜백 · 이벤트 바인딩
+ *             |                        |-- 3. mountNaverMap() ---------->|                       |  WebGL / 2D 지도 마운트
+ *        +----+------------------------+---------------------------------+-----------------------+-----------+
+ *        | [par : async startup requests]                                                                    |  초기 비동기 병렬 연동
+ *        |    |                        |-- 4a. syncFrontendConfig() -----|---------------------->|           |  /api/config 공개 설정 동기화
+ *        |    |                        |-- 4b. loadData(false) ----------|---------------------->|           |  /api/hospitals 초기 목록 수신
+ *        |    |                        |-- 4c. startAutoRefreshLoop() ---|---------------------->|           |  60초 실시간 무음 갱신 가동
+ *        +----+------------------------+---------------------------------+-----------------------+-----------+
+ *             v                        v                                 v                       v
+ *
+ * [3. 사용된 요소 구분 (표준 내장 / 외부 SDK / 프로젝트 내부)]
+ * - JS / 브라우저 표준 내장
+ *   ㄴ async / await             : 비동기 작업을 순서대로 제어하는 표준 문법 키워드
+ *   ㄴ document.addEventListener : 키보드·클릭 등 DOM 이벤트를 감지하는 브라우저 메서드
+ *   ㄴ requestAnimationFrame()   : 화면 주사율에 맞춰 리사이즈를 1회만 실행하는 내장 함수
+ *   ㄴ URLSearchParams           : 주소창 쿼리(`?preview=...`)를 파싱하는 표준 내장 클래스
+ *   ㄴ getComputedStyle()        : 요소에 최종 적용된 CSS 속성을 읽는 브라우저 내장 함수
+ * - 외부 SDK / 라이브러리
+ *   ㄴ window.naver.maps        : 네이버 지도 v3 WebGL · LatLngBounds 객체
+ * - 프로젝트 내부 모듈
+ *   ㄴ constants.js / state.js / utils.js / user-features.js
+ *   ㄴ map-engine.js / markers-cluster.js / directions-eta.js
+ *   ㄴ hospital-sheet.js / search-controls.js
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 로드 위치
+ *   ㄴ frontend/index.html : `<script type="module" src="js/app.js">`
+ * - 외부 진단 연결처
+ *   ㄴ Yonsei119PlaywrightE2ETests.java : `window.__YONSEI119_DIAGNOSTICS__` 참조
+ * - IntelliJ 추적 단축키
+ *   ㄴ 선언부 바로 이동 : 호출된 함수명 위에서 `Ctrl + B`
+ *   ㄴ 전체 문자열 검색 : `Ctrl + Shift + F`로 `__YONSEI119_DIAGNOSTICS__` 검색
  * ============================================================================
  */
 
@@ -57,7 +79,8 @@ import {
     drawRouteOnMap,
     hasRenderedRoute,
     initDirectionsControls,
-    loadEtaRanking
+    loadEtaRanking,
+    scheduleActiveRouteCttSync
 } from './directions-eta.js';
 import {
     closeSheet,
@@ -90,11 +113,12 @@ import {
     updateSummary
 } from './search-controls.js';
 
-// [모듈 연결] 하위 모듈들이 서로 직접 import하지 않고 상위 UI 동작을 호출할 수 있도록 11개 콜백을 등록함
+// 하위 모듈 간 순환 import 없이 상위 동작을 호출할 수 있도록 12개 콜백을 등록함
 registerUiCallbacks({
     onUpdateMarkers: updateMarkers,
     onDrawRouteOnMap: drawRouteOnMap,
     onHasRenderedRoute: hasRenderedRoute,
+    onTrafficTilesUpdated: scheduleActiveRouteCttSync,
     onCustomOrigin: setCustomOrigin,
     onOpenHospital: openHospital,
     onCloseSheet: closeSheet,
@@ -106,12 +130,23 @@ registerUiCallbacks({
 });
 
 /*
- * [역할 및 데이터 흐름]
- * - 역할: `Escape` 키 단계별 닫기와 병원 상세 모달 시트(`#sheet`) 내부 `Tab` 키 포커스 트랩(WCAG 2.1 접근성)을 처리함
- * - 흐름:
- *   ├── `Escape` 입력: 열린 `<dialog>` ──> 모바일 메뉴 ──> 반경 팝오버 ──> 검색 드롭다운 ──> 상세 시트 순으로 닫기
- *   └── `Tab` 입력: 전체 모달 시트가 열려 있을 때 첫 포커스 요소와 마지막 요소 사이를 순환시켜 배경 이탈을 막음
- * - 호출처: `init()` 내부에서 1회 호출
+ * [역할 및 시퀀스 흐름]
+ * - 역할 : `Escape` 단계별 닫기 및 병원 상세 모달(`#sheet`) 내 `Tab` 포커스 순환 처리
+ *
+ *       [User Keypress]      [bindGlobalKeyboardNavigation]              [Open UI Layer]
+ *              |                            |                                   |
+ *              |-- 1. keydown event ------->|                                   |  키보드 입력 감지
+ *         +----+----------------------------+-----------------------------------+---------+
+ *         | [alt : event.key === 'Escape']                                                |  단계별 닫기 우선순위
+ *         |    |                            |-- 2a. close top layer ----------->|         |  모달->메뉴->반경->검색->시트
+ *         +----+----------------------------+-----------------------------------+---------+
+ *         | [else : event.key === 'Tab']                                                  |  전체 모달 시트 열림 상태
+ *         |    |                            |-- 2b. trap focus inside #sheet -->|         |  첫·마지막 요소 순환 고정
+ *         +----+----------------------------+-----------------------------------+---------+
+ *              v                            v                                   v
+ *
+ * - 사용처
+ *   ㄴ frontend/js/app.js : `init()` 내부에서 1회 호출
  */
 function bindGlobalKeyboardNavigation() {
     document.addEventListener('keydown', event => {
@@ -173,9 +208,10 @@ function bindGlobalKeyboardNavigation() {
 }
 
 /*
- * [역할 및 실행 시점]
- * - 역할: UI 컨트롤 이벤트 바인딩, 창 리사이즈 최적화, 진단 객체 노출, 지도 마운트 및 초기·주기적 데이터 수신을 순서대로 조율함
- * - 호출처: 파일 하단 `init()` 진입점
+ * [역할 및 사용처]
+ * - 역할 : 전체 UI 컨트롤 바인딩, 네이버 지도 마운트, 초기 스냅샷 및 60초 자동 갱신 시작
+ * - 사용처
+ *   ㄴ frontend/js/app.js : 파일 최하단 `init()` 진입 호출
  */
 async function init() {
     loadPersistedUserPrefs();
@@ -273,7 +309,7 @@ async function init() {
 
     bindGlobalKeyboardNavigation();
 
-    // 창 크기 변경 시 프레임당 1회만 반응형 시트·모바일 메뉴·마커·전광판을 재계산함
+    // 창 크기 변경 시 프레임당 1회만 시트·메뉴·마커·전광판 레이아웃을 재계산함
     let resizeRafId = 0;
     window.addEventListener('resize', () => {
         if (resizeRafId) {
@@ -288,7 +324,6 @@ async function init() {
         });
     }, { passive: true });
 
-    // 브라우저 콘솔 및 자동화 E2E 테스트가 내부 상태를 점검할 수 있도록 진단 객체를 연결함
     state.diagnostics.getState = () => state;
     state.diagnostics.hasRenderedRoute = hasRenderedRoute;
     state.diagnostics.glRouteSourceId = GL_ROUTE_SOURCE_ID;

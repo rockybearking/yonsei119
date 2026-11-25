@@ -1,51 +1,36 @@
 package com.yonsei119.dto;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 실도로 예상 도착 시간(ETA)과 병상 여유도·차단 공지 점수를 합산해 매긴 추천 응급실 1곳의 성적표 DTO
- * - 실행 시점: `GET /api/directions/rank` 요청 시 `NaverDirectionsService.rankHospitalsByDrivingTime()`에서 생성됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 실도로 도착 예상 시간(ETA)과 병상 여유도·차단 공지 점수를 종합해 매긴
+ *          추천 응급실 1곳의 성적표 그릇 (DTO)
+ * - 실행 시점 : `GET /api/directions/rank` 요청 시 `NaverDirectionsService`에서 생성됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   NaverDirectionsService.rankHospitalsByDrivingTime()
- *   ├── 병렬 ETA 조회 + HospitalRecommendationScorer.evaluate() 평가
- *   └── 수용최적(`optimal`) / 최단시간(`fastest`) 정렬 후 `rank` 1~N 부여 ──> List<HospitalEtaRankDto> 반환
- *   ──> EmergencyApiController.rankDirections() ──> Jackson JSON 직렬화
- *   ──> frontend/js/directions-eta.js의 `loadEtaRanking()` 수신 ──> `#eta-rank-box`에 추천 순위 목록 렌더링
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [자바 문법 및 자동 생성 요소]
- * - Java 내장 `record`: 19개 불변 필드와 생성자, `.rank()`, `.recommendationScore()`, `.hasBlockingNotice()` 등 자동 Getter 생성
+ *    [directions-eta.js]              [ApiController]         [DirectionsService]         [RecommendationScorer]
+ *             |                              |                         |                             |
+ *             |-- 1. GET /directions/rank -->|-- 2. rankHospitals() -->|                             |  반경 50km 추천 순위 요청
+ *             |                              |                         |-- 3. evaluate(hosp, eta) -->|  병상 여유 · 차단 공지 심사
+ *             |                              |                         |<-- 4. score + reason -------|  수용최적 가중치 점수 반환
+ *             |<-- 5. 200 JSON --------------|<-- List<EtaRankDto> ----|                             |  상위 1~5위 추천 카드 표시
+ *             v                              v                         v                             v
  *
- * [프론트엔드 연결 및 IDE 추적 가이드]
- * - 프론트엔드 사용처: `frontend/js/directions-eta.js` (`loadEtaRanking()`)
- * - 전체 검색(`Ctrl + Shift + F`): `/api/directions/rank` 또는 `recommendationReason`
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record                 : 19개 불변 필드 · 생성자 · `.rank()` 등 Getter 자동생성 키워드
+ *   ㄴ String                 : 병원명 · 병상 원문 · 추천 사유를 담는 표준 내장 클래스
+ *   ㄴ int / double / boolean : 순위·시간·요금 / 거리·점수 / 권역·차단공지 기본형 키워드
+ * - 외부 라이브러리 (자동 동작)
+ *   ㄴ Jackson               : 응답 시 `List<HospitalEtaRankDto>`를 JSON 배열로 직렬화
  *
- * [실행 방법 및 JSON 예시]
- * - 호출 예시: `curl "http://localhost:8080/api/directions/rank?startLat=37.3190&startLng=127.9012&radiusKm=50&limit=5&mode=optimal"`
- * - JSON 출력 예시:
- *   [
- *     {
- *       "rank": 1,
- *       "id": "A2200001",
- *       "name": "연세대학교원주세브란스기독병원",
- *       "typeGroup": "regional",
- *       "typeLabel": "권역응급의료센터",
- *       "regional": true,
- *       "erBeds": "5",
- *       "straightDistanceKm": 4.2,
- *       "drivingDistanceKm": 6.7,
- *       "durationMinutes": 11,
- *       "durationText": "약 11분",
- *       "tollFare": 0,
- *       "taxiFare": 9400,
- *       "lat": 37.31912,
- *       "lng": 127.94561,
- *       "availabilityStatus": "여유",
- *       "hasBlockingNotice": false,
- *       "recommendationScore": 9.8,
- *       "recommendationReason": "응급실 5석 여유 · 차단 공지 없음"
- *     }
- *   ]
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ NaverDirectionsService.java : `rankHospitalsByDrivingTime()`
+ *   ㄴ EmergencyApiController.java : `rankDirections()`
+ *   ㄴ Yonsei119BackendTests.java  : Test 12 수용최적 추천 순위 검증
+ * - 프론트엔드 연결처
+ *   ㄴ frontend/js/directions-eta.js : `loadEtaRanking()` (`#eta-rank-box` 렌더링)
  */
 public record HospitalEtaRankDto(
         int rank,

@@ -40,30 +40,54 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 국립중앙의료원(NEMC) 7대 응급의료 XML OpenAPI에서 원시 데이터를 받아오는 외부 조달 담당관 (신선 식자재 구매팀 역할)
- * - 실행 시점: 서버 부팅 시 @Component 싱글톤 빈으로 1개 생성되며, EmergencyDataService가 캐시를 채우거나 갱신할 때 호출됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 국립중앙의료원(NEMC) 7대 응급의료 XML OpenAPI에서 원시 데이터를
+ *          받아오는 외부 조달 담당관 (신선 식자재 구매팀 역할)
+ * - 실행 시점 : 서버 시작 시 `@Component` 싱글톤 빈으로 생성되며,
+ *              `EmergencyDataService`가 캐시를 적재·갱신할 때마다 호출됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   EmergencyDataService.buildFreshSnapshot()
- *   ├── 평상시(60초 주기): fetchHotDatasets() ──> 실시간 3종(병상·공지·중증질환)만 병렬 수집
- *   └── 최초 기동 / 6시간 경과 / 강제 새로고침: fetchAllDatasets() ──> 전체 7종(마스터 4종 + 실시간 3종) 병렬 수집
- *       └── fetchEndpointGroup() [가상 스레드 + Semaphore(4) 동시 호출 제어]
- *           └── fetchAllPages() ──> fetchSinglePage() [HTTP GET + 최대 3회 재시도]
- *               └── parseXmlResponse() [XXE 보안 DOM 파싱 · 음수 병상("-4") 및 빈 문자열("") 원형 보존]
- *                   ├── 정상 수신 시: lastSuccessfulByOperation에 백업 후 반환
- *                   └── 일시 장애 시: 직전 정상 데이터로 자동 폴백(무중단 보장)
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [내장 / 프레임워크 / 라이브러리 구분]
- * - Java 표준 내장: HttpClient/HttpRequest/HttpResponse(java.net.http), DocumentBuilderFactory(javax.xml), CompletableFuture, Semaphore, Executors
- * - Spring 프레임워크: @Component, @Autowired, ObjectProvider
- * - 외부 라이브러리: SLF4J(Logger), Micrometer(MeterRegistry), Jakarta Lifecycle(@PreDestroy)
+ *       [EmergencyDataService]          [NmcOpenApiClient]             [NEMC OpenAPI (XML)]
+ *                  |                             |                               |
+ *             +----+-----------------------------+-------------------------------+-----------+
+ *             | [alt : 60s cycle vs initial/6h cycle]                                        |  수집 범위 분기
+ *             |    |-- 1a. fetchHotDatasets() -->|                               |           |  실시간 3종(병상·공지·질환)
+ *             +----+-----------------------------+-------------------------------+-----------+
+ *             | [else : startup or 6h expired]                                               |  전체 마스터 갱신 시점
+ *             |    |-- 1b. fetchAllDatasets() -->|                               |           |  전체 7종(마스터4 + 실시간3)
+ *             +----+-----------------------------+-------------------------------+-----------+
+ *                  |                             |-- 2. GET XML (Semaphore 4) -->|  가상 스레드 병렬 호출
+ *                  |                             |<-- 3. XML response -----------|  원본 XML 수신
+ *                  |                             |-- 4. parseXmlResponse()       |  음수 병상(-4) · 공란 보존
+ *                  |<-- 5. parsed datasets ------|                               |  장애 시 직전 정상본 폴백
+ *                  v                             v                               v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 주요 호출처: EmergencyDataService.buildFreshSnapshot(), Yonsei119BackendTests(XML 파싱·인코딩 검증)
- * - Java 호출 계층 추적: 메서드명 위에서 `Ctrl + Alt + H`
- * - 전체 검색(`Ctrl + Shift + F`): `getEmrrmRltmUsefulSckbdInfoInqire` 또는 `fetchHotDatasets`
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record                   : 내부 `ParsedXmlPage` 결과 레코드 선언 키워드 (자동생성)
+ *   ㄴ HttpClient / HttpRequest : 외부 REST XML 호출용 표준 내장 HTTP 클라이언트
+ *   ㄴ DocumentBuilderFactory   : XXE 보안 설정이 적용된 표준 내장 XML DOM 파서
+ *   ㄴ CompletableFuture        : 여러 OpenAPI를 동시에 호출하는 비동기 표준 내장 클래스
+ *   ㄴ Executors                : Java 27 가상 스레드 풀을 생성하는 표준 내장 팩토리
+ *   ㄴ Semaphore                : 동시 요청 수를 최대 4개로 제한하는 동기화 클래스
+ *   ㄴ ConcurrentHashMap        : 스레드 안전한 직전 성공 백업 저장소 클래스
+ *   ㄴ URLEncoder               : 인증키 및 파라미터 URL 인코딩 표준 내장 클래스
+ * - Spring 프레임워크
+ *   ㄴ @Component / @Autowired : 스프링 빈 자동 등록 및 생성자 의존성 주입 어노테이션
+ *   ㄴ ObjectProvider          : 선택적 메트릭 빈을 안전하게 조회하는 인터페이스
+ * - 외부 라이브러리
+ *   ㄴ SLF4J (`Logger`)        : 수집 건수 · 장애 폴백 로그 기록 라이브러리
+ *   ㄴ Micrometer              : 엔드포인트별 응답 시간 · 성공률 측정 라이브러리
+ *   ㄴ Jakarta (`@PreDestroy`) : 서버 종료 시 가상 스레드 풀 정리 어노테이션
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ EmergencyDataService.java  : `buildFreshSnapshot()`에서 `fetchHotDatasets()` 호출
+ *   ㄴ Yonsei119BackendTests.java : Test 2 · Test 3 · Test 6 XML 무손실 파싱 검증
+ * - IntelliJ 추적 단축키
+ *   ㄴ 호출 계층 보기 : 메서드명 위에서 `Ctrl + Alt + H`
+ *   ㄴ 오퍼레이션 검색 : `Ctrl + Shift + F`로 `getEmrrmRltmUsefulSckbdInfoInqire` 검색
  */
 @Component
 public class NmcOpenApiClient {
@@ -92,7 +116,7 @@ public class NmcOpenApiClient {
         map.put("basic", "getEgytBassInfoInqire");
         map.put("traumaList", "getStrmListInfoInqire");
         map.put("traumaBasic", "getStrmBassInfoInqire");
-        // [Java 내장] Map.copyOf()로 수정 불가능한 불변 맵을 만들어 외부 변경을 차단함
+        // [Java 표준 내장] Map.copyOf()로 수정 불가능한 불변 맵을 만들어 외부 변경을 차단함
         return Map.copyOf(map);
     }
 
@@ -159,7 +183,7 @@ public class NmcOpenApiClient {
     /*
      * [역할 및 데이터 흐름]
      * - 역할: 7개 전체 OpenAPI(마스터 4종 + 실시간 3종)를 병렬로 일괄 수집함
-     * - 흐름: EmergencyDataService.buildFreshSnapshot(true 또는 최초 기동) ──> fetchAllDatasets() ──> fetchEndpointGroup(ENDPOINTS)
+     * - 흐름: EmergencyDataService.buildFreshSnapshot(true 또는 최초 기동) -> fetchAllDatasets() -> fetchEndpointGroup(ENDPOINTS)
      * - 사용처: EmergencyDataService.buildFreshSnapshot()
      */
     public Map<String, List<Map<String, String>>> fetchAllDatasets() {
@@ -169,7 +193,7 @@ public class NmcOpenApiClient {
     /*
      * [역할 및 데이터 흐름]
      * - 역할: 실시간으로 자주 바뀌는 Hot 3종(병상·응급메시지·중증질환)만 가볍게 병렬 수집함
-     * - 흐름: EmergencyDataService.buildFreshSnapshot(false) ──> fetchHotDatasets() ──> fetchEndpointGroup(HOT_ENDPOINTS)
+     * - 흐름: EmergencyDataService.buildFreshSnapshot(false) -> fetchHotDatasets() -> fetchEndpointGroup(HOT_ENDPOINTS)
      * - 사용처: EmergencyDataService.buildFreshSnapshot() (60초 주기 백그라운드 갱신 시 호출)
      */
     public Map<String, List<Map<String, String>>> fetchHotDatasets() {
@@ -179,11 +203,11 @@ public class NmcOpenApiClient {
     /*
      * [전체 호출 및 데이터 흐름]
      * - 흐름:
-     *   targetEndpoints 순회 ──> CompletableFuture.supplyAsync()로 가상 스레드에 병렬 작업 등록
-     *   ├── Semaphore(4) 허가 획득 ──> fetchAllPages(operation) 실행 ──> 허가 반납
-     *   └── 모든 Future 결과 join() 회수
-     *       ├── 성공 시: 파싱된 기관 리스트 저장
-     *       └── 예외 시: lastSuccessfulByOperation에 보관된 직전 정상 데이터로 대체
+     *   targetEndpoints 순회 -> CompletableFuture.supplyAsync()로 가상 스레드에 병렬 작업 등록
+     *   ㄴ Semaphore(4) 허가 획득 -> fetchAllPages(operation) 실행 -> 허가 반납
+     *   ㄴ 모든 Future 결과 join() 회수
+     *       ㄴ 성공 시: 파싱된 기관 리스트 저장
+     *       ㄴ 예외 시: lastSuccessfulByOperation에 보관된 직전 정상 데이터로 대체
      */
     private Map<String, List<Map<String, String>>> fetchEndpointGroup(Map<String, String> targetEndpoints) {
         Map<String, CompletableFuture<List<Map<String, String>>>> futures = new LinkedHashMap<>();
@@ -232,9 +256,9 @@ public class NmcOpenApiClient {
      * [역할 및 데이터 흐름]
      * - 역할: 하나의 OpenAPI 오퍼레이션을 1페이지부터 끝 페이지까지 순회해 모든 행을 합침
      * - 흐름:
-     *   page=1..10 반복 ──> fetchSinglePage(operation, page, 1000)
-     *   ├── page * 1000 >= totalCount 도달 시 루프 종료 ──> lastSuccessfulByOperation 갱신 후 불변 리스트 반환
-     *   └── 중간 페이지 실패 시 ──> 직전 정상 캐시(fallback)가 더 완전하면 fallback 반환
+     *   page=1..10 반복 -> fetchSinglePage(operation, page, 1000)
+     *   ㄴ page * 1000 >= totalCount 도달 시 루프 종료 -> lastSuccessfulByOperation 갱신 후 불변 리스트 반환
+     *   ㄴ 중간 페이지 실패 시 -> 직전 정상 캐시(fallback)가 더 완전하면 fallback 반환
      * - 사용처: fetchEndpointGroup() 내부에서 호출됨
      */
     public List<Map<String, String>> fetchAllPages(String operation) {
@@ -276,8 +300,8 @@ public class NmcOpenApiClient {
      * [역할 및 데이터 흐름]
      * - 역할: 단일 페이지 XML 데이터를 HTTP GET으로 요청하고 실패 시 최대 3회(800ms, 1600ms 간격) 재시도함
      * - 흐름:
-     *   서비스키 확인 ──> ensureUrlEncodedServiceKey() ──> 요청 URL 조립
-     *   ──> httpClient.send() ──> HTTP 2xx 확인 ──> parseXmlResponse() 파싱 결과 반환
+     *   서비스키 확인 -> ensureUrlEncodedServiceKey() -> 요청 URL 조립
+     *   -> httpClient.send() -> HTTP 2xx 확인 -> parseXmlResponse() 파싱 결과 반환
      * - 요청 URL 구조:
      *   https://apis.data.go.kr/B552657/ErmctInfoInqireService/{operation}?serviceKey={인증키}&pageNo=1&numOfRows=1000
      * - 사용처: fetchAllPages()에서 호출됨
@@ -366,7 +390,7 @@ public class NmcOpenApiClient {
     /*
      * [역할 및 데이터 흐름]
      * - 역할: 공공데이터포털의 Encoding 키('%' 포함)와 Decoding 평문 키를 판별해 이중 인코딩(%252F) 사고를 방지함
-     * - 흐름: rawKey 입력 ──> '%' 포함 시 그대로 반환 / 미포함 시 URLEncoder.encode(UTF-8) 1회 수행 후 반환
+     * - 흐름: rawKey 입력 -> '%' 포함 시 그대로 반환 / 미포함 시 URLEncoder.encode(UTF-8) 1회 수행 후 반환
      * - 사용처: fetchSinglePage(), Yonsei119BackendTests.testServiceKeyEncodingAndHotColdSplit()
      */
     public static String ensureUrlEncodedServiceKey(String rawKey) {
@@ -384,8 +408,8 @@ public class NmcOpenApiClient {
      * [역할 및 데이터 흐름]
      * - 역할: 공공데이터 XML 원문을 보안 DOM 파서로 읽어 소문자 태그 키 Map 목록으로 무손실 변환함
      * - 흐름:
-     *   xmlText 수신 ──> XXE 공격 차단 옵션 적용(DocumentBuilderFactory) ──> resultCode == "00" 확인
-     *   ──> <item> 목록 순회 ──> 태그명 소문자 통일(hpid, hvec 등) + 문자열 값 원형 저장 ──> ParsedXmlPage 반환
+     *   xmlText 수신 -> XXE 공격 차단 옵션 적용(DocumentBuilderFactory) -> resultCode == "00" 확인
+     *   -> <item> 목록 순회 -> 태그명 소문자 통일(hpid, hvec 등) + 문자열 값 원형 저장 -> ParsedXmlPage 반환
      * - 도메인 무결성 핵심:
      *   · 음수 병상(예: hvec="-4" 정원 초과수용)과 빈 태그(예: hv28="" 미운영·미보고)를 숫자 0으로 바꾸지 않고 그대로 보존함!
      * - 사용처: fetchSinglePage(), Yonsei119BackendTests(Test 2, Test 6)
@@ -396,7 +420,7 @@ public class NmcOpenApiClient {
         }
 
         try {
-            // [Java 내장 XML 보안 설정] 외부 엔티티 주입(XXE) 공격을 원천 차단함
+            // [Java 표준 내장 XML 보안 설정] 외부 엔티티 주입(XXE) 공격을 원천 차단함
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);

@@ -1,13 +1,18 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 주변 병원 클러스터 모달(`#cluster-dialog`), 최초 접속 이용 안내 모달(`#notice-dialog`),
- *   그리고 화면 상단 알약형 상태·오류 토스트(`#status-toast`) 스타일시트
+ * [1. 역할 및 적용 시점]
+ * - 역할 : 주변 병원 클러스터 모달(`#cluster-dialog`), 최초 이용 안내 모달(`#notice-dialog`),
+ *          화면 상단 알약형 상태·오류 토스트(`#status-toast`) 스타일시트
  *
- * [전체 연결 흐름]
- * - `#cluster-dialog` ──> `js/markers-cluster.js:openCluster()`, `js/app.js`(`#cluster-zoom`)
- * - `#notice-dialog`  ──> `js/search-controls.js:initNotice()`
- * - `#status-toast`   ──> `js/utils.js:setStatus(message)` (HTML5 Popover Top Layer 표시·자동 닫힘)
+ * [2. 사용된 CSS3 표준 내장 기능]
+ *   ㄴ dialog::backdrop    : 네이티브 모달 뒷배경 반투명 암전 처리
+ *   ㄴ :popover-open       : HTML5 Popover API 활성화 상태 스타일 지정
+ *   ㄴ overscroll-behavior : 모달 내부 스크롤이 뒤쪽 지도로 전파되지 않도록 차단
+ *
+ * [3. 연결된 HTML / JS 사용처]
+ *   ㄴ frontend/js/markers-cluster.js : `openCluster()` (`#cluster-dialog`)
+ *   ㄴ frontend/js/search-controls.js : `initNotice()` (`#notice-dialog`)
+ *   ㄴ frontend/js/utils.js           : `setStatus()` (`#status-toast`)
  * ============================================================================
  */
 
@@ -140,7 +145,7 @@ dialog::backdrop {
 
 /*
  * [상단 알약형 상태·오류 토스트(.status-toast)]
- * - 동작 흐름: js/utils.js:setStatus() 호출 ──> showPopover() 표시 ──> 활성 경로 배너(#active-route-banner) 노출 시 58px 아래로 회피
+ * - 동작 흐름: js/utils.js:setStatus() 호출 -> showPopover() 표시 -> 활성 경로 배너(#active-route-banner) 노출 시 58px 아래로 회피
  */
 .status-toast {
     position: fixed;

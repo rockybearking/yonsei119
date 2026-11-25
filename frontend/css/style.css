@@ -1,13 +1,19 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 전체 화면이 공통으로 쓰는 디자인 토큰(`:root` CSS 변수), 초기 다크·라이트 배경, 키보드 접근성 포커스,
- *   기관 종별 색상(`--hospital-color`), 로딩 회전 애니메이션을 정의하는 기초 스타일시트
- * - 실행 시점: `index.html`에서 첫 번째 `<link rel="stylesheet" href="css/style.css">`로 로드되어 전 모듈의 기준이 됨
+ * [1. 역할 및 적용 시점]
+ * - 역할 : 전역 디자인 토큰(`:root` CSS 변수), 기본 다크·라이트 배경, 접근성 포커스 링,
+ *          종별 강조색(`--hospital-color`), 회전·마퀴 키프레임을 정의하는 기초 스타일시트
+ * - 적용 시점 : `index.html`에서 첫 번째 CSS로 로드되어 나머지 7개 CSS의 기준이 됨
  *
- * [사용처 및 IDE 추적 가이드]
- * - 참조 파일: 나머지 7개 CSS 파일 전체 + `js/theme-init.js`, `js/search-controls.js`, `js/utils.js`, `js/markers-cluster.js`
- * - IntelliJ 추적 팁: `--search-panel-height` 또는 `--hospital-color`를 `Ctrl + Shift + F`로 검색
+ * [2. 사용된 CSS3 표준 내장 기능]
+ *   ㄴ :root 커스텀 속성(--*) : 색상·여백·동적 패널 높이를 공유하는 표준 CSS 변수
+ *   ㄴ :focus-visible : 키보드 탭 이동 시에만 외곽선을 표시하는 접근성 의사 클래스
+ *   ㄴ @keyframes     : 새로고침 회전 및 전광판 텍스트 흐름 애니메이션 문법
+ *
+ * [3. 연결된 HTML / JS 사용처]
+ *   ㄴ frontend/index.html            : `#map`, `.sr-only`, 종별 필터 공통 색상
+ *   ㄴ frontend/js/search-controls.js : `--search-panel-height` 실시간 높이 주입
+ *   ㄴ frontend/js/utils.js           : `--ticker-duration`, `--ticker-diff` 주입
  * ============================================================================
  */
 
@@ -45,7 +51,7 @@
 
 /*
  * [초기 테마 배경 즉시 확정 — 흰 화면 깜빡임(FOUC) 방지]
- * - 흐름: `<head>`의 `js/theme-init.js`가 `data-theme`과 `<meta name="color-scheme">` 확정 ──> 첫 프레임부터 어두운/밝은 배경 즉시 적용
+ * - 흐름: `<head>`의 `js/theme-init.js`가 `data-theme`과 `<meta name="color-scheme">` 확정 -> 첫 프레임부터 어두운/밝은 배경 즉시 적용
  */
 :root:has(> head > meta[name="color-scheme"][content="dark"]),
 html[data-theme="dark"] {
@@ -171,7 +177,7 @@ h3 {
 
 /*
  * [데이터 수신 스피너 및 새로고침 아이콘 회전]
- * - 흐름: js/search-controls.js:fetchData()가 body.is-loading 부여 ──> #refresh-button 내 .refresh-icon 회전 ──> 완료 시 해제
+ * - 흐름: js/search-controls.js:fetchData()가 body.is-loading 부여 -> #refresh-button 내 .refresh-icon 회전 -> 완료 시 해제
  */
 .spinner {
     flex: 0 0 14px;

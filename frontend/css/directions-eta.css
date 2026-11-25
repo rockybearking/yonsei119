@@ -1,13 +1,19 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 상단 활성 경로 배너(`#active-route-banner`), 상세 시트 내부 네이버 자동차 경로 섹션(`#section-directions`),
- *   실시간 교통 색상과 통일된 소통 범례·구간 칩, 그리고 수용최적·최단시간 ETA 추천 순위(`#eta-rank-box`) 스타일시트
+ * [1. 역할 및 적용 시점]
+ * - 역할 : 상단 활성 경로 배너(`#active-route-banner`), 상세 시트 자동차 경로 섹션,
+ *          네이버 실시간 교통 레이어(`CTT`)와 통일된 소통 색상 범례,
+ *          그리고 수용최적·최단시간 ETA 추천 순위(`#eta-rank-box`) 스타일시트
  *
- * [전체 연결 흐름]
- * - `#active-route-banner` ──> `js/directions-eta.js:drawRouteOnMap()`, `clearRouteOnMap()`, `initDirectionsControls()`
- * - `#section-directions`  ──> `js/directions-eta.js:loadDirectionsForHospital()` (`GET /api/directions`)
- * - `#origin-eta-bar`      ──> `js/directions-eta.js:loadEtaRanking()` (`GET /api/directions/rank`)
+ * [2. 네이버 실시간 교통(`CTT`) 1:1 색상 팔레트]
+ *   ㄴ .smooth  : `#27c441` (원활)
+ *   ㄴ .slow    : `#ff8d00` (서행)
+ *   ㄴ .jam     : `#ff3b30` (정체)
+ *   ㄴ .neutral : `#3b82f6` (교통정보 미수집 구간 기본 안내선)
+ *
+ * [3. 연결된 HTML / JS 사용처]
+ *   ㄴ frontend/index.html           : `#active-route-banner`, `#section-directions`, `#eta-rank-box`
+ *   ㄴ frontend/js/directions-eta.js : `drawRouteOnMap()`, `loadDirectionsForHospital()`, `loadEtaRanking()`
  * ============================================================================
  */
 

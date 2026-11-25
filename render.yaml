@@ -1,3 +1,35 @@
+# ==============================================================================
+# [1. 역할 및 실행 시점]
+# - 역할 : Render 클라우드 무료 플랜 배포 설계도 (빌드·환경변수·콜드스타트 헬스체크 정의)
+# - 실행 시점 : GitHub 저장소 푸시로 Render 자동 배포가 시작될 때 읽힘
+#
+# [2. 콜드스타트 로딩 제어 흐름 (시퀀스 다이어그램)]
+#
+#       [User Browser]            [Render Proxy]      [ApiController (/api/health)]
+#              |                         |                          |
+#              |-- 1. initial visit ---->|                          |  절전 인스턴스 깨우기 시작
+#         +----+-------------------------+--------------------------+----------------+
+#         | [loop : while initial NEMC cache warming up]                             |  초기 7종 데이터 적재 중
+#         |    |                         |-- 2. GET /api/health --->|                |  준비 상태 주기적 폴링
+#         |    |                         |<-- 503 WARMING_UP -------|                |  Render 자체 로딩 화면 유지
+#         +----+-------------------------+--------------------------+----------------+
+#              |                         |-- 3. GET /api/health --->|  초기 캐시 적재 완료 직후
+#              |                         |<-- 200 UP (ready=true) --|  트래픽 연결 승인
+#              |<-- 4. serve ready map --|                          |  병원 카드 즉시 표시
+#              v                         v                          v
+#
+# [3. 사용된 Render Blueprint 표준 키 및 환경변수]
+# - Render 표준 내장 키
+#   ㄴ services / type / runtime / plan / region : 웹 서비스 · Docker · Free 플랜 지정
+#   ㄴ dockerfilePath                            : 컨테이너 빌드에 사용할 Dockerfile 경로
+#   ㄴ healthCheckPath                           : 트래픽 연결 전 준비 상태를 확인할 API 경로 (`/api/health`)
+#   ㄴ envVars / sync                            : 런타임 환경변수 주입 (`sync: false`는 대시보드 비밀키 보호)
+# - 프로젝트 환경변수 연결처 (`application.yml` -> `Yonsei119Properties`)
+#   ㄴ NEMC_CACHE_TTL_SECONDS="60"      : 실시간 병상·공지 캐시 수명 60초
+#   ㄴ NEMC_REFRESH_INTERVAL_MS="60000" : 백그라운드 자동 동기화 주기 60초
+#   ㄴ NEMC_COLD_CACHE_TTL_SECONDS      : 병원 마스터 정보 캐시 수명 6시간(21,600초)
+# ==============================================================================
+
 services:
   - type: web
     name: yonsei119
@@ -21,28 +53,3 @@ services:
         sync: false
       - key: NEMC_API_SERVICE_KEY
         sync: false
-
-# ==============================================================================
-# [역할 및 실행 시점]
-# - 역할: Render 클라우드 배포 설계도 (식당 지점 오픈 매뉴얼 역할)
-# - 실행 시점: GitHub 푸시로 Render 배포가 시작될 때 컨테이너 빌드·환경변수·헬스체크 규칙을 설정함
-#
-# [전체 호출 및 데이터 흐름]
-# - 흐름:
-#   GitHub 푸시 ──> Render가 render.yaml 읽기 ──> ./Dockerfile로 이미지 빌드
-#   ├── envVars 주입 ──> application.yml(${...}) ──> Yonsei119Properties 레코드 바인딩
-#   └── GET /api/health 주기 호출 (콜드스타트 화면 제어 핵심!)
-#       ├── 초기 7종 공공데이터 캐시 적재 중: HTTP 503(WARMING_UP) ──> Render 기본 로딩 화면 유지
-#       └── 캐시 적재 완료 직후: HTTP 200(UP) ──> Render 로딩 종료 후 즉시 병원 카드가 준비된 지도로 진입
-#
-# [내장 키 구분 및 설정값 요약]
-# - Render Blueprint 내장 키: services, type(web), name, runtime(docker), plan(free), region, dockerfilePath, healthCheckPath, envVars, sync
-# - 프로젝트 환경변수:
-#   · NEMC_CACHE_TTL_SECONDS="60" / NEMC_REFRESH_INTERVAL_MS="60000" : 실시간 병상·응급메시지 60초 주기 동기화
-#   · NEMC_COLD_CACHE_TTL_SECONDS="21600" : 병원 주소·좌표 등 마스터 데이터 6시간 캐시 유지
-#   · sync: false : 비밀키(NAVER_MAP_CLIENT_SECRET, NEMC_API_SERVICE_KEY)를 Git에 올리지 않고 Render 대시보드에서 주입
-#
-# [사용처 및 IDE 추적 가이드]
-# - 연결 코드: EmergencyApiController.health() (/api/health), EmergencyDataService.isReadyForTraffic(), application.yml
-# - IntelliJ 전체 검색(`Ctrl + Shift + F`): `/api/health` 또는 `NEMC_REFRESH_INTERVAL_MS` 검색
-# ==============================================================================

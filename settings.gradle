@@ -1,14 +1,21 @@
 /*
- * [역할 및 실행 시점]
- * - 역할: Gradle 멀티모듈 프로젝트의 이름과 포함 모듈(`backend`), JDK 27 자동 탐색 플러그인을 선언하는 최상위 설정 파일
- * - 실행 시점: `gradlew` 명령 실행 시 가장 먼저(초기화 단계) 읽힘
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 루트 프로젝트 이름(`yonsei119`), 하위 모듈(`backend`), JDK 27 자동 탐색을 선언함
+ * - 실행 시점 : `gradlew` 실행 시 초기화(Initialization) 단계에서 가장 먼저 읽힘
  *
- * [전체 빌드 구조 흐름]
- * - settings.gradle 실행
- *   ├── foojay-resolver-convention ──> 로컬에 JDK 27이 없으면 OpenJDK 27을 자동 탐색·연결
- *   ├── rootProject.name = 'yonsei119' ──> 프로젝트 고유 이름 고정
- *   └── include 'backend' ──> `backend/build.gradle`을 하위 모듈(`:backend`)로 등록
- *       (참고: `frontend/`는 별도 Gradle 모듈이 아니라 `:backend:copyFrontendToStatic` 태스크가 정적 리소스로 합침)
+ * [2. 전체 초기화 흐름 (시퀀스 다이어그램)]
+ *
+ *    [gradlew]              [settings.gradle]            [Foojay Plugin]      [:backend]
+ *        |                          |                           |                  |
+ *        |-- 1. initialize build -->|                           |                  |  최상위 설정 스크립트 로드
+ *        |                          |-- 2. resolve JDK 27 ----->|                  |  OpenJDK 27 툴체인 자동 연결
+ *        |                          |-- 3. include 'backend' ---|----------------->|  하위 백엔드 모듈 등록
+ *        v                          v                           v                  v
+ *
+ * [3. 사용된 Gradle 표준 내장 요소]
+ *   ㄴ plugins          : 설정 플러그인을 선언하는 Gradle 표준 블록
+ *   ㄴ rootProject.name : 최상위 프로젝트 고유 이름을 고정하는 표준 속성
+ *   ㄴ include          : 하위 서브프로젝트 폴더(`backend/`)를 연결하는 표준 함수
  */
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'

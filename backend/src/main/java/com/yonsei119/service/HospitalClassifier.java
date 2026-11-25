@@ -10,30 +10,50 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 병원 이름·주소·분류코드를 대조해 상급종합병원·권역응급의료센터·의료원·일반기관으로 분류해 주는 등급 판정관
- * - 실행 시점: 서버 부팅 시 @Component 싱글톤 빈으로 생성되며, EmergencyDataService가 스냅샷을 병합할 때 병원마다 호출됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 병원명·주소·종별코드를 대조하여 상급종합병원 · 권역응급의료센터 · 의료원 ·
+ *          일반기관을 정확히 판정하는 등급 심사관 컴포넌트
+ * - 실행 시점 : 서버 시작 시 `@Component` 싱글톤 빈으로 생성되며,
+ *              `EmergencyDataService.mergeDatasetsIntoSnapshot()`에서 병원마다 호출됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   EmergencyDataService.mergeDatasetsIntoSnapshot()
- *   ├── 1) isRegional(fields) ──> `dutyemclsname`에 "권역응급의료센터" 포함 여부 반환 (`boolean`)
- *   └── 2) classify(fields, rawName)
- *       ├── 1순위: `dutydivnam`에 "상급종합" 포함 OR 보건복지부 제5기 상급종합병원 47개소 명단+지역 일치 ──> `TYPE_TERTIARY`
- *       ├── 2순위: 병원명에 "의료원" 포함 ──> `TYPE_MEDICAL`
- *       └── 3순위: 그 외 응급의료기관 ──> `TYPE_OTHER`
- *   - 특징: 권역응급 여부(`regional`)와 종별(`type`)을 분리 판정하여, '상급종합이면서 권역응급인 병원'(예: 원주세브란스기독병원)이
- *           프론트엔드의 두 체크박스 필터 모두에서 누락되지 않도록 설계됨!
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [내장 / 프레임워크 / 자동생성 구분]
- * - Java 표준 내장: Normalizer(전각->반각 NFKC 정규화), Pattern(사전 컴파일 정규식), Map.ofEntries, List.of
- * - Spring 프레임워크: @Component
- * - 프로젝트 DTO / record: HospitalTypeDto, 내부 TertiaryRule 레코드
+ *       [EmergencyDataService]            [HospitalClassifier]                [HospitalTypeDto]
+ *                  |                                |                                 |
+ *                  |-- 1. isRegional(fields) ------>|                                 |  권역응급의료센터 여부 확인
+ *                  |<-- 2. boolean -----------------|                                 |  권역 여부 반환
+ *                  |-- 3. classify(fields, name) -->|                                 |  종별 등급 판정 요청
+ *             +----+--------------------------------+---------------------------------+----------+
+ *             | [alt : priority 1 -> 2 -> 3]                                                     |  3단계 종별 분류 규칙
+ *             |    |                                |-- 4a. [47 tertiary] TERTIARY -->|          |  상급종합 명단 + 시도 일치
+ *             |    |                                |-- 4b. [medical ctr] MEDICAL --->|          |  병원명에 '의료원' 포함
+ *             |    |                                |-- 4c. [default] OTHER --------->|          |  그 외 일반 응급의료기관
+ *             +----+--------------------------------+---------------------------------+----------+
+ *                  |<-- 5. HospitalTypeDto ---------|                                 |  최종 분류 이름표 반환
+ *                  v                                v                                 v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 호출처: EmergencyDataService.mergeDatasetsIntoSnapshot(), Yonsei119BackendTests(Test 1, Test 12)
- * - 프론트엔드 연결부: frontend/js/markers-cluster.js의 `visualGroup()`, `matchesFilters()`, frontend/index.html의 `#filter-*` 체크박스
- * - Java 호출 추적: 메서드명 위에서 `Ctrl + Alt + H`
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record              : 내부 `TertiaryRule(region, names)` 선언 키워드 (자동생성)
+ *   ㄴ Normalizer          : 전각 문자를 반각(NFKC)으로 통일하는 표준 내장 텍스트 클래스
+ *   ㄴ Pattern             : 시도 접두어 및 공백 제거용 사전 컴파일 정규식 클래스
+ *   ㄴ Map / Map.ofEntries : 15개 시도별 주소 패턴을 담는 표준 내장 불변 Map
+ *   ㄴ List / List.of()    : 제5기 47개 상급종합병원 명단을 담는 표준 내장 불변 리스트
+ *   ㄴ Locale.ROOT         : 일관된 대소문자 정규화 기준 상수
+ * - Spring 프레임워크
+ *   ㄴ @Component        : 스프링 빈 자동 등록 어노테이션
+ * - 프로젝트 내부 타입
+ *   ㄴ HospitalTypeDto   : 분류 그룹·라벨·강조색·우선순위 전달용 record
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ EmergencyDataService.java  : `mergeDatasetsIntoSnapshot()`
+ *   ㄴ Yonsei119BackendTests.java : Test 1 · Test 10 · Test 12 분류 정확도 검증
+ * - 프론트엔드 연결처
+ *   ㄴ frontend/js/markers-cluster.js : `visualGroup()`, `matchesFilters()`
+ *   ㄴ frontend/index.html            : `#filter-regional`, `#filter-tertiary` 등 체크박스
+ * - IntelliJ 추적 단축키
+ *   ㄴ 호출 계층 보기 : `classify` 또는 `isRegional` 위에서 `Ctrl + Alt + H`
  */
 @Component
 public class HospitalClassifier {

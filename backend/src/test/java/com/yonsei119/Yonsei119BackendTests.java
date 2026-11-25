@@ -42,6 +42,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -51,26 +53,29 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 백엔드 핵심 로직(종별 분류, NEMC XML 파싱, 7종 데이터 교차 병합, 네이버 길찾기·페리 차단·혼잡도 매핑,
- *         응급실 핑퐁 방지 추천 점수, Render 콜드스타트 헬스체크, 보안 헤더·GZIP·ETag·레이트리미터)을 검증하는 통합 테스트 스위트
- * - 실행 시점: IntelliJ 테스트 실행 버튼 클릭 또는 터미널 `.\gradlew.bat test --no-daemon` 실행 시 JUnit 5 플랫폼이 자동 구동함
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 백엔드 전체 로직(종별 분류, 음수 병상 무손실 파싱, 7종 병합, 네이버 경로·페리 차단,
+ *          실시간 공지 오탐 방지, Render 콜드스타트 헬스체크, 보안·캐시·429)을 검증하는 통합 테스트
+ * - 실행 시점 : IntelliJ 실행(Run) 버튼 또는 `.\gradlew.bat checkAll --no-daemon` 시 JUnit 5가 구동함
  *
- * [전체 검증 구조 및 호출 흐름]
- * - 테스트 시작 ──> @SpringBootTest가 전체 빈과 내장 Tomcat(임의 포트 RANDOM_PORT) 기동 (외부 API 키·스케줄러는 안전하게 격리)
- *   ├── Test 1 ~ 4   : 병원 종별 분류, 음수 병상(초과수용) 무손실 파싱, 인증키 인코딩, 7종 병합·경량(compact) 분리 검증
- *   ├── Test 5 ~ 9   : 네이버 Directions 5/15 파싱, XML 에러 방어, 다중 경로·지오코딩, 공개 설정, 공식 혼잡도 1:1 매핑 및 울릉도 페리 항로 차단(-304) 검증
- *   ├── Test 10 ~ 12 : 마스터 API 장애 폴백 복원, LRU 캐시 퇴거, 실시간 응급메시지 차단 판별(`symoutdspyon` 오탐 방지 포함) 및 수용 최적 추천 검증
- *   └── Test 13 ~ 19 : 실제 HTTP 서버 정적 자산·GZIP·ETag 304, Java 27 가상 스레드 및 Render 콜드스타트 503->200 전환, 50km 기본 반경·SW 검증, .env 바인딩, CSP·429, Actuator 지표 검증
+ * [2. 전체 테스트 흐름 (시퀀스 다이어그램)]
  *
- * [내장 / 프레임워크 / 라이브러리 구분]
- * - Java 표준 내장: HttpClient, URI, GZIPInputStream, Files, Path, List(getFirst 등 Java 21+ API), Map
- * - Spring Boot Test: @SpringBootTest, @LocalServerPort, @Autowired, MockHttpServletRequest/Response
- * - JUnit 5 프레임워크: @Test, @DisplayName, @TempDir, Assertions(assertEquals, assertTrue, assertFalse, assertNotNull, assertNull)
+ *    [JUnit 5 Runner]          [@SpringBootTest Server]      [Beans / HTTP Endpoints]
+ *            |                             |                             |
+ *            |-- 1. start RANDOM_PORT ---->|                             |  전체 빈 · 내장 Tomcat 기동
+ *            |-- 2. run Test 1 .. 19 ------|---------------------------->|  분류 · 파싱 · 병합 · 보안 검증
+ *            |<-- 3. all assertions pass --|-----------------------------|  전 항목 통과 시 빌드 성공
+ *            v                             v                             v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 검증 대상 코드로 이동: 호출된 서비스·컨트롤러 메서드 위에서 `Ctrl + B` (Go to Declaration)
- * - 역방향 호출 추적: 프로덕션 메서드 위에서 `Ctrl + Alt + H` 실행 시 본 테스트 클래스의 검증 위치가 함께 표시됨
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크)]
+ * - Java 표준 내장
+ *   ㄴ HttpClient / URI : 실제 내장 웹 서버 종단간 HTTP 요청·응답 검증 클래스
+ *   ㄴ GZIPInputStream  : GZIP 압축 응답 복원 검증 스트림 클래스
+ *   ㄴ Files / Path     : 임시 `.env` 설정 파일 바인딩 검증 클래스
+ *   ㄴ List / Map       : `getFirst()`, `Map.ofEntries()` 등 표준 내장 컬렉션
+ * - Spring Boot Test / JUnit 5 프레임워크
+ *   ㄴ @SpringBootTest / @LocalServerPort / @Autowired : 통합 컨텍스트 및 포트 주입
+ *   ㄴ @Test / @DisplayName / Assertions               : 단위·통합 단언 검증 도구
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -113,9 +118,9 @@ class Yonsei119BackendTests {
      * [검증 목적 및 흐름]
      * - 목적: 상급종합병원·권역응급의료센터·의료원·일반기관 4종 분류 및 상급종합+권역 이중 태그 인식을 검증함
      * - 흐름:
-     *   원주세브란스기독병원 입력 ──> classify() == "tertiary" & isRegional() == true
-     *   원주의료원 입력           ──> classify() == "medical"
-     *   원주성지병원 입력         ──> classify() == "other"
+     *   원주세브란스기독병원 입력 -> classify() == "tertiary" & isRegional() == true
+     *   원주의료원 입력           -> classify() == "medical"
+     *   원주성지병원 입력         -> classify() == "other"
      * - 검증 대상: HospitalClassifier.classify(), HospitalClassifier.isRegional()
      */
     @Test
@@ -153,7 +158,7 @@ class Yonsei119BackendTests {
     /*
      * [검증 목적 및 흐름]
      * - 목적: NEMC XML 파싱 시 음수 병상(`-4`, 정원 초과 수용)과 미보고 빈 값(`""`)을 `0`으로 왜곡하지 않고 원형 그대로 보존하는지 검증함
-     * - 흐름: sampleXml ──> NmcOpenApiClient.parseXmlResponse() ──> hvec="-4", hv28="", hvoxyayn="N1" 일치 확인
+     * - 흐름: sampleXml -> NmcOpenApiClient.parseXmlResponse() -> hvec="-4", hv28="", hvoxyayn="N1" 일치 확인
      * - 검증 대상: NmcOpenApiClient.parseXmlResponse()
      */
     @Test
@@ -222,9 +227,9 @@ class Yonsei119BackendTests {
      * [검증 목적 및 흐름]
      * - 목적: 7종 데이터셋 hpid 병합, 한국 밖 오류 좌표(0.0, 0.0) 필터링, 경량 목록(`?compact=true` 필수 병상·당직 연락처 보존 + 장문 제거) 및 단건 상세 무손실 보존을 검증함
      * - 흐름:
-     *   rawDatasets(7종) ──> mergeDatasetsIntoSnapshot()
-     *   ├── getHospitals(false, true)     ──> hvec="-2"·hv1·hvdnm 등 필수 태그 유지, dutyetc·hv999_unused 제거
-     *   └── getHospitalDetail("A2200001") ──> dutyetc·hv999_unused 100% 보존, 미존재 ID=404, 형식 오류=400
+     *   rawDatasets(7종) -> mergeDatasetsIntoSnapshot()
+     *   ㄴ getHospitals(false, true)     -> hvec="-2"·hv1·hvdnm 등 필수 태그 유지, dutyetc·hv999_unused 제거
+     *   ㄴ getHospitalDetail("A2200001") -> dutyetc·hv999_unused 100% 보존, 미존재 ID=404, 형식 오류=400
      * - 검증 대상: EmergencyDataService.mergeDatasetsIntoSnapshot(), EmergencyApiController.getHospitals(), getHospitalDetail()
      */
     @Test
@@ -843,6 +848,13 @@ class Yonsei119BackendTests {
                     HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/")).GET().build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
             ).body();
+            Matcher htmlComments = Pattern.compile("<!--([\\s\\S]*?)-->").matcher(indexHtml);
+            while (htmlComments.find()) {
+                assertFalse(
+                        htmlComments.group(1).contains("--"),
+                        "HTML 주석(<!-- ... -->) 내부에 '--'가 있으면 주석이 중간에 깨지므로 허용하지 않습니다."
+                );
+            }
             assertTrue(indexHtml.contains("data-theme=\"dark\""));
             assertTrue(indexHtml.contains("js/theme-init.js"));
             assertTrue(indexHtml.contains("js/user-features.js"));
@@ -874,6 +886,7 @@ class Yonsei119BackendTests {
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
             ).body();
             assertTrue(directionsEtaJs.contains("FERRY_ROUTE_UNSUPPORTED_CODE = -304"));
+            assertTrue(directionsEtaJs.contains("buildCttMatchedSectionFeatures"));
             assertTrue(directionsEtaJs.contains("#27c441"));
             assertTrue(directionsEtaJs.contains("#ff8d00"));
             assertTrue(directionsEtaJs.contains("#ff3b30"));
@@ -905,7 +918,7 @@ class Yonsei119BackendTests {
                     HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/sw.js")).GET().build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
             ).body();
-            assertTrue(swJs.contains("yonsei119-pwa-v261125-r3"));
+            assertTrue(swJs.contains("yonsei119-pwa-v261125-r5"));
             assertTrue(swJs.contains("networkFirstNavigation"));
             assertTrue(swJs.contains("'/js/user-features.js'"));
             assertTrue(swJs.contains("isValidAssetResponse"));
@@ -917,6 +930,22 @@ class Yonsei119BackendTests {
             );
             assertEquals(200, yonseiLogoRes.statusCode());
             assertTrue(yonseiLogoRes.body().length > 1000);
+
+            for (String code : List.of("cha", "hallym", "konyang", "gachon", "cku")) {
+                assertTrue(userFeaturesJs.contains("file: '" + code + ".svg'"));
+                HttpResponse<String> svgRes = client.send(
+                        HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/Assets/universities/" + code + ".svg")).GET().build(),
+                        HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+                );
+                assertEquals(200, svgRes.statusCode(), code + ".svg 정적 서빙이 200이어야 합니다.");
+                assertTrue(svgRes.body().contains("<svg"), code + ".svg 벡터 본문이 유효해야 합니다.");
+
+                HttpResponse<byte[]> oldPngRes = client.send(
+                        HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/Assets/universities/" + code + ".png")).GET().build(),
+                        HttpResponse.BodyHandlers.ofByteArray()
+                );
+                assertEquals(404, oldPngRes.statusCode(), "기존 저해상도 " + code + ".png는 제거되어야 합니다.");
+            }
 
             String mapEngineJs = client.send(
                     HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/js/map-engine.js")).GET().build(),

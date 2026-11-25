@@ -1,14 +1,20 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 야간 응급 상황실 관제 화면을 위한 다크 모드(`body.dark-mode`) 통합 테마 스타일시트
- * - 실행 시점: `js/theme-init.js` 초기 로드 및 `js/search-controls.js:applyTheme()` 토글 시 `html.dark-mode`·`body.dark-mode` 클래스가 켜지면 즉시 적용됨
+ * [1. 역할 및 적용 시점]
+ * - 역할 : 야간 응급 관제 환경을 위한 다크 모드(`body.dark-mode`) 통합 테마 스타일시트
+ * - 적용 시점 : `theme-init.js` 초기 로드 및 `search-controls.js : applyTheme()` 전환 시
+ *              `html.dark-mode` · `body.dark-mode` 클래스가 켜지면 즉시 적용됨
  *
- * [전체 연결 흐름]
- * - `body.dark-mode` 활성
- *   ├── 검색 패널·툴바·지도 카드·경로 배너·토스트 야간 고대비 배색 전환
- *   ├── 대학교병원 시트(`.sheet.has-univ-logo`) 반투명 카드 & `.safety-note` 다크 경고 배색 유지
- *   └── E-Gen 병상·장비·질환 보드, 개발자 모드 원본 대조표, 모달 다이얼로그 어두운 톤 일괄 적용
+ * [2. 주요 다크 테마 구성 요소]
+ *   ㄴ 검색 패널 · 반경 팝오버 · 원형 도구 버튼 야간 고대비 배색
+ *   ㄴ 대학병원 시트(`.sheet.has-univ-logo`) 반투명 카드 및 워터마크 은은한 투영
+ *   ㄴ 상단 주의 배너(`.safety-note`) 다크 앰버(`rgba(120, 53, 15, 0.42)`) 가독성 보장
+ *   ㄴ E-Gen 병상·장비·중증질환 배지 및 소통 구간 칩 다크 전용 명도 대비 적용
+ *
+ * [3. 연결된 JS / 테스트 검증처]
+ *   ㄴ frontend/js/theme-init.js        : 첫 페인트 전 다크 클래스 선적용
+ *   ㄴ frontend/js/search-controls.js   : `#theme-toggle` 클릭 시 실시간 전환
+ *   ㄴ Yonsei119PlaywrightE2ETests.java : 다크모드 `.safety-note` 대비 및 워터마크 검증
  * ============================================================================
  */
 

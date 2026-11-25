@@ -39,32 +39,58 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 7대 공공데이터를 기관코드(hpid) 기준으로 하나로 합치고, 메모리 캐시·경량 목록·ETag를 관리하는 메인 주방장
- * - 실행 시점:
- *   1) 서버 부팅 시 @Service 싱글톤 빈 생성
- *   2) 부팅 완료 직후(@EventListener) warmUpCacheOnStartup()이 초기 데이터를 미리 적재 (이 동안 /api/health는 503을 반환해 Render 로딩 화면을 유지함)
- *   3) 이후 60초마다(@Scheduled) scheduledBackgroundRefresh()가 실시간 병상·응급메시지를 자동 갱신함
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 7대 공공데이터를 기관코드(`hpid`) 기준으로 하나로 병합하고,
+ *          메모리 캐시 · 경량 목록 · SHA-256 ETag를 관리하는 메인 주방장 서비스
+ * - 실행 시점 :
+ *   ㄴ 서버 시작 시 `@Service` 싱글톤 빈으로 생성됨
+ *   ㄴ 부팅 직후 `warmUpCacheOnStartup()`이 초기 데이터를 사전 적재함
+ *   ㄴ 이후 60초마다 `scheduledBackgroundRefresh()`가 실시간 병상·공지를 자동 갱신함
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   NmcOpenApiClient (7종 XML 파싱)
- *   ──> buildFreshSnapshot() [6시간 내에는 마스터 4종 재사용 + 실시간 3종만 호출]
- *   ──> mergeDatasetsIntoSnapshot() [hpid 기준 교차 병합 + 한국 좌표 검증 + 종별 분류]
- *   ──> storeSnapshotIndexes() [전체 원본 + 경량 요약본 + JSON 바이트 + SHA-256 ETag 사전 생성]
- *       ├── GET /api/hospitals?compact=true ──> getSerializedSnapshot() (0ms 즉시 반환 또는 304 Not Modified)
- *       ├── GET /api/hospitals/{hpid}       ──> getHospitalById() (O(1) 해시맵 단건 상세 반환)
- *       └── GET /api/health                 ──> isReadyForTraffic() (초기 캐시 준비 여부 반환)
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [내장 / 프레임워크 / 라이브러리 구분]
- * - Java 표준 내장: ReentrantLock, AtomicBoolean, Executors(가상 스레드), MessageDigest(SHA-256), HexFormat, ZonedDateTime
- * - Spring 프레임워크: @Service, @EventListener(ApplicationReadyEvent), @Scheduled
- * - 외부 라이브러리: Jackson 3(JsonMapper), Micrometer(MeterRegistry, Gauge), SLF4J(Logger)
+ *    [Scheduler / Controller]        [EmergencyDataService]            [NmcOpenApiClient]      [HospitalClassifier]
+ *                |                              |                               |                        |
+ *                |-- 1. warmUp / 60s refresh -->|                               |                        |  초기 적재 또는 주기적 갱신
+ *                |                              |-- 2. fetchAll / fetchHot() -->|                        |  공공데이터 병렬 수집 요청
+ *                |                              |<-- 3. raw 7 datasets ---------|                        |  파싱된 원시 맵 목록 반환
+ *                |                              |-- 4. classify(hospital) ------|----------------------->|  47개 상급종합 · 권역 판정
+ *                |                              |<-- 5. HospitalTypeDto --------|------------------------|  종별 등급 반환
+ *                |                              |-- 6. storeSnapshotIndexes()   |                        |  원본 · 경량본 · ETag 생성
+ *                |<-- 7. 0ms cached bytes ------|                               |                        |  /api/hospitals 즉시 응답
+ *                v                              v                               v                        v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 호출처: EmergencyApiController(health, getHospitalsHttp, getHospitals, getHospitalDetail, rankDirections, geocode)
- * - Java 호출 추적: 메서드명 위에서 `Ctrl + Alt + H`
- * - 프론트엔드 연결 검색(`Ctrl + Shift + F`): `/api/hospitals` 또는 `ESSENTIAL_UI_BED_KEYS` 내 병상 코드(`hvec` 등)
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record           : 내부 `SerializedPayload`, `SerializedSnapshot` 선언 키워드
+ *   ㄴ volatile         : 멀티스레드 최신 캐시 참조 가시성을 보장하는 문법 키워드
+ *   ㄴ ReentrantLock    : 동시 캐시 갱신 중복을 막는 표준 내장 잠금 클래스
+ *   ㄴ AtomicBoolean    : 백그라운드 갱신 실행 중 여부를 원자적으로 제어하는 클래스
+ *   ㄴ Executors        : 가상 스레드 실행기를 생성하는 표준 내장 팩토리 클래스
+ *   ㄴ MessageDigest    : SHA-256 해시로 ETag를 계산하는 표준 내장 암호화 클래스
+ *   ㄴ HexFormat        : 바이트 다이제스트를 16진수 문자열로 바꾸는 표준 내장 클래스
+ *   ㄴ ZonedDateTime    : 한국 표준시(`Asia/Seoul`) 갱신 시각 생성 클래스
+ *   ㄴ Map / List / Set : 병원 색인 · 목록 · 필수 병상 키 집합 표준 인터페이스
+ * - Spring 프레임워크
+ *   ㄴ @Service       : 비즈니스 서비스 빈 등록 어노테이션
+ *   ㄴ @EventListener : `ApplicationReadyEvent` 기동 완료 시점 감지 어노테이션
+ *   ㄴ @Scheduled     : 60초 간격 주기적 자동 실행 어노테이션
+ * - 외부 라이브러리
+ *   ㄴ Jackson (`JsonMapper`)       : 스냅샷 DTO를 UTF-8 JSON 바이트로 직렬화
+ *   ㄴ Micrometer (`MeterRegistry`) : 캐시된 병원 수 · 적중률 지표 기록
+ *   ㄴ SLF4J (`Logger`)             : 캐시 적재 소요시간 및 장애 로그 기록
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 호출처
+ *   ㄴ EmergencyApiController.java : `health()`, `getHospitalsHttp()`, `getHospitalDetail()`,
+ *                                    `rankDirections()`, `geocode()`
+ *   ㄴ Yonsei119BackendTests.java  : Test 4 · 10 · 14 · 17 스냅샷 병합 및 ETag 검증
+ * - 프론트엔드 연결처
+ *   ㄴ frontend/js/search-controls.js : `fetchData()` (`GET /api/hospitals?compact=true`)
+ *   ㄴ frontend/js/hospital-sheet.js  : `hydrateHospitalDetailIfNeeded()`
+ * - IntelliJ 추적 단축키
+ *   ㄴ Java 호출 계층 보기 : 메서드명 위에서 `Ctrl + Alt + H`
+ *   ㄴ 병상 코드 사용처 검색 : `Ctrl + Shift + F`로 `ESSENTIAL_UI_BED_KEYS` 또는 `hvec` 검색
  */
 @Service
 public class EmergencyDataService {
@@ -162,10 +188,10 @@ public class EmergencyDataService {
      * [역할 및 실행 시점]
      * - 역할: Render 무료 플랜 콜드스타트 시 초기 병원 데이터가 메모리에 준비되었는지 판별함
      * - 흐름:
-     *   GET /api/health ──> isReadyForTraffic()
-     *   ├── 초기 캐시 완료(initialWarmupCompleted) 또는 스냅샷 존재: true 반환 (HTTP 200 ──> Render가 트래픽 연결)
-     *   ├── 인증키 미설정·자동갱신 비활성·30초 안전 상한 경과: true 반환 (배포 무한 대기 방지)
-     *   └── 초기 7종 공공데이터 적재 진행 중: false 반환 (HTTP 503 ──> Render 자체 로딩 화면 유지!)
+     *   GET /api/health -> isReadyForTraffic()
+     *   ㄴ 초기 캐시 완료(initialWarmupCompleted) 또는 스냅샷 존재: true 반환 (HTTP 200 -> Render가 트래픽 연결)
+     *   ㄴ 인증키 미설정·자동갱신 비활성·30초 안전 상한 경과: true 반환 (배포 무한 대기 방지)
+     *   ㄴ 초기 7종 공공데이터 적재 진행 중: false 반환 (HTTP 503 -> Render 자체 로딩 화면 유지!)
      * - 사용처: EmergencyApiController.health()
      */
     public boolean isReadyForTraffic() {
@@ -233,10 +259,10 @@ public class EmergencyDataService {
      * [역할 및 데이터 흐름]
      * - 역할: 전체(compact=false) 또는 경량(compact=true) 병원 스냅샷 DTO를 조회함
      * - 흐름:
-     *   호출 진입 ──> 캐시 존재 확인
-     *   ├── 일반 조회 & 캐시 있음: TTL(60초) 경과 시 백그라운드 갱신만 예약하고 직전 캐시를 즉시 반환(0ms 지연)
-     *   ├── 강제 새로고침 & 15초 쿨다운 이내: 외부 API 보호를 위해 직전 캐시 즉시 반환
-     *   └── 최초 콜드스타트 또는 쿨다운 경과 강제 새로고침: refreshCacheSynchronously() 동기 수집 후 반환
+     *   호출 진입 -> 캐시 존재 확인
+     *   ㄴ 일반 조회 & 캐시 있음: TTL(60초) 경과 시 백그라운드 갱신만 예약하고 직전 캐시를 즉시 반환(0ms 지연)
+     *   ㄴ 강제 새로고침 & 15초 쿨다운 이내: 외부 API 보호를 위해 직전 캐시 즉시 반환
+     *   ㄴ 최초 콜드스타트 또는 쿨다운 경과 강제 새로고침: refreshCacheSynchronously() 동기 수집 후 반환
      * - 사용처: getSerializedSnapshot(), EmergencyApiController(getHospitals, rankDirections, geocode)
      */
     public EmergencySnapshotDto getSnapshot(boolean forceRefresh, boolean compact) {
@@ -296,8 +322,8 @@ public class EmergencyDataService {
      * [역할 및 데이터 흐름]
      * - 역할: ReentrantLock 안에서 단 하나의 스레드만 실제 OpenAPI 수집·병합·인덱스 교체를 수행하게 직렬화함
      * - 흐름:
-     *   cacheLock.lock() ──> 대기 중 다른 스레드가 이미 갱신했는지 재확인(Double-Check)
-     *   ──> buildFreshSnapshot() ──> storeSnapshotIndexes() ──> finally { initialWarmupCompleted = true; unlock(); }
+     *   cacheLock.lock() -> 대기 중 다른 스레드가 이미 갱신했는지 재확인(Double-Check)
+     *   -> buildFreshSnapshot() -> storeSnapshotIndexes() -> finally { initialWarmupCompleted = true; unlock(); }
      */
     private EmergencySnapshotDto refreshCacheSynchronously(
             String reason,
@@ -432,9 +458,9 @@ public class EmergencyDataService {
      * - 역할: 마스터 데이터(Cold 4종, 6시간 수명) 캐시가 유효하면 실시간 데이터(Hot 3종)만 수집해 합치고, 만료 시 7종 전체를 새로 수집함
      * - 흐름:
      *   hasValidColdCache 판별
-     *   ├── true  ──> cachedColdDatasets(4종) + openApiClient.fetchHotDatasets()(3종) 결합
-     *   └── false ──> openApiClient.fetchAllDatasets()(7종) 수집 및 Cold 캐시 갱신
-     *   ──> mergeDatasetsIntoSnapshot(combinedRaw) 호출
+     *   ㄴ true  -> cachedColdDatasets(4종) + openApiClient.fetchHotDatasets()(3종) 결합
+     *   ㄴ false -> openApiClient.fetchAllDatasets()(7종) 수집 및 Cold 캐시 갱신
+     *   -> mergeDatasetsIntoSnapshot(combinedRaw) 호출
      */
     public EmergencySnapshotDto buildFreshSnapshot(boolean forceColdRefresh) {
         Instant now = Instant.now();
@@ -467,13 +493,13 @@ public class EmergencyDataService {
      * [역할 및 데이터 흐름]
      * - 역할: 7종 OpenAPI에서 따로 내려온 조각 데이터를 병원 고유코드(hpid) 기준으로 하나의 HospitalDto로 교차 조립함
      * - 흐름:
-     *   7종 원시 리스트 ──> hpid 기준 해시맵 색인(1:1 및 공지 1:N)
-     *   ──> 각 병원별 루프:
-     *       ├── 1) 기본정보(basic + list 결측 보완) 및 외상센터(trauma) 병합
-     *       ├── 2) 실시간 병상(beds)·응급메시지(messages)·중증질환(severe) 결합 (일시 장애 시 직전 스냅샷 값 복원)
-     *       ├── 3) 위경도 파싱 및 대한민국 유효 좌표 범위(GeoUtils.isValidKoreaCoordinate) 필터링
-     *       └── 4) HospitalClassifier로 권역응급·상급종합·의료원·기타 종별 판별 및 통계 집계
-     *   ──> 불변 EmergencySnapshotDto 생성·반환
+     *   7종 원시 리스트 -> hpid 기준 해시맵 색인(1:1 및 공지 1:N)
+     *   -> 각 병원별 루프:
+     *       ㄴ 1) 기본정보(basic + list 결측 보완) 및 외상센터(trauma) 병합
+     *       ㄴ 2) 실시간 병상(beds)·응급메시지(messages)·중증질환(severe) 결합 (일시 장애 시 직전 스냅샷 값 복원)
+     *       ㄴ 3) 위경도 파싱 및 대한민국 유효 좌표 범위(GeoUtils.isValidKoreaCoordinate) 필터링
+     *       ㄴ 4) HospitalClassifier로 권역응급·상급종합·의료원·기타 종별 판별 및 통계 집계
+     *   -> 불변 EmergencySnapshotDto 생성·반환
      * - 사용처: buildFreshSnapshot(), Yonsei119BackendTests(Test 4, Test 10)
      */
     public EmergencySnapshotDto mergeDatasetsIntoSnapshot(Map<String, List<Map<String, String>>> rawDatasets) {

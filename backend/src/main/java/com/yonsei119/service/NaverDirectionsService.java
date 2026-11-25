@@ -39,34 +39,62 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 네이버 클라우드 Directions 5 / 15 자동차 길찾기 API를 호출하고, 반경 내 응급실 추천 순위를 계산하는 내비게이션 관제사
- * - 실행 시점: 서버 부팅 시 @Service 싱글톤 빈으로 생성되며, `/api/directions` 또는 `/api/directions/rank` 요청 시 동작함
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 네이버 Directions 5 / 15 자동차 길찾기 API를 호출하고, 울릉도 등 해상 페리
+ *          항로를 차단하며, 반경(기본 50km) 내 추천 응급실 순위를 산출하는 내비게이션 서비스
+ * - 실행 시점 : 서버 시작 시 `@Service` 싱글톤 빈으로 생성되며,
+ *              `/api/directions` 또는 `/api/directions/rank` 요청 시 동작함
  *
- * [전체 호출 및 데이터 흐름]
- * - 1) 단건 경로 조회 (`getDrivingRoute`)
- *   EmergencyApiController.getDirections()
- *   ──> 좌표·경유지 검증 ──> routeCache(60초 TTL) 확인
- *   ──> 미적중 시 2배치 병렬 호출(빠른길·최적·편한길 + 무료우선) ──> mergeDirectionsJsonBodies() 병합
- *   ──> parseDirectionsJson()
- *       ├── 해상 페리 항로(`guide.type == 48/49`, 예: 육지↔울릉도·백령도·제주도) 감지 시 code=-304 차단 응답 반환!
- *       └── 정상 육로 시 RouteCongestionAnalyzer로 공식 구간 혼잡도(0~3) 추출 후 60초 캐싱·반환
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * - 2) 주변 응급실 ETA 추천 순위 (`rankHospitalsByDrivingTime`)
- *   EmergencyApiController.rankDirections()
- *   ──> 종별·가용병상·증상 필터 ──> 반경(기본 50km) 내 상위 후보 최대 8곳 선별
- *   ──> 가상 스레드 병렬 `getDrivingEtaSummary()` (페리 도서 병원 자동 제외!)
- *   ──> `HospitalRecommendationScorer.evaluate()` 점수 합산 ──> 수용최적/최단시간 정렬 후 1~N위 반환
+ *       [ApiController]             [NaverDirectionsService]                  [Naver Directions API]
+ *              |                                |                                        |
+ *              |-- 1. getDrivingRoute(...) ---->|                                        |  출발지~병원 경로 탐색 요청
+ *         +----+--------------------------------+----------------------------------------+------------+
+ *         | [par : 2 parallel HTTP batches]                                                           |  4대 주행 옵션 동시 조회
+ *         |    |                                |-- 2a. trafast:traoptimal:tracomfort -->|            |  1차 배치 병렬 요청
+ *         |    |                                |-- 2b. traavoidtoll ------------------->|            |  2차 배치 병렬 요청
+ *         +----+--------------------------------+----------------------------------------+------------+
+ *              |                                |<-- 3. route JSON ----------------------|  경로 좌표 · 안내 응답 수신
+ *         +----+--------------------------------+----------------------------------------+------------+
+ *         | [alt : containsFerryCrossing (type 48/49)]                                                |  울릉도 등 해상 페리 감지
+ *         |    |<-- 4a. code = -304 (blocked) --|                                        |            |  도서 페리 자동차 경로 차단
+ *         +----+--------------------------------+----------------------------------------+------------+
+ *         | [else : land / bridge road]                                                               |  정상 육로 · 연륙교 경로
+ *         |    |<-- 4b. DirectionsResponseDto --|                                        |            |  60초 캐싱 후 경로 응답 반환
+ *         +----+--------------------------------+----------------------------------------+------------+
+ *              v                                v                                        v
  *
- * [내장 / 프레임워크 / 라이브러리 구분]
- * - Java 표준 내장: HttpClient, CompletableFuture, Executors(가상 스레드), Semaphore, AtomicInteger, Comparator
- * - Spring 프레임워크: @Service
- * - 외부 라이브러리: Jackson 3(JsonMapper, JsonNode, ObjectNode), SLF4J(Logger), Jakarta(@PreDestroy)
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record                   : 내부 `EtaSummary`, `RankedCandidate` 선언 키워드 (자동생성)
+ *   ㄴ HttpClient / HttpRequest : 네이버 REST API 비동기 호출 표준 내장 클래스
+ *   ㄴ CompletableFuture        : 배치 경로 조회 및 병렬 ETA 계산용 비동기 클래스
+ *   ㄴ Executors                : Java 27 가상 스레드 실행기 생성 팩토리 클래스
+ *   ㄴ Semaphore                : 동시 외부 API 호출 개수를 제어하는 동기화 클래스
+ *   ㄴ Comparator               : 수용최적 점수 및 최단시간 오름차순 정렬 인터페이스
+ *   ㄴ Map / List / Set         : 옵션 라벨 · 경로 좌표 · 후보 병원 표준 컬렉션
+ * - Spring 프레임워크
+ *   ㄴ @Service                : 비즈니스 서비스 빈 등록 어노테이션
+ * - 프로젝트 내부 타입
+ *   ㄴ RouteCongestionAnalyzer      : 공식 `section` 구간 요약 추출기
+ *   ㄴ HospitalRecommendationScorer : 병상 여유 · 차단 공지 기반 추천 점수 산출기
+ *   ㄴ BoundedTtlCache              : 경로(256개) 및 ETA(512개) 60초 LRU 캐시
+ *   ㄴ GeoUtils                     : 좌표 범위 검사 및 직선거리 계산 유틸리티
+ * - 외부 라이브러리
+ *   ㄴ Jackson (`JsonMapper`, `JsonNode`, `ObjectNode`) : JSON 병합 및 트리 파싱
+ *   ㄴ SLF4J (`Logger`) / Jakarta (`@PreDestroy`)       : 로깅 및 스레드 풀 종료
  *
- * [사용처 및 IDE 추적 가이드]
- * - 주요 호출처: EmergencyApiController(getDirections, rankDirections), Yonsei119BackendTests(Test 5, 7, 9, 12)
- * - 프론트엔드 연결부: frontend/js/directions-eta.js (`loadDirectionsForHospital`, `refreshActiveRoute`, `loadEtaRanking`)
- * - Java 호출 계층 추적: 메서드명 위에서 `Ctrl + Alt + H`
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ EmergencyApiController.java : `getDirections()`, `rankDirections()`
+ *   ㄴ Yonsei119BackendTests.java  : Test 5 · 7 · 9(페리 차단) · 12(추천 순위)
+ * - 프론트엔드 연결처
+ *   ㄴ frontend/js/directions-eta.js : `loadDirectionsForHospital()`, `refreshActiveRoute()`,
+ *                                      `loadEtaRanking()`
+ * - IntelliJ 추적 단축키
+ *   ㄴ 호출 계층 보기 : 메서드명 위에서 `Ctrl + Alt + H`
+ *   ㄴ 페리 차단 검색 : `Ctrl + Shift + F`로 `FERRY_ROUTE_UNSUPPORTED_CODE` 검색
  */
 @Service
 public class NaverDirectionsService {
@@ -391,10 +419,10 @@ public class NaverDirectionsService {
      * [역할 및 데이터 흐름]
      * - 역할: 네이버 Directions JSON 문자열을 파싱해 좌표열, 공식 혼잡도 구간, 대안 경로 요약을 담은 `DirectionsResponseDto`로 조립함
      * - 흐름:
-     *   JSON 트리 파싱 ──> 최상위 code == 0 확인
-     *   ──> 5대 옵션 순회하며 페리 미포함 육로만 alternatives에 적재
-     *   ──> 요청 옵션 경로가 페리 항로를 포함하면 다른 육로 옵션 탐색 후, 모두 페리면 code=-304 오류 DTO 즉시 반환
-     *   ──> path([경도, 위도]), congestionAnalyzer.buildDetailedSections(), guidePrompts 조립 후 반환
+     *   JSON 트리 파싱 -> 최상위 code == 0 확인
+     *   -> 5대 옵션 순회하며 페리 미포함 육로만 alternatives에 적재
+     *   -> 요청 옵션 경로가 페리 항로를 포함하면 다른 육로 옵션 탐색 후, 모두 페리면 code=-304 오류 DTO 즉시 반환
+     *   -> path([경도, 위도]), congestionAnalyzer.buildDetailedSections(), guidePrompts 조립 후 반환
      * - 사용처: getDrivingRoute(), Yonsei119BackendTests(Test 5, 7, 9)
      */
     public DirectionsResponseDto parseDirectionsJson(

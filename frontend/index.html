@@ -1,21 +1,30 @@
 <!DOCTYPE html>
 <!--
   ==============================================================================
-  [역할 및 실행 시점]
-  - 역할: 연세 119 응급실 정보 시스템의 단일 진입 웹 문서 (식당 홀 전체 좌석·전광판 배치도 역할)
-  - 실행 시점: 사용자가 브라우저에서 `/` 또는 `/?hospital=HPID`로 접속할 때 가장 먼저 로드되어 화면 뼈대를 구성함
+  [1. 역할 및 실행 시점]
+  - 역할 : 연세 119 응급실 정보 시스템의 단일 진입 웹 문서 (화면 전체 배치도)
+  - 실행 시점 : 브라우저가 `/` 또는 `/?hospital=HPID`로 접속할 때 가장 먼저 로드됨
 
-  [전체 호출 및 데이터 흐름]
-  - 흐름:
-    브라우저 `GET /` ──> `SecurityHeadersFilter`(CSP·보안 헤더 부여) ──> `WebConfig`(`index.html` 반환)
-    ├── 1) `<head>` 동기 실행: `js/theme-init.js` ──> 첫 페인트 전 다크·라이트 테마 즉시 확정 (깜빡임 방지)
-    ├── 2) 병렬 다운로드: CSS 8종 + ES 모듈 10종(`modulepreload`) + 네이버 지도 v3 GL SDK
-    └── 3) 본문 파싱 직후: `js/app.js` 실행 ──> 백엔드 `EmergencyApiController`(`/api/*`)와 실시간 통신 시작
+  [2. 초기 화면 구동 흐름 (시퀀스 다이어그램)]
 
-  [사용처 및 IDE 추적 가이드]
-  - 연결 JS 진입점: `frontend/js/app.js`, `frontend/js/theme-init.js`
-  - 연결 백엔드 설정: `WebConfig.java` (`addViewControllers`, `addResourceHandlers`), `SecurityHeadersFilter.java`
-  - IntelliJ 추적 팁: 각 요소의 `id="..."` 문자열을 `Ctrl + Shift + F`로 검색하면 제어하는 JS·CSS 위치로 바로 이동 가능
+      [Browser]      [index.html]                [theme-init.js]      [app.js / API]
+          |                |                            |                    |
+          |== 1. GET / ===>|                            |                    |  초기 웹 문서 진입
+          |                |== 2. sync head script ====>|                    |  첫 페인트 전 테마 확정
+          |                |== 3. preload CSS/JS/GL     |                    |  스타일 · 모듈 병렬 로드
+          |                |== 4. run app.js init() ====|===================>|  지도 마운트 · API 연동
+          v                v                            v                    v
+
+  [3. 사용된 HTML5 표준 내장 요소]
+    ㄴ meta (viewport / color-scheme / theme-color) : 모바일 안전영역 및 테마 색상 지정
+    ㄴ link (preconnect / modulepreload / manifest) : 초기 네트워크 연결 및 모듈 선행 로드
+    ㄴ main / aside / dialog / details              : 시맨틱 랜드마크 및 네이티브 모달·아코디언
+    ㄴ popover="manual" (#status-toast)             : 모달 위에도 가리지 않는 Top Layer 토스트
+
+  [4. 실제 연결 파일 및 IDE 추적 가이드]
+    ㄴ WebConfig.java      : `/` 포워딩 및 정적 리소스 · Weak ETag 서빙
+    ㄴ theme-init / app.js : 초기 테마 확정 및 전체 프론트엔드 모듈 부트스트랩
+    ㄴ Ctrl + Shift + F    : 요소의 `id="..."` 이름으로 제어 JS · CSS 위치 검색
   ==============================================================================
 -->
 <html lang="ko" data-theme="dark">
@@ -56,9 +65,9 @@
 
     <!--
       [역할별 8종 CSS 병렬 로드]
-      ├── 기본·툴바·마커 : style.css, panels-toolbar.css, map-overlays.css
-      ├── 상세시트·경로  : sheet-egen.css, directions-eta.css, dialogs-toast.css
-      └── 다크테마·반응형: dark-theme.css, responsive.css
+        ㄴ style.css, panels-toolbar.css, map-overlays.css       : 기본 변수 · 상단바/패널 · 마커 오버레이
+        ㄴ sheet-egen.css, directions-eta.css, dialogs-toast.css : 상세 시트 · 경로 카드 · 다이얼로그/토스트
+        ㄴ dark-theme.css, responsive.css                        : 다크모드 테마 · 모바일/태블릿 반응형
     -->
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/panels-toolbar.css">
@@ -98,11 +107,11 @@
 
 <!--
   [상단 활성 자동차 경로 요약 배너]
-  - 제어 흐름: directions-eta.js:drawRouteOnMap() ──> 경로선 표시 시 노출
-    ├── #active-route-name / #active-route-open ──> 목적지 병원 상세 시트 다시 열기
-    ├── #active-route-call                      ──> 응급실/대표 전화 즉시 발신
-    ├── #active-route-clear                     ──> 지도 위 경로선만 지우기
-    └── #active-route-reset                     ──> 지정 출발점과 경로 모두 초기화
+  - 제어 흐름: directions-eta.js:drawRouteOnMap() -> 경로선 표시 시 노출
+      ㄴ #active-route-name / #active-route-open -> 목적지 병원 상세 시트 다시 열기
+      ㄴ #active-route-call                      -> 응급실/대표 전화 즉시 발신
+      ㄴ #active-route-clear                     -> 지도 위 경로선만 지우기
+      ㄴ #active-route-reset                     -> 지정 출발점과 경로 모두 초기화
 -->
 <aside id="active-route-banner" class="active-route-banner" aria-live="polite" hidden>
     <div class="active-route-summary">
@@ -177,10 +186,10 @@
 <!--
   [우측 하단 통합 검색·반경·필터·추천순위 컨트롤 패널]
   - 구성 및 연결 모듈:
-    ├── #map-actions     ──> 반경(기본 50 km)·내 위치·새로고침·실시간 교통·다크모드·갱신 시각 (search-controls.js, map-engine.js)
-    ├── #search-form     ──> 병원명·지역 자동완성 및 주소 지오코딩 출발점 이동 (search-controls.js:updateSearch)
-    ├── .filters         ──> 권역응급·상급종합·의료원·일반/기타 4종 체크박스 필터 (app.js, markers-cluster.js)
-    └── #origin-eta-bar  ──> 출발 기준 주소 및 수용최적·최단시간 ETA 순위 (directions-eta.js:loadEtaRanking)
+      ㄴ #map-actions     -> 반경(기본 50 km)·내 위치·새로고침·실시간 교통·다크모드·갱신 시각 (search-controls.js, map-engine.js)
+      ㄴ #search-form     -> 병원명·지역 자동완성 및 주소 지오코딩 출발점 이동 (search-controls.js:updateSearch)
+      ㄴ .filters         -> 권역응급·상급종합·의료원·일반/기타 4종 체크박스 필터 (app.js, markers-cluster.js)
+      ㄴ #origin-eta-bar  -> 출발 기준 주소 및 수용최적·최단시간 ETA 순위 (directions-eta.js:loadEtaRanking)
 -->
 <section id="search-panel" class="search-panel" aria-label="병원 검색과 필터">
     <div id="search-panel-heading" class="panel-heading">
@@ -391,10 +400,10 @@
   - 제어처: hospital-sheet.js (openHospital, closeSheet, syncResponsiveSheetLayout, initSheetDrag)
   - 레이아웃 구조:
     #sheet
-    ├── #sheet-univ-watermark : .sheet-scroll 바깥에 고정된 대학교병원 정적 배경 로고 (의료원 제외)
-    ├── #sheet-drag-handle    : 모바일 스와이프 손잡이
-    ├── .sheet-header         : 상단 고정 병원명·종별·주소·거리·닫기 버튼
-    └── .sheet-scroll         : 독립 스크롤 영역 (전화/내비 -> 자동차 경로 -> 진료공지 -> 병상 -> 장비 -> 중증질환 -> 개발자모드)
+      ㄴ #sheet-univ-watermark : .sheet-scroll 바깥에 고정된 대학교병원 정적 배경 로고 (의료원 제외)
+      ㄴ #sheet-drag-handle    : 모바일 스와이프 손잡이
+      ㄴ .sheet-header         : 상단 고정 병원명·종별·주소·거리·닫기 버튼
+      ㄴ .sheet-scroll         : 독립 스크롤 영역 (전화/내비 -> 자동차 경로 -> 진료공지 -> 병상 -> 장비 -> 중증질환 -> 개발자모드)
 -->
 <section
         id="sheet"

@@ -1,21 +1,44 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 검색·반경·위치(GPS/지오코딩)·다크모드·실시간 자동동기화·PWA 워커를 총괄하는 관제 컨트롤러
- * - 실행 시점: `app.js:init()` 부팅 시 초기화 함수들이 1회 실행되며, 이후 사용자 조작 및 60초 자동 타이머마다 동작함
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 검색 · 반경(기본 50km) · GPS/주소 출발지 · 다크모드 · 60초 실시간 자동 동기화 ·
+ *          PWA 서비스 워커 등록을 총괄하는 관제 컨트롤러 모듈
+ * - 실행 시점 : `app.js : init()`에서 초기 바인딩되며, 이후 사용자 조작 및 60초 타이머마다 실행됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 핵심 데이터 동기화 흐름:
- *   `loadData()` / `startAutoRefreshLoop()` (60초 주기 무음 동기화)
- *   ──> `fetchData()` ──> `GET /api/hospitals?compact=true` (`If-None-Match` ETag 포함)
- *       ├── `304 Not Modified` ──> 병상·공지 변동 없음, `#updated-time` 갱신 시각만 최신화
- *       ├── `200 OK`           ──> `applySnapshotToState()` ──> 지도 카드·열린 시트 병상/공지 실시간 갱신
- *       └── 네트워크 단절      ──> 서비스 워커 캐시(`X-Yonsei119-Offline-Fallback`) 또는 `localStorage` 비상 스냅샷 복원
+ * [2. 실시간 병원 데이터 동기화 흐름 (시퀀스 다이어그램)]
  *
- * [사용처 및 IDE 추적 가이드]
- * - 호출처: `app.js` (초기 부팅 및 이벤트 바인딩), `state.js`의 `uiCallbacks` (`map-engine.js`, `directions-eta.js`, `hospital-sheet.js`)
- * - 백엔드 연동 API: `/api/config`, `/api/hospitals`, `/api/geocode`, `/api/reverse-geocode` (`EmergencyApiController.java`)
- * - IntelliJ 추적 팁: `Ctrl + Alt + H` (호출 계층) 또는 `Ctrl + Shift + F`로 `/api/hospitals` 검색
+ *       [Init / 60s Timer]        [search-controls.js]             [Backend /hospitals]      [Markers / Sheet]
+ *                |                          |                                |                       |
+ *                |-- 1. loadData(silent) -->|                                |                       |  초기 또는 60초 자동 호출
+ *                |                          |-- 2. GET (If-None-Match) ----->|                       |  직전 ETag 조건부 요청
+ *           +----+--------------------------+--------------------------------+-----------------------+----------+
+ *           | [alt : HTTP 304 Not Modified]                                                                     |  병상 · 공지 변동 없음
+ *           |    |                          |<-- 3a. 304 empty body ---------|                       |          |  갱신 시각만 무음 업데이트
+ *           +----+--------------------------+--------------------------------+-----------------------+----------+
+ *           | [else : HTTP 200 OK]                                                                              |  실시간 데이터 변경 감지
+ *           |    |                          |<-- 3b. compact JSON + ETag ----|                       |          |  최신 병원 목록 수신
+ *           |    |                          |-- 4. applySnapshotToState() ---|---------------------->|          |  지도 카드 · 열린 시트 갱신
+ *           +----+--------------------------+--------------------------------+-----------------------+----------+
+ *                v                          v                                v                       v
+ *
+ * [3. 사용된 요소 구분 (표준 내장 / 프로젝트 내부)]
+ * - JS / 브라우저 표준 내장
+ *   ㄴ fetch / AbortController : 조건부 ETag 요청 및 중복 통신 취소 내장 API
+ *   ㄴ setInterval             : 60초 주기 백그라운드 무음 동기화 타이머 함수
+ *   ㄴ ResizeObserver          : 검색 패널 높이 변화를 감지해 `--search-panel-height` 갱신
+ *   ㄴ navigator.geolocation   : 모바일 실제 GPS 현재 위치 측위 표준 API
+ *   ㄴ navigator.serviceWorker : `/sw.js` 오프라인 백업 워커 등록 표준 API
+ *   ㄴ localStorage            : 테마 · 안내 확인 · 오프라인 스냅샷 저장소 API
+ * - 프로젝트 내부 모듈
+ *   ㄴ constants.js / state.js / utils.js
+ *   ㄴ map-engine.js / markers-cluster.js / directions-eta.js / hospital-sheet.js
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 프론트엔드 호출처
+ *   ㄴ frontend/js/app.js        : 초기 부팅 및 검색·새로고침·내위치 이벤트 연결
+ *   ㄴ frontend/js/map-engine.js : 지도 우클릭·롱탭 시 `onCustomOrigin` 콜백 호출
+ * - 백엔드 연결 API (`EmergencyApiController.java`)
+ *   ㄴ `GET /api/config`, `GET /api/hospitals`, `GET /api/geocode`, `GET /api/reverse-geocode`
  * ============================================================================
  */
 
@@ -156,7 +179,7 @@ export function closeRadius(restoreFocus = false) {
 /*
  * [역할 및 데이터 흐름]
  * - 역할: 반경 버튼·팝오버·`<select id="radius">` 변경 이벤트와 바깥 클릭 닫기 리스너를 등록함
- * - 흐름: `#radius` 값 변경 ──> `updateRadiusUI()` ──> `fitRadius()` 카메라·반경 원 조정 ──> `updateMarkers()` ──> 열린 ETA 순위 갱신
+ * - 흐름: `#radius` 값 변경 -> `updateRadiusUI()` -> `fitRadius()` 카메라·반경 원 조정 -> `updateMarkers()` -> 열린 ETA 순위 갱신
  * - 호출처: `app.js:init()`에서 1회 호출
  */
 export function initRadius() {
@@ -226,7 +249,7 @@ export function initRadius() {
 /*
  * [역할 및 백엔드 연결]
  * - 역할: 백엔드 `GET /api/config`(`EmergencyApiController.getConfig()`)에서 공개 네이버 지도 키·다크 스타일 ID·기본 출발 좌표를 받아 동기화함
- * - 흐름: `/api/config` 수신 ──> `DEFAULT_ORIGIN` 갱신 ──> 키·다크 스타일 변경 시 SDK 재로드 후 `mountNaverMap()` 재마운트
+ * - 흐름: `/api/config` 수신 -> `DEFAULT_ORIGIN` 갱신 -> 키·다크 스타일 변경 시 SDK 재로드 후 `mountNaverMap()` 재마운트
  * - 호출처: `app.js:init()`
  */
 export async function syncFrontendConfig() {
@@ -378,9 +401,9 @@ function handleInitialHospitalDeepLink() {
  * [역할 및 데이터 흐름]
  * - 역할: 수신한 병원 목록 스냅샷을 `state`에 반영하고 지도 카드·검색·열린 병원 상세 시트를 실시간으로 갱신함
  * - 흐름:
- *   검색 키·좌표 사전 준비(45ms 초과 시 `yieldToMain()`) ──> `state.hospitals`·`sources`·`lastUpdated` 교체
- *   ──> 최초 1회 `fitRadius()` ──> `updateMarkers()` ──> 딥링크 처리
- *   ──> 상세 시트가 열려 있으면(`state.selected`) 최신 병상·응급메시지로 즉시 재렌더링(`skipDirections: true`)
+ *   검색 키·좌표 사전 준비(45ms 초과 시 `yieldToMain()`) -> `state.hospitals`·`sources`·`lastUpdated` 교체
+ *   -> 최초 1회 `fitRadius()` -> `updateMarkers()` -> 딥링크 처리
+ *   -> 상세 시트가 열려 있으면(`state.selected`) 최신 병상·응급메시지로 즉시 재렌더링(`skipDirections: true`)
  * - 호출처: `fetchData()`
  */
 async function applySnapshotToState(snapshot, currentController, isOfflineFallback = false) {
@@ -521,9 +544,9 @@ async function parseSnapshotResponse(response) {
  * - 역할: `GET /api/hospitals?compact=true`(`EmergencyApiController.getHospitalsHttp`)를 호출해 전국 병원 스냅샷을 수신함
  * - 흐름:
  *   요청 전송(`If-None-Match` ETag 포함)
- *   ├── `304 Not Modified` ──> 데이터 동일 확인 후 시각만 갱신 (네트워크 대역폭 절약)
- *   ├── `200 OK` JSON      ──> ETag·오프라인 백업 저장 후 `applySnapshotToState()` 반영
- *   └── 통신 오류(`catch`) ──> 초기 목록이 비어 있으면 `loadOfflineSnapshot()` 비상 복원
+ *   ㄴ `304 Not Modified` -> 데이터 동일 확인 후 시각만 갱신 (네트워크 대역폭 절약)
+ *   ㄴ `200 OK` JSON      -> ETag·오프라인 백업 저장 후 `applySnapshotToState()` 반영
+ *   ㄴ 통신 오류(`catch`) -> 초기 목록이 비어 있으면 `loadOfflineSnapshot()` 비상 복원
  * - 호출처: `loadData(forceRefresh, options)`
  */
 async function fetchData(forceRefresh = false, options = {}) {
@@ -683,7 +706,7 @@ async function fetchData(forceRefresh = false, options = {}) {
 /*
  * [역할 및 데이터 흐름]
  * - 역할: 브라우저 `navigator.geolocation.getCurrentPosition()`으로 정밀 GPS 좌표를 수신해 출발 기준점을 내 위치로 이동함
- * - 흐름: 고정밀 측위 요청 ──> `isGenuineGpsPosition()` 검증(IP 추정치 배제) ──> `state.origin`·반경 원·마커·역지오코딩 주소·ETA·경로 일괄 갱신
+ * - 흐름: 고정밀 측위 요청 -> `isGenuineGpsPosition()` 검증(IP 추정치 배제) -> `state.origin`·반경 원·마커·역지오코딩 주소·ETA·경로 일괄 갱신
  * - 호출처: `app.js:init()` (모바일 GPS 기기 접속 시), `#location-button` 클릭 리스너
  */
 export function locate() {

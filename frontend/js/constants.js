@@ -1,32 +1,48 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 프론트엔드 전체 모듈이 함께 참조하는 공통 기준표·사전 보관함 (식당의 표준 레시피·메뉴 코드표 역할)
- * - 실행 시점: `index.html`의 `<link rel="modulepreload">`로 선행 로드된 뒤, 각 ES 모듈이 `import`할 때 메모리에 1회 상주함
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 프론트엔드 전 모듈이 공유하는 기준 상수 · 공공데이터 병상 코드 한글 사전 ·
+ *          28대 중증질환 매핑표를 모아 둔 표준 레시피 보관함 모듈
+ * - 실행 시점 : ES 모듈 그래프 로드 시 메모리에 단 1회 적재되어 읽기 전용으로 참조됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   `constants.js` 상수·사전 정의
- *   ├── 카드·화면·반경·주기 상수 ──> `state.js`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`, `search-controls.js`
- *   ├── 병상·기준 코드 사전(`HV_LABELS`, `HVS_LABELS`, `API_FIELD_LABELS`) ──> `utils.js:fieldLabel()`, `hospital-sheet.js:renderRawBeds()`
- *   ├── 28대 중증질환·공지 차단 매핑(`SEVERE_DISEASE_GROUPS`, `SPECIFIC_BLOCK_TARGETS`) ──> `utils.js`, `hospital-sheet.js:renderSevere()`
- *   └── E-Gen 현황판 스키마(`EMERGENCY_BED_ITEMS`, `INPATIENT_BED_SECTIONS`, `EQUIPMENT_TABLE_ITEMS`) ──> `hospital-sheet.js`
+ * [2. 전체 참조 흐름 (시퀀스 다이어그램)]
  *
- * [사용처 및 IDE 추적 가이드]
- * - 참조 모듈: `app.js`, `state.js`, `utils.js`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`, `hospital-sheet.js`, `search-controls.js`
- * - IntelliJ 추적 팁: 상수명 위에서 `Ctrl + B` (선언/사용처 이동) 또는 `Ctrl + Shift + F`로 상수명 검색
+ *    [constants.js]                 [Map / Route Modules]      [utils.js]      [hospital-sheet.js]
+ *           |                                 |                     |                   |
+ *           |-- 1. DEFAULT_RADIUS_KM('50') -->|                     |                   |  기본 50km 반경 · 카드 규격
+ *           |-- 2. API_FIELD_LABELS ----------|-------------------->|                   |  병상 코드 사전 · 차단 타깃
+ *           |-- 3. BED / SEVERE_GROUPS -------|---------------------|------------------>|  병상 · 장비 · 28대 질환 표
+ *           v                                 v                     v                   v
+ *
+ * [3. 사용된 요소 구분 (표준 내장)]
+ * - JS / 브라우저 표준 내장
+ *   ㄴ export const   : 다른 모듈에서 읽을 수 있는 불변 상수 선언 키워드
+ *   ㄴ CSS.supports() : 브라우저가 최신 CSS `translate` 속성을 지원하는지 검사하는 API
+ *   ㄴ Object / Array : 코드-한글명 사전 및 섹션 스키마 구조체 표준 리터럴
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 참조하는 모듈
+ *   ㄴ frontend/js/app.js             : 진단용 스키마 및 경로 소스 ID 참조
+ *   ㄴ frontend/js/state.js           : 기본 네이버 키 · 다크 스타일 ID 참조
+ *   ㄴ frontend/js/map-engine.js      : `DEFAULT_RADIUS_KM('50')`, `CAN_USE_CSS_TRANSLATE`
+ *   ㄴ frontend/js/markers-cluster.js : `CARD_WIDTH(174)`, `CARD_HEIGHT(62)`, 반경 상수
+ *   ㄴ frontend/js/directions-eta.js  : `DEFAULT_RADIUS_KM`, `GL_ROUTE_SOURCE_ID`
+ *   ㄴ frontend/js/hospital-sheet.js  : 병상 · 장비 · 중증질환 · 반응형 해상도 상수
+ *   ㄴ frontend/js/search-controls.js : `AUTO_REFRESH_INTERVAL_MS(60000)`, 저장소 키
+ * - IntelliJ 추적 단축키
+ *   ㄴ 사용처 바로 보기 : 상수명 위에서 `Ctrl + B` 또는 `Ctrl + Alt + H`
  * ============================================================================
  */
 
 /*
  * [역할 및 사용처 — UI 규격·반경·저장소·초기 지도 상수]
- * - `CARD_WIDTH` / `CARD_HEIGHT`: 지도 위 병원 카드 크기(`174 × 62px`) ──> `markers-cluster.js:groupCards()`, `css/map-overlays.css`
- * - `DEFAULT_RADIUS_KM`: 최초 접속·폴백 시 기본 탐색 반경(`'50'` = 50km) ──> `index.html(#radius)`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`
- * - `AUTO_REFRESH_INTERVAL_MS`: 열린 탭의 실시간 병상·응급메시지 자동 동기화 주기(`60000ms` = 60초) ──> `search-controls.js:startAutoRefreshLoop()`
- * - `GL_ROUTE_SOURCE_ID`: 네이버 WebGL 지도 내부 GeoJSON 경로 소스 ID ──> `directions-eta.js`, `app.js` 진단 객체
- * - `NOTICE_KEY` / `OFFLINE_SNAPSHOT_KEY`: 브라우저 `localStorage` 키 이름 ──> `search-controls.js` (안내 숨김·오프라인 스냅샷 백업)
- * - `DEFAULT_NAVER_CLIENT_ID` / `DEFAULT_NAVER_DARK_STYLE_ID`: `/api/config` 수신 전 기본 지도 키·다크 스타일 UUID ──> `state.js`, `map-engine.js`
- * - `LARGE_MONITOR_MIN_*` / `MOBILE_MAX_WIDTH`: 3단 반응형 시트(`1200×680` 모달, `640px` 모바일) 분기 기준 ──> `hospital-sheet.js`, `css/responsive.css`
+ * - `CARD_WIDTH` / `CARD_HEIGHT`: 지도 위 병원 카드 크기(`174 × 62px`) -> `markers-cluster.js:groupCards()`, `css/map-overlays.css`
+ * - `DEFAULT_RADIUS_KM`: 최초 접속·폴백 시 기본 탐색 반경(`'50'` = 50km) -> `index.html(#radius)`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`
+ * - `AUTO_REFRESH_INTERVAL_MS`: 열린 탭의 실시간 병상·응급메시지 자동 동기화 주기(`60000ms` = 60초) -> `search-controls.js:startAutoRefreshLoop()`
+ * - `GL_ROUTE_SOURCE_ID`: 네이버 WebGL 지도 내부 GeoJSON 경로 소스 ID -> `directions-eta.js`, `app.js` 진단 객체
+ * - `NOTICE_KEY` / `OFFLINE_SNAPSHOT_KEY`: 브라우저 `localStorage` 키 이름 -> `search-controls.js` (안내 숨김·오프라인 스냅샷 백업)
+ * - `DEFAULT_NAVER_CLIENT_ID` / `DEFAULT_NAVER_DARK_STYLE_ID`: `/api/config` 수신 전 기본 지도 키·다크 스타일 UUID -> `state.js`, `map-engine.js`
+ * - `LARGE_MONITOR_MIN_*` / `MOBILE_MAX_WIDTH`: 3단 반응형 시트(`1200×680` 모달, `640px` 모바일) 분기 기준 -> `hospital-sheet.js`, `css/responsive.css`
  */
 export const CARD_WIDTH = 174;
 export const CARD_HEIGHT = 62;
@@ -46,8 +62,8 @@ export const MOBILE_MAX_WIDTH = 640;
  * - 역할: 현재 브라우저가 개별 CSS `translate` 속성을 지원하는지 모듈 로드 시 1회 판별함
  * - 흐름:
  *   `CSS.supports('translate', '0px')` (브라우저 표준 CSSOM 내장 API)
- *   ├── `true`  ──> `map-engine.js:createNaverDomOverlay()`에서 GPU 합성 친화적인 `style.translate` 사용
- *   └── `false` ──> 구형 브라우저 호환용 `style.left` / `style.top` 폴백 사용
+ *   ㄴ `true`  -> `map-engine.js:createNaverDomOverlay()`에서 GPU 합성 친화적인 `style.translate` 사용
+ *   ㄴ `false` -> 구형 브라우저 호환용 `style.left` / `style.top` 폴백 사용
  */
 export const CAN_USE_CSS_TRANSLATE =
     typeof CSS !== 'undefined' &&
@@ -57,7 +73,7 @@ export const CAN_USE_CSS_TRANSLATE =
 /*
  * [역할 및 사용처]
  * - 역할: 국립중앙의료원 실시간 가용병상 API(`getEmrrmRltmUsefulSckbdInfoInqire`)의 `hv1`~`hv61` 코드 한글 사전
- * - 흐름: `HV_LABELS` ──> 아래 `API_FIELD_LABELS`에 병합 & `hospital-sheet.js:renderRawBeds()`의 `#all-beds` 원본 대조표에 표시
+ * - 흐름: `HV_LABELS` -> 아래 `API_FIELD_LABELS`에 병합 & `hospital-sheet.js:renderRawBeds()`의 `#all-beds` 원본 대조표에 표시
  */
 export const HV_LABELS = {
     hv1: '예비항목2',
@@ -109,7 +125,7 @@ export const HV_LABELS = {
 /*
  * [역할 및 사용처]
  * - 역할: 가용 병상 포화율을 계산할 때 분모(기준 병상·장비 총수)가 되는 `hvs01`~`hvs61` 코드 한글 사전
- * - 흐름: `HVS_LABELS` ──> `API_FIELD_LABELS`에 병합 & `hospital-sheet.js:renderRawBeds()`의 `#all-beds` 기준 항목 출력
+ * - 흐름: `HVS_LABELS` -> `API_FIELD_LABELS`에 병합 & `hospital-sheet.js:renderRawBeds()`의 `#all-beds` 기준 항목 출력
  */
 export const HVS_LABELS = {
     hvs01: '일반 기준',
@@ -172,7 +188,7 @@ export const HVS_LABELS = {
  * [역할 및 사용처]
  * - 역할: `HV_LABELS` + `HVS_LABELS` + 기본 병상(`hvec` 등)·장비 가용(`hv*ayn`)·당직의(`hvdnm`)·보고시각(`hvidate`) 통합 사전
  * - 문법 원리: 객체 전개 연산자(`...`)로 두 사전을 얕은 복사해 하나의 마스터 객체로 합침
- * - 사용처: `utils.js:fieldLabel(key)` ──> `hospital-sheet.js:renderRawBeds()`, `renderBasic()`
+ * - 사용처: `utils.js:fieldLabel(key)` -> `hospital-sheet.js:renderRawBeds()`, `renderBasic()`
  */
 export const API_FIELD_LABELS = {
     ...HV_LABELS,
@@ -318,7 +334,7 @@ export const SEVERE_DISEASE_GROUPS = [
 /*
  * [역할 및 데이터 흐름]
  * - 역할: 중증질환 수용 API가 `'Y'`여도 실시간 응급메시지(`getEmrrmSrsillDissMsgInqire`)에 진료 불가 공지가 떴을 때 교차 차단하기 위한 코드·키워드 표
- * - 흐름: `SPECIFIC_BLOCK_TARGETS` ──> `utils.js:isDiseaseSpecificallyBlocked()` ──> `hospital-sheet.js:renderSevere()`에서 빨간 `'불가능'` 배지로 전환
+ * - 흐름: `SPECIFIC_BLOCK_TARGETS` -> `utils.js:isDiseaseSpecificallyBlocked()` -> `hospital-sheet.js:renderSevere()`에서 빨간 `'불가능'` 배지로 전환
  */
 export const SPECIFIC_BLOCK_TARGETS = {
     mkioskty1: { codes: ['Y0010'], names: ['심근경색', '관상동맥중재술'] },

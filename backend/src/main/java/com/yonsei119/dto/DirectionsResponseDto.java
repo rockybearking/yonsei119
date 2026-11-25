@@ -3,49 +3,51 @@ package com.yonsei119.dto;
 import java.util.List;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 네이버 자동차 길찾기 결과(경로선 좌표, 도로 구간별 혼잡도, 요금, 4대 옵션 비교)를 담아 프론트엔드로 배달하는 도시락 그릇 DTO
- * - 실행 시점: 서버 시작 시에는 생성되지 않으며, `NaverDirectionsService.parseDirectionsJson()`이 경로를 파싱할 때 생성되어 60초간 캐싱됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 네이버 자동차 길찾기 결과(경로 좌표열, 주요 도로 요약 구간, 요금, 4대 대안 옵션)를
+ *          담아 프론트엔드로 전달하는 내비게이션 응답 그릇 (DTO)
+ * - 실행 시점 : `NaverDirectionsService.parseDirectionsJson()` 실행 시 생성되어 60초간 캐싱됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   NaverDirectionsService.parseDirectionsJson() ──> new DirectionsResponseDto(...) 생성
- *   ├── 정상 육로(code=0): routeCache에 60초 저장 ──> EmergencyApiController.getDirections() 반환
- *   ├── 도서 페리 항로 감지(code=-304) 또는 오류: createErrorResponse()로 빈 리스트 채운 안전 객체 반환
- *   └── Jackson JSON 자동 직렬화 ──> frontend/js/directions-eta.js (`loadDirectionsForHospital`, `refreshActiveRoute`) 수신
- *       └── `drawRouteOnMap()`이 지도 위 파란 기본 경로선 + 초록·주황·빨강 공식 혼잡도 구간선을 그림
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [자바 문법 및 자동 생성 요소]
- * - Java 내장 `record`: 19개 불변 필드와 전체 생성자, `.code()`, `.path()`, `.sections()` 등 자동 Getter, `equals`/`hashCode`/`toString`을 컴파일러가 자동 생성함
- * - Java 표준 내장 타입: `String`, `List<E>`, `Double`
+ *    [directions-eta.js]         [ApiController]           [DirectionsService]       [DirectionsResponseDto]
+ *             |                         |                           |                           |
+ *             |-- 1. GET /directions -->|-- 2. getDrivingRoute() -->|                           |  실시간 자동차 경로 요청
+ *             |                         |                           |-- 3. new ResponseDto() -->|  좌표열 · 요금 · 대안 포장
+ *             |<-- 4. 200 JSON ---------|<-- code 0 or -304 --------|<-- dto -------------------|  경로 수신 후 CTT 색상 매칭
+ *             v                         v                           v                           v
  *
- * [프론트엔드 연결 및 IDE 추적 가이드]
- * - 프론트엔드 사용처: `frontend/js/directions-eta.js` (`data.path`, `data.sections`, `data.alternatives`, `data.guidePrompts` 참조)
- * - Java 호출 추적: 레코드명 위에서 `Ctrl + Alt + H` | 프론트엔드 검색: `Ctrl + Shift + F`로 `/api/directions` 또는 `guidePrompts` 검색
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record              : 바깥 DTO 및 중첩 DTO 2종의 생성자 · Getter 자동생성 키워드
+ *   ㄴ String              : 옵션명 · 시간 문자열 · 안내 문구를 담는 표준 내장 클래스
+ *   ㄴ int / long / double : 거리(m) · 시간(ms) · 요금(원) · 거리(km) 기본형 키워드
+ *   ㄴ List / Double       : `[경도, 위도]` 좌표 목록을 담는 표준 내장 컬렉션·래퍼 타입
+ * - 외부 라이브러리 (자동 동작)
+ *   ㄴ Jackson               : 응답 시 전체 중첩 `record` 트리를 JSON으로 자동 직렬화
  *
- * [실행 방법 및 JSON 예시]
- * - 호출 예시: `curl "http://localhost:8080/api/directions?startLat=37.3190&startLng=127.9012&goalLat=37.3191&goalLng=127.9456&apiType=directions5&option=trafast"`
- * - JSON 출력 예시:
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ NaverDirectionsService.java  : `parseDirectionsJson()`, `createErrorResponse()`
+ *   ㄴ RouteCongestionAnalyzer.java : `buildDetailedSections()` (`RouteSectionDto` 생성)
+ *   ㄴ EmergencyApiController.java  : `getDirections()`
+ * - 프론트엔드 연결처
+ *   ㄴ frontend/js/directions-eta.js : `loadDirectionsForHospital()`, `drawRouteOnMap()`
+ * - IntelliJ 추적 단축키
+ *   ㄴ 호출 계층 보기 : `DirectionsResponseDto` 위에서 `Ctrl + Alt + H`
+ *   ㄴ 프론트엔드 검색 : `Ctrl + Shift + F`로 `/api/directions` 또는 `alternatives` 검색
+ *
+ * [5. 실행 방법 및 JSON 예시]
+ * - 호출 예시 :
+ *   `curl "http://localhost:8080/api/directions?startLat=37.5666&startLng=126.9784&goalLat=37.5599&goalLng=127.0448"`
+ * - JSON 출력 예시 :
  *   {
  *     "apiType": "directions5",
- *     "apiLabel": "Directions 5",
  *     "option": "trafast",
- *     "optionLabel": "실시간 빠른길",
  *     "code": 0,
- *     "message": "길찾기를 성공하였습니다.",
- *     "distanceMeters": 6700,
- *     "distanceKm": 6.7,
- *     "durationMs": 660000,
- *     "durationMinutes": 11,
- *     "durationText": "약 11분",
- *     "departureTime": "2026-11-25T19:40:00",
- *     "tollFare": 0,
- *     "taxiFare": 9400,
- *     "fuelPrice": 890,
- *     "path": [[127.9012, 37.3190], [127.9456, 37.3191]],
- *     "sections": [{ "pointIndex": 0, "pointCount": 2, "distance": 6700, "name": "서원대로", "congestion": 1, "speed": 42 }],
- *     "guidePrompts": ["연세대길 방면 우회전", "목적지 도착"],
- *     "alternatives": [{ "option": "trafast", "optionLabel": "실시간 빠른길", "distanceMeters": 6700, "distanceKm": 6.7, "durationMs": 660000, "durationMinutes": 11, "durationText": "약 11분", "tollFare": 0, "taxiFare": 9400, "fuelPrice": 890 }]
+ *     "distanceKm": 7.4,
+ *     "durationText": "약 27분",
+ *     "path": [[126.9780, 37.5665], [127.0448, 37.5599]]
  *   }
  */
 public record DirectionsResponseDto(
@@ -70,10 +72,7 @@ public record DirectionsResponseDto(
         List<RouteOptionSummaryDto> alternatives
 ) {
 
-    /**
-     * 네이버 공식 도로 구간 혼잡도 1건을 담는 중첩 레코드.
-     * (`congestion`: 0=교통정보 없음/기본 파란선, 1=원활/초록, 2=서행/주황, 3=정체/빨강)
-     */
+    /** 네이버 API 주요 도로 구간 요약 1건을 담는 중첩 레코드 (`congestion`: 0~3) */
     public record RouteSectionDto(
             int pointIndex,
             int pointCount,
@@ -84,7 +83,7 @@ public record DirectionsResponseDto(
     ) {
     }
 
-    /** 빠른길·최적·편한길·무료우선 등 주행 옵션별 예상 시간·거리·요금 비교 카드용 중첩 레코드 */
+    /** 빠른길·최적·편한길·무료우선 등 주행 옵션별 소요시간·거리·요금 비교용 중첩 레코드 */
     public record RouteOptionSummaryDto(
             String option,
             String optionLabel,

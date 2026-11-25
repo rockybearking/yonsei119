@@ -1,21 +1,53 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 네이버 지도 v3 WebGL/2D 엔진 구동·오버레이 좌표 투영·탐색 반경 원·실시간 교통 레이어를 담당하는 지도 기관실
- * - 실행 시점: `app.js:init()`에서 `mountNaverMap()`으로 최초 1회 지도를 마운트하며,
- *   이후 지도 이동(`idle`), 테마 변경, 반경 조절, 교통 버튼 클릭 시 관련 함수가 호출됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 네이버 지도 v3 WebGL / 2D 엔진 구동, 화면 픽셀 투영, 탐색 반경 원(기본 50km),
+ *          그리고 네이버 실시간 교통 벡터 타일(`ctt`) 연동을 담당하는 지도 기관실
+ * - 실행 시점 : `app.js : init()`에서 `mountNaverMap()`이 최초 1회 실행되며,
+ *              이후 카메라 이동(`idle`), 테마 전환, 반경 변경, 교통·경로 활성화 시 호출됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   `ensureNaverMapSdkLoaded()` ──> `mountNaverMap()` (WebGL 다크 스타일 우선, 미지원 시 2D 안전 폴백)
- *   ├── `syncMapOverlays()` ──> `fitRadius()` + `updateCircle()` + `updateLocationMarker()` + `onUpdateMarkers()`
- *   ├── `createNaverDomOverlay()` ──> 병원 카드·출발점·경유지를 GPU `translate`로 지도 좌표에 고정
- *   └── `toggleTrafficLayer()` ──> `TrafficLayer` 및 WebGL 교통 벡터 타일(`#27c441`·`#ff8d00`·`#ff3b30`) 토글
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [사용처 및 IDE 추적 가이드]
- * - 호출 모듈: `app.js`, `markers-cluster.js`, `directions-eta.js`, `search-controls.js`
- * - 연결 HTML/CSS: `index.html` (`#map`, `#traffic-toggle`, `#naver-maps-sdk`), `css/map-overlays.css`
- * - IntelliJ 추적 팁: 함수명 위에서 `Ctrl + Alt + H` 또는 `Ctrl + Shift + F`로 `mountNaverMap` 검색
+ *       [app.js / Controls]         [map-engine.js]                   [Naver Maps GL]      [directions-eta.js]
+ *                |                         |                                 |                      |
+ *                |-- 1. mountNaverMap() -->|                                 |                      |  지도 초기화 요청
+ *                |                         |-- 2. new Map({ gl: true }) ---->|                      |  WebGL 다크/라이트 생성
+ *                |                         |<-- 3. glReady event ------------|                      |  스타일 로드 완료
+ *           +----+-------------------------+---------------------------------+----------------------+-----------+
+ *           | [opt : traffic ON or active route]                                                                |  교통 레이어 또는 경로 활성
+ *           |    |                         |-- 4. syncGlTrafficSource() ---->|                      |           |  ctt 벡터 타일 적재 유지
+ *           |    |                         |-- 5. onTrafficTilesUpdated() ---|--------------------->|           |  경로선 실시간 색상 재동기화
+ *           +----+-------------------------+---------------------------------+----------------------+-----------+
+ *                v                         v                                 v                      v
+ *
+ * [3. 사용된 요소 구분 (표준 내장 / 외부 SDK / 프로젝트 내부)]
+ * - JS / 브라우저 표준 내장
+ *   ㄴ Promise                   : 스크립트 비동기 로드를 감싸는 표준 내장 클래스
+ *   ㄴ class / extends           : `OverlayView`를 상속해 커스텀 오버레이를 만드는 문법 키워드
+ *   ㄴ document.createElement    : `<script>` · `<div>` 요소를 동적 생성하는 브라우저 메서드
+ *   ㄴ Math                      : 삼각함수·로그·반올림으로 웹 메르카토르 좌표를 계산하는 내장 객체
+ *   ㄴ setTimeout / clearTimeout : GL 초기화 대기 타이머를 제어하는 브라우저 내장 함수
+ * - 외부 SDK / 라이브러리
+ *   ㄴ naver.maps.Map          : 네이버 지도 v3 메인 지도 클래스 (WebGL `gl: true` 지원)
+ *   ㄴ naver.maps.OverlayView  : HTML DOM을 지도 위경도에 고정하는 공식 추상 클래스
+ *   ㄴ naver.maps.Circle       : 탐색 반경 원을 그리는 도형 오버레이 클래스
+ *   ㄴ naver.maps.TrafficLayer : 네이버 공식 실시간 교통 소통 레이어 클래스
+ * - 프로젝트 내부 모듈
+ *   ㄴ constants.js        : 기본 Client ID · 기본 반경(`50`) · CSS translate 지원 상수
+ *   ㄴ state.js / utils.js : 전역 런타임 상태 · 콜백 슬롯 · 반경 경계 계산 유틸
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 호출하는 모듈
+ *   ㄴ frontend/js/app.js             : ensureNaverMapSdkLoaded(), mountNaverMap(), toggleTrafficLayer()
+ *   ㄴ frontend/js/markers-cluster.js : coordToScreenPoint(), createNaverDomOverlay(), getHospitalLatLng()
+ *   ㄴ frontend/js/directions-eta.js  : syncGlTrafficSourceVisibility(), fitBounds(), updateCircle()
+ *   ㄴ frontend/js/search-controls.js : fitRadius(), focusHospitalOnMap(), updateLocationMarker()
+ * - 연결된 HTML / CSS
+ *   ㄴ frontend/index.html           : `#map`, `#traffic-toggle`, `#naver-maps-sdk`
+ *   ㄴ frontend/css/map-overlays.css : `.location-marker`, `.waypoint-marker`
+ * - IntelliJ 추적 단축키
+ *   ㄴ Ctrl + Alt + H   : 함수명 위에서 호출 계층(Call Hierarchy) 추적
+ *   ㄴ Ctrl + Shift + F : `syncGlTrafficSourceVisibility` 전체 검색
  * ============================================================================
  */
 
@@ -35,6 +67,9 @@ import {
     radiusExtent
 } from './utils.js';
 
+const CTT_METADATA_URL = 'https://map.pstatic.net/nvc/ctt/wmts/naver/getMetadata/v1';
+const CTT_PROBE_LAYER_ID = 'yonsei-ctt-probe';
+
 let sdkLoadPromise = null;
 let loadedSdkClientId = DEFAULT_NAVER_CLIENT_ID;
 let mapMountGeneration = 0;
@@ -42,10 +77,11 @@ let glWaitTimerId = null;
 let glReadyTimerId = null;
 
 /*
- * [역할 및 데이터 흐름]
- * - 역할: 네이버 지도 JS SDK(`submodules=gl`)가 지정된 `targetClientId`로 로드되었는지 확인하고, 필요 시 동적 `<script>`로 교체 로드함
- * - 흐름: 동일 키 로드 완료 시 즉시 `true` 반환 ──> 변경·미로드 시 `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=...&submodules=gl` 삽입
- * - 호출처: `app.js:init()`, `search-controls.js:syncFrontendConfig()`
+ * [역할 및 사용처]
+ * - 역할 : 네이버 지도 JS SDK(`submodules=gl`) 로드 여부를 확인하고 미로드·키 변경 시 동적 로드함
+ * - 사용처
+ *   ㄴ frontend/js/app.js             : `init()`
+ *   ㄴ frontend/js/search-controls.js : `syncFrontendConfig()`
  */
 export function ensureNaverMapSdkLoaded(targetClientId = state.naverClientId) {
     const cleanClientId = String(targetClientId || DEFAULT_NAVER_CLIENT_ID).trim();
@@ -109,9 +145,13 @@ export function ensureNaverMapSdkLoaded(targetClientId = state.naverClientId) {
 }
 
 /*
- * [역할 및 성능 원리]
- * - 역할: 병원 객체에 네이버 지도 `LatLng` 인스턴스를 캐싱(`hospital._latLng`)하여 지도 이동마다 좌표 객체를 재생성하지 않게 함
- * - 호출처: `app.js`(`#cluster-zoom`), `fitRadius()`, `focusHospitalOnMap()`, `markers-cluster.js:updateMarkers()`, `search-controls.js:applySnapshotToState()`
+ * [역할 및 사용처]
+ * - 역할 : 병원 객체마다 네이버 `LatLng` 좌표 객체를 캐싱(`hospital._latLng`)하여 재생성 비용을 없앰
+ * - 사용처
+ *   ㄴ frontend/js/app.js             : `#cluster-zoom` 클릭 핸들러
+ *   ㄴ frontend/js/map-engine.js      : `fitRadius()`, `focusHospitalOnMap()`
+ *   ㄴ frontend/js/markers-cluster.js : `updateMarkers()`
+ *   ㄴ frontend/js/search-controls.js : `applySnapshotToState()`
  */
 export function getHospitalLatLng(hospital) {
     const naverMaps = window.naver?.maps;
@@ -131,9 +171,12 @@ export function getHospitalLatLng(hospital) {
 }
 
 /*
- * [역할 및 호출처]
- * - 역할: 지도가 생성되었고 WebGL 모드(`renderMode === 2`)일 경우 벡터 스타일(`isGLReady()`)까지 준비 완료되었는지 확인함
- * - 호출처: `coordToScreenPoint()`, `createNaverDomOverlay`, `updateCircle()`, `updateLocationMarker()`, `fitBounds()`, `markers-cluster.js`, `directions-eta.js`
+ * [역할 및 사용처]
+ * - 역할 : 지도가 생성되었고 WebGL 모드(`renderMode === 2`)일 때 `isGLReady()`가 완료되었는지 확인함
+ * - 사용처
+ *   ㄴ frontend/js/map-engine.js      : 오버레이·반경원·카메라 이동 함수 전반
+ *   ㄴ frontend/js/markers-cluster.js : `updateMarkers()`
+ *   ㄴ frontend/js/directions-eta.js  : `drawRouteOnMap()`
  */
 export function isMapReadyForOverlays() {
     if (!state.map) {
@@ -151,9 +194,10 @@ export function isMapReadyForOverlays() {
 }
 
 /*
- * [역할 및 데이터 흐름]
- * - 역할: 위도·경도 좌표를 현재 지도 화면의 픽셀 좌표(`{ x, y }`)로 변환함 (투영기 미준비 시 웹 메르카토르 수학 공식으로 폴백)
- * - 호출처: `markers-cluster.js:updateMarkers()` (병원 카드 격자 클러스터링 계산용)
+ * [역할 및 사용처]
+ * - 역할 : 위경도 좌표를 현재 화면 픽셀 좌표(`{ x, y }`)로 투영함 (미준비 시 메르카토르 수식 폴백)
+ * - 사용처
+ *   ㄴ frontend/js/markers-cluster.js : `updateMarkers()` 격자 클러스터 계산
  */
 export function coordToScreenPoint(lat, lng, cachedLatLng = null) {
     const naverMaps = window.naver?.maps;
@@ -180,10 +224,12 @@ export function coordToScreenPoint(lat, lng, cachedLatLng = null) {
 }
 
 /*
- * [역할 및 동작 원리]
- * - 역할: 네이버 지도 SDK의 `OverlayView`를 상속해 HTML 요소(병원 카드·출발점·경유지)를 지도 위경도에 맞춰 따라다니게 함
- * - 성능 원리: 좌표가 실제로 바뀔 때만 CSS `style.translate`를 갱신해 불필요한 DOM 리플로우를 차단함
- * - 호출처: `updateLocationMarker()`, `markers-cluster.js:updateMarkers()`, `directions-eta.js:drawRouteOnMap()`
+ * [역할 및 사용처]
+ * - 역할 : 네이버 `OverlayView`를 상속해 병원 카드·출발점·경유지 HTML 요소를 지도 위경도에 고정함
+ * - 사용처
+ *   ㄴ frontend/js/map-engine.js      : `updateLocationMarker()`
+ *   ㄴ frontend/js/markers-cluster.js : `updateMarkers()`
+ *   ㄴ frontend/js/directions-eta.js  : `drawRouteOnMap()` 경유지 배지
  */
 export function createNaverDomOverlay(options) {
     const naverMaps = window.naver.maps;
@@ -274,9 +320,11 @@ export function createNaverDomOverlay(options) {
 }
 
 /*
- * [역할 및 호출처]
- * - 역할: 네이버 GL 도형(`Circle`, `Polyline`)이 이미 소스를 등록한 뒤 중복 `drawGL()`을 호출해 콘솔 경고를 내는 현상을 막음
- * - 호출처: `updateCircle()`, `directions-eta.js:drawRouteOnMap()`(2D 폴백 경로선)
+ * [역할 및 사용처]
+ * - 역할 : 네이버 GL 도형(`Circle`, `Polyline`)의 중복 `drawGL()` 소스 재등록 경고를 방지함
+ * - 사용처
+ *   ㄴ frontend/js/map-engine.js     : `updateCircle()`
+ *   ㄴ frontend/js/directions-eta.js : `drawRouteOnMap()` (2D 폴백 경로선)
  */
 export function guardGlShapeRedraw(shapeOverlay) {
     if (!shapeOverlay || typeof shapeOverlay.drawGL !== 'function' || shapeOverlay._glRedrawGuarded) {
@@ -297,10 +345,13 @@ export function guardGlShapeRedraw(shapeOverlay) {
 }
 
 /*
- * [역할 및 데이터 흐름]
- * - 역할: 출발 기준점(`state.origin`) 주변에 선택된 탐색 반경(기본 `50 km`, `'all'`이면 숨김) 원을 지도에 그림
- * - 성능 원리: 좌표·반경·테마 조합 키(`state.circleKey`)가 직전과 같으면 기존 원을 그대로 재사용함
- * - 호출처: `fitRadius()`, `mountNaverMap()`, `markers-cluster.js:updateMarkers()`, `search-controls.js`, `directions-eta.js`
+ * [역할 및 사용처]
+ * - 역할 : 출발 기준점 주변에 선택 반경(기본 `50 km`, `'all'`이면 숨김) 원을 생성·갱신함
+ * - 사용처
+ *   ㄴ frontend/js/map-engine.js      : `fitRadius()`, `mountNaverMap()`
+ *   ㄴ frontend/js/markers-cluster.js : `updateMarkers()`
+ *   ㄴ frontend/js/search-controls.js : `locate()`, `setCustomOrigin()`, `applyTheme()`
+ *   ㄴ frontend/js/directions-eta.js  : `resetOriginAndRoute()`
  */
 export function updateCircle(force = false) {
     if (!state.map || !isMapReadyForOverlays() || !window.naver?.maps) {
@@ -318,13 +369,23 @@ export function updateCircle(force = false) {
                 void err;
             }
             state.circle = null;
+            state.circleKey = null;
+            state.circleMap = null;
         }
-        state.circleKey = null;
-        state.circleMap = null;
         return;
     }
 
-    const nextKey = `${state.origin.lat.toFixed(6)},${state.origin.lng.toFixed(6)},${radius},${state.darkMode ? 'dark' : 'light'}`;
+    const radiusMeters = Number(radius) * 1000;
+    const strokeColor = state.darkMode ? '#60a5fa' : '#0f5fd6';
+    const fillColor = state.darkMode ? '#3b82f6' : '#0f5fd6';
+    const fillOpacity = state.darkMode ? 0.1 : 0.06;
+
+    const nextKey = [
+        state.origin.lat.toFixed(6),
+        state.origin.lng.toFixed(6),
+        radiusMeters,
+        state.darkMode ? 'dark' : 'light'
+    ].join('|');
 
     if (!force && state.circle && state.circleMap === state.map && state.circleKey === nextKey) {
         return;
@@ -339,43 +400,39 @@ export function updateCircle(force = false) {
         state.circle = null;
     }
 
-    try {
-        const naverMaps = window.naver.maps;
-        const circle = new naverMaps.Circle({
-            map: state.map,
-            center: new naverMaps.LatLng(state.origin.lat, state.origin.lng),
-            radius: Number(radius) * 1000,
-            strokeWeight: 2,
-            strokeColor: state.darkMode ? '#60a5fa' : '#2873df',
-            strokeOpacity: state.darkMode ? 0.8 : 0.65,
-            fillColor: state.darkMode ? '#3b82f6' : '#5e9cf0',
-            fillOpacity: state.darkMode ? 0.11 : 0.07,
-            clickable: false
-        });
-        state.circle = guardGlShapeRedraw(circle);
-        state.circleKey = nextKey;
-        state.circleMap = state.map;
-        state.diagnostics.circleCreatedCount += 1;
-    } catch (circleErr) {
-        void circleErr;
-        state.circle = null;
-        state.circleKey = null;
-        state.circleMap = null;
-    }
+    state.circle = guardGlShapeRedraw(new window.naver.maps.Circle({
+        map: state.map,
+        center: new window.naver.maps.LatLng(state.origin.lat, state.origin.lng),
+        radius: radiusMeters,
+        strokeColor,
+        strokeOpacity: 0.34,
+        strokeWeight: 2,
+        fillColor,
+        fillOpacity,
+        clickable: false
+    }));
+    state.circleKey = nextKey;
+    state.circleMap = state.map;
+    state.diagnostics.circleCreatedCount += 1;
 }
 
 /*
- * [역할 및 호출처]
- * - 역할: GPS 측위 또는 사용자 지정 출발점이 활성(`state.locationKnown === true`)일 때 파동 애니메이션 출발 마커(`.location-marker`)를 지도에 표시함
- * - 호출처: `mountNaverMap()`, `search-controls.js` (`locate`, `setCustomOrigin`), `directions-eta.js:resetOriginAndRoute()`
+ * [역할 및 사용처]
+ * - 역할 : 사용자 GPS 현재 위치 또는 우클릭·검색으로 지정한 출발지에 파란 점 마커를 표시함
+ * - 사용처
+ *   ㄴ frontend/js/map-engine.js      : `mountNaverMap()`
+ *   ㄴ frontend/js/search-controls.js : `locate()`, `setCustomOrigin()`
+ *   ㄴ frontend/js/directions-eta.js  : `resetOriginAndRoute()`
  */
 export function updateLocationMarker() {
-    try {
-        state.locationMarker?.setMap(null);
-    } catch (err) {
-        void err;
+    if (state.locationMarker) {
+        try {
+            state.locationMarker.setMap(null);
+        } catch (err) {
+            void err;
+        }
+        state.locationMarker = null;
     }
-    state.locationMarker = null;
 
     if (!state.map || !state.locationKnown || !isMapReadyForOverlays() || !window.naver?.maps) {
         return;
@@ -397,111 +454,176 @@ export function updateLocationMarker() {
 }
 
 /*
- * [역할 및 색상 기준 — 경로 안내 색상과 1:1 통일]
- * - 역할: WebGL 커스텀 다크·라이트 스타일에서도 네이버 실시간 교통 벡터 타일(`ctt`)이 선명하게 보이도록 레이어 가시성을 동기화함
- * - 공식 소통 색상: 원활(`state=1`) `#27c441`, 서행(`state=2`) `#ff8d00`, 정체(`state=4`) `#ff3b30` (`directions-eta.js` 경로선과 동일 색상 사용)
- * - 호출처: `syncTrafficLayer()`
+ * [역할 및 시퀀스 흐름 — 경로선 · 교통 레이어 단일 데이터원(`ctt`) 핵심 연동]
+ * - 역할 : 네이버 공식 실시간 교통 벡터 소스(`ctt`)와 투명 프로브 레이어(`yonsei-ctt-probe`)를 관리함
+ * - 왜 투명 프로브 레이어가 필요한가?
+ *   ㄴ 사용자가 `교통` 버튼을 끄고 `지도에 경로 표시`만 눌렀을 때도 Mapbox GL이 현재 화면의
+ *      `ctt` 도로 링크 타일을 백그라운드에서 내려받게 하여, 경로선이 언제나 실제 교통정보와
+ *      100% 동일한 색상으로 칠해지도록 보장함 (경로·교통 모두 꺼지면 즉시 타일 요청 중단)
+ * - 사용처
+ *   ㄴ frontend/js/map-engine.js     : `syncTrafficLayer()`
+ *   ㄴ frontend/js/directions-eta.js : `renderGlRoute()`, `removeRouteOverlays()`
  */
-function syncGlTrafficLayers(mapbox, visible) {
+export function syncGlTrafficSourceVisibility(routeNeedsCtt = Boolean(state.activeRoute)) {
+    const mapbox = state.map?.getMapbox?.();
     if (!mapbox || typeof mapbox.getStyle !== 'function') {
-        return;
+        return null;
     }
 
-    const visibility = visible ? 'visible' : 'none';
     const style = mapbox.getStyle();
     if (!style || !Array.isArray(style.layers)) {
-        return;
+        return null;
     }
+
+    const trafficVisible = Boolean(state.trafficEnabled);
+    const needCttTiles = trafficVisible || Boolean(routeNeedsCtt);
+    const trafficVisibility = trafficVisible ? 'visible' : 'none';
+    const probeVisibility = needCttTiles ? 'visible' : 'none';
+
+    let hasBuiltInCttLayers = false;
+    let detectedCttSourceId = mapbox.getSource('ctt') ? 'ctt' : null;
 
     for (const layer of style.layers) {
         const group = layer?.metadata?.group;
-        if (group === 'ctt' || group === 'dctt' || String(layer?.id || '').startsWith('CTT/')) {
+        const layerId = String(layer?.id || '');
+        if (group === 'ctt' || group === 'dctt' || layerId.startsWith('CTT/')) {
+            hasBuiltInCttLayers = true;
+            if (!detectedCttSourceId && layer.source) {
+                detectedCttSourceId = layer.source;
+            }
             try {
-                mapbox.setLayoutProperty(layer.id, 'visibility', visibility);
+                mapbox.setLayoutProperty(layerId, 'visibility', trafficVisibility);
             } catch (err) {
                 void err;
             }
         }
     }
 
-    if (!mapbox.getSource('ctt')) {
-        if (!visible) {
-            return;
+    if (!detectedCttSourceId) {
+        if (!needCttTiles) {
+            return null;
         }
         try {
             mapbox.addSource('ctt', {
                 type: 'vector',
-                url: 'https://map.pstatic.net/nvc/ctt/wmts/naver/getMetadata/v1'
+                url: CTT_METADATA_URL
             });
+            detectedCttSourceId = 'ctt';
         } catch (err) {
             void err;
-            return;
+            return null;
         }
     }
 
-    const bgWidthStops = [
-        [6, 1.4], [7, 2.4], [8, 2.8], [9, 3.8], [10, 3.8],
-        [11, 3.8], [12, 3.8], [13, 3.8], [14, 3.8], [15, 4], [16, 4], [17, 5]
-    ];
-    const fgWidthStops = [
-        [6, 1.1], [7, 1.6], [8, 2.0], [9, 2.2], [10, 2.2],
-        [11, 2.2], [12, 2.2], [13, 2.2], [14, 2.2], [15, 2.5], [16, 2.8], [17, 3.5]
-    ];
-    const lineOffsetStops = [
-        [6, 1], [7, 1.5], [8, 2], [9, 2], [10, 3], [11, 3],
-        [12, 3], [13, 3], [14, 3], [15, 4], [16, 5], [17, 8], [18, 8], [19, 32]
-    ];
+    if (!mapbox._yonseiCttListenerBound && typeof mapbox.on === 'function') {
+        mapbox._yonseiCttListenerBound = true;
+        mapbox.on('sourcedata', evt => {
+            if (evt?.sourceId === detectedCttSourceId && evt?.isSourceLoaded) {
+                uiCallbacks.onTrafficTilesUpdated?.();
+            }
+        });
+    }
 
     const firstSymbolLayer = style.layers.find(l => l.type === 'symbol')?.id;
 
-    const specs = [
-        { id: 'yonsei-ctt-2-bg', stateVal: 1, color: 'rgb(0, 0, 0)', widthStops: bgWidthStops },
-        { id: 'yonsei-ctt-3-bg', stateVal: 2, color: 'rgb(0, 0, 0)', widthStops: bgWidthStops },
-        { id: 'yonsei-ctt-4-bg', stateVal: 4, color: 'rgb(0, 0, 0)', widthStops: bgWidthStops },
-        { id: 'yonsei-ctt-2', stateVal: 1, color: '#27c441', widthStops: fgWidthStops },
-        { id: 'yonsei-ctt-3', stateVal: 2, color: '#ff8d00', widthStops: fgWidthStops },
-        { id: 'yonsei-ctt-4', stateVal: 4, color: '#ff3b30', widthStops: fgWidthStops }
-    ];
+    // `line-opacity: 0.002`는 화면에서는 완전히 투명(0/255)하지만 GL 타일 컬링을 통과해 ctt 타일을 정상 적재함
+    if (!mapbox.getLayer(CTT_PROBE_LAYER_ID)) {
+        try {
+            mapbox.addLayer({
+                id: CTT_PROBE_LAYER_ID,
+                type: 'line',
+                source: detectedCttSourceId,
+                'source-layer': 'ctt',
+                minzoom: 4,
+                maxzoom: 22,
+                layout: {
+                    visibility: probeVisibility,
+                    'line-cap': 'butt'
+                },
+                paint: {
+                    'line-color': '#000000',
+                    'line-opacity': 0.002,
+                    'line-width': 0.5
+                }
+            }, firstSymbolLayer);
+        } catch (err) {
+            void err;
+        }
+    } else {
+        try {
+            mapbox.setLayoutProperty(CTT_PROBE_LAYER_ID, 'visibility', probeVisibility);
+        } catch (err) {
+            void err;
+        }
+    }
 
-    for (const spec of specs) {
-        if (!mapbox.getLayer(spec.id)) {
-            try {
-                mapbox.addLayer({
-                    id: spec.id,
-                    type: 'line',
-                    source: 'ctt',
-                    'source-layer': 'ctt',
-                    minzoom: 4,
-                    maxzoom: 22,
-                    filter: ['==', 'state', spec.stateVal],
-                    layout: {
-                        visibility,
-                        'line-cap': 'round',
-                        'line-join': 'miter'
-                    },
-                    paint: {
-                        'line-color': spec.color,
-                        'line-width': { stops: spec.widthStops },
-                        'line-offset': { stops: lineOffsetStops }
-                    }
-                }, firstSymbolLayer);
-            } catch (err) {
-                void err;
-            }
-        } else {
-            try {
-                mapbox.setLayoutProperty(spec.id, 'visibility', visibility);
-            } catch (err) {
-                void err;
+    // 커스텀 다크 스타일 등 내장 CTT/* 레이어가 없는 스타일에만 커스텀 교통선 레이어를 추가함
+    if (!hasBuiltInCttLayers) {
+        const bgWidthStops = [
+            [6, 1.4], [7, 2.4], [8, 2.8], [9, 3.8], [10, 3.8],
+            [11, 3.8], [12, 3.8], [13, 3.8], [14, 3.8], [15, 4], [16, 4], [17, 5]
+        ];
+        const fgWidthStops = [
+            [6, 1.1], [7, 1.6], [8, 2.0], [9, 2.2], [10, 2.2],
+            [11, 2.2], [12, 2.2], [13, 2.2], [14, 2.2], [15, 2.5], [16, 2.8], [17, 3.5]
+        ];
+        const lineOffsetStops = [
+            [6, 1], [7, 1.5], [8, 2], [9, 2], [10, 3], [11, 3],
+            [12, 3], [13, 3], [14, 3], [15, 4], [16, 5], [17, 8], [18, 8], [19, 32]
+        ];
+
+        const specs = [
+            { id: 'yonsei-ctt-2-bg', stateVal: 1, color: 'rgb(0, 0, 0)', widthStops: bgWidthStops },
+            { id: 'yonsei-ctt-3-bg', stateVal: 2, color: 'rgb(0, 0, 0)', widthStops: bgWidthStops },
+            { id: 'yonsei-ctt-4-bg', stateVal: 4, color: 'rgb(0, 0, 0)', widthStops: bgWidthStops },
+            { id: 'yonsei-ctt-2', stateVal: 1, color: '#27c441', widthStops: fgWidthStops },
+            { id: 'yonsei-ctt-3', stateVal: 2, color: '#ff8d00', widthStops: fgWidthStops },
+            { id: 'yonsei-ctt-4', stateVal: 4, color: '#ff3b30', widthStops: fgWidthStops }
+        ];
+
+        for (const spec of specs) {
+            if (!mapbox.getLayer(spec.id)) {
+                try {
+                    mapbox.addLayer({
+                        id: spec.id,
+                        type: 'line',
+                        source: detectedCttSourceId,
+                        'source-layer': 'ctt',
+                        minzoom: 4,
+                        maxzoom: 22,
+                        filter: ['==', 'state', spec.stateVal],
+                        layout: {
+                            visibility: trafficVisibility,
+                            'line-cap': 'round',
+                            'line-join': 'miter'
+                        },
+                        paint: {
+                            'line-color': spec.color,
+                            'line-width': { stops: spec.widthStops },
+                            'line-offset': { stops: lineOffsetStops }
+                        }
+                    }, firstSymbolLayer);
+                } catch (err) {
+                    void err;
+                }
+            } else {
+                try {
+                    mapbox.setLayoutProperty(spec.id, 'visibility', trafficVisibility);
+                } catch (err) {
+                    void err;
+                }
             }
         }
     }
+
+    return detectedCttSourceId;
 }
 
 /*
- * [역할 및 호출처]
- * - 역할: `state.trafficEnabled` 플래그에 맞춰 네이버 2D `TrafficLayer`와 WebGL 교통 레이어를 지도에 켜거나 끔
- * - 호출처: `toggleTrafficLayer()`, `mountNaverMap()`
+ * [역할 및 사용처]
+ * - 역할 : `state.trafficEnabled`에 맞춰 네이버 `TrafficLayer` 및 WebGL `ctt` 레이어를 켜고 끔
+ * - 사용처
+ *   ㄴ frontend/js/map-engine.js : `toggleTrafficLayer()`, `mountNaverMap()`
  */
 function syncTrafficLayer() {
     const naverMaps = window.naver?.maps;
@@ -533,20 +655,17 @@ function syncTrafficLayer() {
         }
     }
 
-    try {
-        const mapbox = state.map.getMapbox?.();
-        if (mapbox) {
-            syncGlTrafficLayers(mapbox, state.trafficEnabled);
-        }
-    } catch (err) {
-        void err;
+    syncGlTrafficSourceVisibility();
+    if (state.activeRoute) {
+        uiCallbacks.onTrafficTilesUpdated?.();
     }
 }
 
 /*
- * [역할 및 호출처]
- * - 역할: 툴바 `#traffic-toggle` 버튼 클릭 시 실시간 교통정보 표시 여부를 반전하고 ARIA 상태를 갱신함
- * - 호출처: `app.js:init()` (`#traffic-toggle` 클릭 리스너)
+ * [역할 및 사용처]
+ * - 역할 : 툴바 `#traffic-toggle` 클릭 시 실시간 교통정보 표시 상태를 반전하고 ARIA를 갱신함
+ * - 사용처
+ *   ㄴ frontend/js/app.js : `#traffic-toggle` 클릭 이벤트 리스너
  */
 export function toggleTrafficLayer() {
     state.trafficEnabled = !state.trafficEnabled;
@@ -562,9 +681,12 @@ export function toggleTrafficLayer() {
 }
 
 /*
- * [역할 및 데이터 흐름]
- * - 역할: 상단 경로 배너와 하단 검색 패널에 가리지 않도록 안전 여백을 계산해 `bounds`가 화면 안에 다 들어오게 카메라를 맞춤
- * - 호출처: `app.js`(`#cluster-zoom`), `fitRadius()`, `directions-eta.js:drawRouteOnMap()`
+ * [역할 및 사용처]
+ * - 역할 : 상단 경로 배너와 하단 검색 패널 여백을 고려해 `bounds` 영역이 화면에 다 들어오게 맞춤
+ * - 사용처
+ *   ㄴ frontend/js/app.js            : `#cluster-zoom` 클릭 리스너
+ *   ㄴ frontend/js/map-engine.js     : `fitRadius()`
+ *   ㄴ frontend/js/directions-eta.js : `drawRouteOnMap()`
  */
 export function fitBounds(bounds) {
     const naverMaps = window.naver?.maps;
@@ -603,9 +725,12 @@ export function fitBounds(bounds) {
 }
 
 /*
- * [역할 및 데이터 흐름]
- * - 역할: 선택된 탐색 반경(기본 `50 km` 또는 `'all'` 전국)에 맞춰 지도 줌·중심을 맞추고 반경 원을 갱신함
- * - 호출처: `mountNaverMap()`, `search-controls.js` (`initRadius`, `applySnapshotToState`, `locate`, `geocodeAndMoveOrigin`), `directions-eta.js:resetOriginAndRoute()`
+ * [역할 및 사용처]
+ * - 역할 : 선택된 탐색 반경(기본 `50 km` 또는 `'all'` 전국)에 맞춰 지도 시야와 반경 원을 맞춤
+ * - 사용처
+ *   ㄴ frontend/js/map-engine.js      : `mountNaverMap()`
+ *   ㄴ frontend/js/search-controls.js : `initRadius()`, `applySnapshotToState()`, `locate()`
+ *   ㄴ frontend/js/directions-eta.js  : `resetOriginAndRoute()`
  */
 export function fitRadius() {
     const naverMaps = window.naver?.maps;
@@ -645,9 +770,11 @@ export function fitRadius() {
 }
 
 /*
- * [역할 및 호출처]
- * - 역할: 특정 병원 좌표로 지도 카메라를 부드럽게(`morph`, 450ms) 이동·확대함
- * - 호출처: `search-controls.js` (`handleInitialHospitalDeepLink`, `updateSearch`), `directions-eta.js:loadEtaRanking()`
+ * [역할 및 사용처]
+ * - 역할 : 특정 병원 좌표로 카메라를 부드럽게(`morph`, 450ms) 이동·확대함
+ * - 사용처
+ *   ㄴ frontend/js/search-controls.js : `handleInitialHospitalDeepLink()`, `updateSearch()`
+ *   ㄴ frontend/js/directions-eta.js  : `loadEtaRanking()` 추천 병원 클릭
  */
 export function focusHospitalOnMap(hospital, targetZoom = 15) {
     const naverMaps = window.naver?.maps;
@@ -682,14 +809,11 @@ export function focusHospitalOnMap(hospital, targetZoom = 15) {
 }
 
 /*
- * [역할 및 데이터 흐름]
- * - 역할: `#map` 컨테이너에 네이버 지도 인스턴스를 생성(또는 테마 전환 시 기존 중심·경로를 보존해 재생성)하고 상호작용 이벤트를 바인딩함
- * - 흐름:
- *   1) 직전 중심·줌·활성 경로(`savedActiveRoute`) 백업 후 기존 오버레이·지도 정리
- *   2) GL 서브모듈 준비 시 WebGL 지도(다크모드면 `customStyleId` 적용) 생성, 미지원 환경은 2D 폴백 생성
- *   3) `glReady` / `init` 완료 시 `syncMapOverlays()` 및 활성 경로 복원
- *   4) `'idle'`(마커 갱신), `'rightclick'`·`'longtap'`(출발지 지정), `'dragstart'`·`'zoom_changed'`(키보드 닫기) 연결
- * - 호출처: `app.js:init()`, `search-controls.js` (`syncFrontendConfig`, `applyTheme`)
+ * [역할 및 사용처]
+ * - 역할 : `#map`에 네이버 WebGL(다크 스타일 포함) 또는 2D 지도를 생성하고 활성 경로·이벤트를 복원함
+ * - 사용처
+ *   ㄴ frontend/js/app.js             : `init()`
+ *   ㄴ frontend/js/search-controls.js : `syncFrontendConfig()`, `applyTheme()`
  */
 export function mountNaverMap(options = {}) {
     const { temporary2dFallback = false } = options;
@@ -953,6 +1077,9 @@ export function mountNaverMap(options = {}) {
     naverMaps.Event.addListener(state.map, 'idle', () => {
         state.diagnostics.idleEventCount += 1;
         uiCallbacks.onUpdateMarkers?.();
+        if (state.activeRoute) {
+            uiCallbacks.onTrafficTilesUpdated?.();
+        }
     });
 
     naverMaps.Event.addListener(state.map, 'rightclick', event => {

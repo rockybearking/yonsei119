@@ -1,23 +1,38 @@
 package com.yonsei119.util;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 위도·경도 유효성 검사, 두 좌표 사이의 지구 곡면 거리(Haversine km) 계산, 숫자 범위 보정을 수행하는 지리 수학 도구함
- * - 실행 시점: 상태 필드가 없는 순수 `static` 유틸리티 클래스로, 각 서비스에서 필요할 때 객체 생성 없이 즉시 호출됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 위경도 유효성 검사, 지구 곡면 직선거리(Haversine km) 계산, 숫자 범위 보정을
+ *          담당하는 순수 지리 수학 도구함 클래스
+ * - 실행 시점 : 상태가 없는 `static` 유틸리티로, 각 서비스에서 객체 생성 없이 즉시 호출됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 주요 메서드별 사용 흐름:
- *   ├── isInvalidWorldCoordinate() ──> NaverDirectionsService, NaverGeocodingService (잘못된 좌표로 외부 API를 부르는 실수 차단)
- *   ├── isValidKoreaCoordinate()   ──> EmergencyDataService, NaverGeocodingService ((0.0, 0.0) 등 대한민국 밖 오류 좌표 제거)
- *   ├── haversineKm()              ──> NaverDirectionsService (출발지~병원 직선거리 km 계산)
- *   └── clamp()                    ──> NaverDirectionsService (탐색 반경 1~200km 안전 범위 보정)
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [내장 구분]
- * - Java 표준 내장(`java.lang` 자동 포함): `Double.isFinite()`, `Math.toRadians()`, `Math.sin()`, `Math.cos()`, `Math.atan2()`, `Math.clamp()`
+ *    [Emergency / Naver Service]             [GeoUtils (static)]
+ *                 |                                   |
+ *                 |-- 1a. isValidKoreaCoordinate() -->|  (0.0, 0.0) 등 한반도 밖 차단
+ *                 |<-- boolean -----------------------|  유효 한국 좌표 여부 반환
+ *                 |-- 1b. haversineKm(p1, p2) ------->|  두 지점 구면 직선거리 계산
+ *                 |<-- distanceKm (double) -----------|  km 단위 실수 거리 반환
+ *                 v                                   v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 프론트엔드 대칭 함수: frontend/js/utils.js의 `distanceKm()`과 동일한 지구 반지름(6371km) 하버사인 공식을 사용함
- * - Java 호출 추적: 각 메서드명 위에서 `Ctrl + Alt + H`
+ * [3. 사용된 요소 구분 (표준 내장)]
+ * - Java 표준 내장
+ *   ㄴ final class / private 생성자 : 상속 및 불필요한 객체 생성을 막는 표준 유틸 문법
+ *   ㄴ double / boolean                          : 좌표 실수 및 판정 논리 기본형 키워드
+ *   ㄴ Double.isFinite()                         : `NaN` · 무한대(`Infinity`)가 아닌 정상 실수 확인 메서드
+ *   ㄴ Math.toRadians / sin / cos / atan2 / sqrt : 구면 삼각법 거리 계산 표준 수학 메서드
+ *   ㄴ Math.clamp()                              : 최소~최대 경계 안으로 값을 자르는 Java 21+ 표준 메서드
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ EmergencyDataService.java   : `mergeDatasetsIntoSnapshot()` 한국 좌표 검증
+ *   ㄴ NaverDirectionsService.java : `getDrivingRoute()`, `rankHospitalsByDrivingTime()`
+ *   ㄴ NaverGeocodingService.java  : `reverseGeocode()`, `parseGeocodeJson()`
+ * - 프론트엔드 대칭 함수
+ *   ㄴ frontend/js/utils.js        : `distanceKm()` (동일한 반지름 6,371km 공식 사용)
+ * - IntelliJ 추적 단축키
+ *   ㄴ 호출 계층 보기 : 메서드명 위에서 `Ctrl + Alt + H`
  */
 public final class GeoUtils {
 

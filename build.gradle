@@ -1,13 +1,23 @@
 /*
- * [역할 및 실행 시점]
- * - 역할: 모노레포 루트 폴더에서 바로 서버 실행(`bootRun`), 배포 JAR 생성(`bootJar`), 전체 테스트(`checkAll`)를 호출할 수 있게 연결하는 루트 빌드 스크립트
- * - 실행 시점: Gradle 설정(Configuration) 단계에서 `settings.gradle` 직후 평가됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 모노레포 루트에서 바로 서버 실행(`bootRun`), JAR 빌드(`bootJar`),
+ *          전체 테스트(`checkAll`)를 호출할 수 있게 위임하는 루트 빌드 스크립트
+ * - 실행 시점 : Gradle 설정(Configuration) 단계에서 `settings.gradle` 직후 평가됨
  *
- * [전체 태스크 위임 흐름]
- * - 루트 명령 실행
- *   ├── `.\gradlew.bat bootRun`  ──> `:backend:bootRun` 위임 실행 (http://localhost:8080 기동)
- *   ├── `.\gradlew.bat bootJar`  ──> `:backend:bootJar` 위임 실행 (`backend/build/libs/yonsei119.jar` 생성)
- *   └── `.\gradlew.bat checkAll` ──> `:backend:test` 위임 실행 (백엔드 통합 19건 + Playwright E2E 2건 검증)
+ * [2. 태스크 위임 흐름 (시퀀스 다이어그램)]
+ *
+ *    [Developer / CI]      [Root build.gradle]      [:backend Tasks]
+ *            |                      |                       |
+ *            |-- 1a. bootRun ------>|-- :backend:bootRun -->|  로컬 개발 서버 기동
+ *            |-- 1b. bootJar ------>|-- :backend:bootJar -->|  단일 배포 JAR 패키징
+ *            |-- 1c. checkAll ----->|-- :backend:test ----->|  통합 19건 + E2E 3건 실행
+ *            v                      v                       v
+ *
+ * [3. 사용된 Gradle 표준 내장 요소]
+ *   ㄴ allprojects      : 루트와 하위 모듈 공통 그룹·버전·저장소를 지정하는 표준 블록
+ *   ㄴ mavenCentral()   : Maven Central 공식 원격 저장소를 등록하는 표준 함수
+ *   ㄴ tasks.register() : 필요할 때만 태스크를 생성하는 지연 등록 표준 메서드
+ *   ㄴ dependsOn()      : 선행 실행할 하위 모듈 태스크를 연결하는 표준 메서드
  */
 allprojects {
     group = 'com.yonsei119'
@@ -18,21 +28,21 @@ allprojects {
     }
 }
 
-/** 루트에서 `:backend:bootRun` 내장 Tomcat 개발 서버를 바로 기동하는 단축 태스크 */
+/** 루트에서 `:backend:bootRun` 내장 Tomcat 개발 서버를 기동하는 단축 태스크 */
 tasks.register('bootRun') {
     group = 'application'
     description = 'Runs the Spring Boot backend application (:backend:bootRun).'
     dependsOn(':backend:bootRun')
 }
 
-/** 프론트엔드 정적 자산과 백엔드 코드를 하나로 묶은 실행 JAR(`yonsei119.jar`) 빌드 단축 태스크 */
+/** 프론트엔드 정적 자산과 백엔드 코드를 합친 단일 실행 JAR(`yonsei119.jar`) 생성 태스크 */
 tasks.register('bootJar') {
     group = 'build'
     description = 'Assembles an executable jar archive containing both backend and frontend (:backend:bootJar).'
     dependsOn(':backend:bootJar')
 }
 
-/** 백엔드 JUnit 5 통합 테스트와 Chromium 브라우저 E2E 테스트를 일괄 실행하는 검증 단축 태스크 */
+/** 백엔드 통합 테스트(19건)와 Playwright 브라우저 E2E 테스트(2건)를 일괄 수행하는 태스크 */
 tasks.register('checkAll') {
     group = 'verification'
     description = 'Runs all backend JUnit 5 and Playwright E2E automated verification tests (:backend:test).'

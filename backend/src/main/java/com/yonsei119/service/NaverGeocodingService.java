@@ -28,33 +28,49 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 위경도를 한국어 주소로 바꾸고(역지오코딩), 사용자가 친 검색어를 위경도 좌표로 찾아 주는(3단계 지오코딩) 주소 안내원
- * - 실행 시점: 서버 부팅 시 @Service 싱글톤 빈으로 생성되며, `/api/reverse-geocode` 또는 `/api/geocode` 호출 시 실행됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 위경도를 한국어 주소로 바꾸고(역지오코딩), 검색어를 위경도로 찾아 주는
+ *          3단계 하이브리드 주소 안내원 서비스
+ * - 실행 시점 : 서버 시작 시 `@Service` 싱글톤 빈으로 생성되며,
+ *              `/api/reverse-geocode` 또는 `/api/geocode` 호출 시 실행됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 1) 역지오코딩 (`reverseGeocode`: 좌표 -> 주소)
- *   EmergencyApiController.reverseGeocode()
- *   ──> 좌표 검증 ──> 소수점 4자리(약 11m 격자) 캐시 확인(10분 TTL)
- *   ──> 네이버 Reverse Geocoding v2 호출 ──> parseReverseGeocodeJson() ──> 요약·도로명·지번 주소 DTO 반환
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * - 2) 3단계 하이브리드 지오코딩 (`geocode`: 검색어 -> 좌표)
- *   EmergencyApiController.geocode()
- *   ──> 검색어 정제·캐시 확인
- *   ──> [1단계] 네이버 Geocoding v2 API (정확한 도로명·지번 주소 검색)
- *   ──> [2단계] 메모리 내 전국 응급실 병원명·주소 부분 일치 보충 (결과 5건 미만일 때)
- *   ──> [3단계] OpenStreetMap Nominatim 보조 검색 ('서울역', '원주시청' 등 랜드마크 지명 검색 — 초당 1회 제한 준수)
- *   ──> GeocodeResponseDto 반환
+ *       [ApiController]            [NaverGeocodingService]          [Naver / Nominatim API]
+ *              |                              |                                |
+ *              |-- 1. geocode(query, list) -->|                                |  주소 · 지명 좌표 검색 요청
+ *              |                              |-- 2. [Step 1] Naver Geocode -->|  도로명 · 지번 정확 주소 조회
+ *              |                              |<-- 3. address matches ---------|  1차 좌표 후보 수신
+ *         +----+------------------------------+--------------------------------+-------------+
+ *         | [opt : results < 5 items]                                                        |  결과 부족 시 단계별 보충
+ *         |    |                              |-- 4a. [Step 2] hospital list   |             |  전국 응급실 이름 · 주소 매칭
+ *         |    |                              |-- 4b. [Step 3] Nominatim ----->|             |  0건 시 역 · 시청 랜드마크 검색
+ *         +----+------------------------------+--------------------------------+-------------+
+ *              |<-- 5. GeocodeResponseDto ----|                                |  10분 캐싱 후 후보 목록 반환
+ *              v                              v                                v
  *
- * [내장 / 프레임워크 / 라이브러리 구분]
- * - Java 표준 내장: HttpClient, URLEncoder, ReentrantLock, Pattern, Stream
- * - Spring 프레임워크: @Service
- * - 외부 라이브러리: Jackson 3(JsonMapper, JsonNode), SLF4J(Logger), Jakarta(@PreDestroy)
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ HttpClient / HttpRequest : 외부 지오코딩 API 호출용 표준 내장 HTTP 클라이언트
+ *   ㄴ URLEncoder               : 한글 검색어 UTF-8 URL 인코딩 표준 내장 클래스
+ *   ㄴ ReentrantLock            : Nominatim 초당 1회 호출 간격을 지키는 잠금 클래스
+ *   ㄴ Pattern                  : 연속 공백 정규화용 정규식 표준 내장 클래스
+ *   ㄴ Stream / List            : 후보 주소 필터링 및 목록 조립용 표준 내장 타입
+ * - Spring 프레임워크
+ *   ㄴ @Service                : 비즈니스 서비스 빈 등록 어노테이션
+ * - 프로젝트 내부 타입
+ *   ㄴ BoundedTtlCache : 주소·좌표 변환 결과 10분(600초) LRU 캐시
+ *   ㄴ GeoUtils        : 대한민국 유효 위경도 범위 검증 유틸리티
+ * - 외부 라이브러리
+ *   ㄴ Jackson (`JsonMapper`, `JsonNode`)         : 응답 JSON 파싱 라이브러리
+ *   ㄴ SLF4J (`Logger`) / Jakarta (`@PreDestroy`) : 로그 및 클라이언트 정리
  *
- * [사용처 및 IDE 추적 가이드]
- * - 호출처: EmergencyApiController(reverseGeocode, geocode), Yonsei119BackendTests(Test 7)
- * - 프론트엔드 연결부: frontend/js/search-controls.js의 `updateOriginAddress()`, `geocodeAndMoveOrigin()`
- * - Java 호출 계층 추적: 메서드명 위에서 `Ctrl + Alt + H`
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ EmergencyApiController.java : `reverseGeocode()`, `geocode()`
+ *   ㄴ Yonsei119BackendTests.java  : Test 7 역지오코딩 · 지오코딩 JSON 파싱 검증
+ * - 프론트엔드 연결처
+ *   ㄴ frontend/js/search-controls.js : `updateOriginAddress()`, `geocodeAndMoveOrigin()`
  */
 @Service
 public class NaverGeocodingService {

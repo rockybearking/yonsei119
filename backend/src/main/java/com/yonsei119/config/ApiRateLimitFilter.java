@@ -20,27 +20,50 @@ import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 유료 네이버 클라우드 API를 대리 호출하는 길찾기·지오코딩 4개 경로에 IP별 호출 횟수 제한을 거는 번호표 기계 필터
- * - 실행 시점: SecurityHeadersFilter 다음 순서(`HIGHEST_PRECEDENCE + 20`)로 동작하며, 대상 API 4종에 GET 요청이 올 때만 토큰을 차감함
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 유료 네이버 API를 대리 호출하는 4개 경로에 IP당 분당 호출 상한을 거는 번호표 기계 필터
+ * - 실행 시점 : `SecurityHeadersFilter` 직후(`HIGHEST_PRECEDENCE + 20`)에 실행됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   HTTP 요청 진입 ──> doFilterInternal()
- *   ├── 일반 정적 파일 또는 `/api/hospitals`, `/api/health`, `/api/config` ──> 제한 없이 즉시 통과!
- *   └── 유료 대리 호출 4종(`/api/directions`, `/api/directions/rank`, `/api/geocode`, `/api/reverse-geocode`)
- *       ──> 클라이언트 IP 추출(`X-Forwarded-For` 우선) ──> IP별 TokenBucket 조회(최대 4096개, 10분 유휴 시 자동 정리)
- *           ├── 남은 토큰 >= 1 ──> 토큰 1개 차감 + `X-RateLimit-Remaining` 헤더 기록 후 컨트롤러로 통과
- *           └── 토큰 소진(0)   ──> HTTP 429 Too Many Requests + `Retry-After` 초 안내 JSON 즉시 반환
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [내장 / 프레임워크 / 프로젝트 유틸 구분]
- * - Java 표준 내장: Set, System.nanoTime(), Math, StandardCharsets
- * - Spring / Servlet: @Component, @Order, OncePerRequestFilter, MediaType, HttpServletRequest/Response
- * - 프로젝트 내부 유틸: BoundedTtlCache (메모리 누수 없이 오래 안 쓴 IP 버킷을 자동 삭제)
+ *       [Client]                  [ApiRateLimitFilter]                [TokenBucket]      [ApiController]
+ *           |                               |                               |                   |
+ *           |-- 1. GET /api/... ----------->|                               |                   |  API 요청 진입
+ *      +----+-------------------------------+-------------------------------+-------------------+---------+
+ *      | [alt : free path (/hospitals, /health, /config)]                                                 |  무제한 공개 경로
+ *      |    |                               |-- 2a. doFilter() -------------|------------------>|         |  토큰 차감 없이 즉시 통과
+ *      +----+-------------------------------+-------------------------------+-------------------+---------+
+ *      | [else : paid proxy (/directions*, /geocode*)]                                                    |  유료 네이버 대리 호출 4종
+ *      |    |                               |-- 2b. tryConsume(ip) -------->|                   |         |  IP별 분당 토큰 1개 차감 시도
+ *      |    |                               |<-- 3b. allowed / retrySec ----|                   |         |  남은 토큰 또는 대기 초 반환
+ *      |    |                               |-- 4a. [allowed] doFilter() ---|------------------>|         |  토큰 보유 시 정상 통과
+ *      |    |<-- 4b. [exhausted] 429 JSON --|                               |                   |         |  초과 시 Retry-After 반환
+ *      +----+-------------------------------+-------------------------------+-------------------+---------+
+ *           v                               v                               v                   v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 설정 연결: application.yml의 `yonsei119.rate-limit.*` -> Yonsei119Properties.RateLimit
- * - 테스트 검증처: Yonsei119BackendTests (토큰 소진 시 429 응답 및 헤더 검증)
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record           : `ConsumptionResult` 내부 결과 레코드 선언 키워드 (자동생성)
+ *   ㄴ synchronized     : 동일 IP 동시 요청 시 토큰 차감 경합을 막는 동기화 키워드
+ *   ㄴ Set / Set.of()   : 대상 경로 4개를 O(1)로 검사하는 표준 내장 불변 집합
+ *   ㄴ System.nanoTime  : 경과 시간 비례 토큰 충전을 계산하는 표준 내장 정밀 시각 메서드
+ *   ㄴ Math             : `min`, `max`, `floor`, `ceil` 수학 계산 표준 내장 클래스
+ *   ㄴ StandardCharsets : UTF-8 응답 인코딩 상수 제공 클래스
+ * - Spring 프레임워크
+ *   ㄴ @Component / @Order / @Autowired : 빈 등록 · 순서 지정 · 생성자 의존성 주입 어노테이션
+ *   ㄴ OncePerRequestFilter             : 요청당 1회 실행을 보장하는 서블릿 필터 추상 클래스
+ *   ㄴ ObjectProvider                   : 선택적 빈(`MeterRegistry`)을 안전하게 조회하는 인터페이스
+ * - 프로젝트 내부 타입
+ *   ㄴ BoundedTtlCache     : 최대 4,096개 · 10분 유휴 자동 퇴거 인메모리 LRU 캐시
+ *   ㄴ Yonsei119Properties : 분당 허용량(`rate-limit`) 설정 레코드
+ * - 외부 라이브러리
+ *   ㄴ Micrometer (`MeterRegistry`) : 429 차단 횟수 메트릭 기록 라이브러리
+ *   ㄴ Jakarta Servlet              : `HttpServletRequest`, `HttpServletResponse`, `FilterChain`
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 설정 및 검증 연결처
+ *   ㄴ backend/src/main/resources/application.yml : `yonsei119.rate-limit.*`
+ *   ㄴ Yonsei119BackendTests.java                 : Test 18 토큰 소진 시 HTTP 429 검증
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
@@ -133,7 +156,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
         return uri;
     }
 
-    /** Render 등 클라우드 프록시가 전달하는 `X-Forwarded-For`의 첫 번째 실제 클라이언트 IP를 우선 추출함 */
+    /** 클라우드 리버스 프록시의 `X-Forwarded-For` 첫 번째 실제 클라이언트 IP를 우선 추출함 */
     private static String extractClientIp(HttpServletRequest request) {
         String forwardedFor = request.getHeader("X-Forwarded-For");
         String rawIp = null;
@@ -154,7 +177,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
     private record ConsumptionResult(boolean allowed, int remaining, long retryAfterSeconds) {
     }
 
-    /** 경과 시간(나노초)에 비례해 토큰을 연속 충전하고 요청당 1개씩 차감하는 토큰 버킷 상태 객체 */
+    /** 경과 시간(ns)에 비례해 토큰을 연속 보충하고 요청마다 1개씩 차감하는 버킷 클래스 */
     private static final class TokenBucket {
         private double tokens;
         private long lastRefillNanos;

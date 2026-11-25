@@ -1,15 +1,18 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 우측 하단 통합 검색·필터 패널(`#search-panel`), 원형 지도 조작 버튼(`#map-actions`), 반경 설정 팝오버(`#radius-popover`),
- *   검색 자동완성(`#search-results`), 모바일 좌측 상단 서랍 메뉴(`#mobile-top-left-menu`) 스타일시트
+ * [1. 역할 및 적용 시점]
+ * - 역할 : 우측 하단 통합 검색·필터 패널(`#search-panel`), 원형 지도 조작 버튼,
+ *          탐색 반경 팝오버(`#radius-popover`), 모바일 좌상단 서랍 메뉴 스타일시트
  *
- * [전체 연결 흐름]
- * - `index.html` 마크업
- *   ├── `#search-panel` / `#search-toggle` ──> `js/search-controls.js:initPanels()`
- *   ├── `#map-actions` / `#radius-popover` ──> `js/search-controls.js:initRadius()`, `js/map-engine.js:toggleTrafficLayer()`
- *   ├── `#search-form` / `#search-results` ──> `js/search-controls.js:updateSearch()`, `geocodeAndMoveOrigin()`
- *   └── `#mobile-top-left-menu`            ──> `js/search-controls.js:syncMobileMenuPlacement()`, `toggleMobileMenu()`
+ * [2. 사용된 CSS3 표준 내장 기능]
+ *   ㄴ env(safe-area-inset-*) : 노치·홈바 기기에서도 버튼이 잘리지 않게 여백 확보
+ *   ㄴ clamp() / min()        : 화면 크기에 비례해 터치 타깃(>=44px)과 패널 폭 자동 조절
+ *   ㄴ Flexbox / Grid         : 필터 체크박스 행 및 검색 자동완성 목록 정렬
+ *
+ * [3. 연결된 HTML / JS 사용처]
+ *   ㄴ frontend/index.html            : `#search-panel`, `#map-actions`, `#radius-popover`
+ *   ㄴ frontend/js/search-controls.js : 패널 접기(`.is-collapsed`), 반경·모바일 메뉴 제어
+ *   ㄴ frontend/js/map-engine.js      : `#traffic-toggle` (`aria-pressed="true"`) 활성 표시
  * ============================================================================
  */
 

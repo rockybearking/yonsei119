@@ -1,19 +1,36 @@
 /*
- * [역할 및 실행 시점]
- * - 역할: Java 27 + Spring Boot 4.2.0 백엔드 컴파일, 프론트엔드 정적 자산 병합, JUnit 5·Playwright 테스트, 단일 배포 JAR 패키징을 정의하는 빌드 스크립트
- * - 실행 시점: `:backend` 모듈 태스크(`compileJava`, `test`, `bootRun`, `bootJar`) 실행 시 동작함
+ * [1. 역할 및 실행 시점]
+ * - 역할 : Java 27 + Spring Boot 4.2 컴파일, 프론트엔드 정적 자산 병합,
+ *          JUnit 5 · Playwright 테스트, 배포용 단일 `yonsei119.jar` 패키징 정의
+ * - 실행 시점 : `:backend` 모듈 관련 Gradle 명령 실행 시 동작함
  *
- * [전체 빌드 파이프라인 흐름]
- * - 빌드 시작
- *   ├── `copyFrontendToStatic` ──> `../frontend`의 HTML/CSS/JS/PWA 및 `Assets/universities/*.svg` 로고를 `build/resources/main/static/`으로 복사
- *   ├── `compileJava`          ──> JDK 27 툴체인 + UTF-8 + `-parameters` 옵션으로 자바 소스 컴파일
- *   ├── `test`                 ──> JUnit 5(`Yonsei119BackendTests` + `Yonsei119PlaywrightE2ETests`) 총 21건 자동 검증
- *   └── `bootJar`              ──> Render/Docker 배포용 단일 실행 파일 `backend/build/libs/yonsei119.jar` 생성 (`Dockerfile`과 연결)
+ * [2. 전체 빌드 파이프라인 (시퀀스 다이어그램)]
  *
- * [내장 / 플러그인 / 외부 라이브러리 구분]
- * - Gradle 기본 내장: `java` 플러그인, `JavaLanguageVersion`, `Copy`, `JavaCompile`, `Javadoc`
- * - Spring Boot 플러그인: `org.springframework.boot` (4.2.0), `io.spring.dependency-management` (1.1.7)
- * - 외부 의존성: `spring-boot-starter-webmvc`, `spring-boot-starter-actuator`, `spring-boot-starter-test`, `playwright:1.65.1`
+ *    [../frontend]        [copyFrontendToStatic]      [compileJava / test]         [bootJar]
+ *          |                         |                          |                      |
+ *          |-- 1. HTML/CSS/JS/SVG -->|                          |                      |  정적 파일 및 대학로고 수집
+ *          |                         |-- 2. merge to static/ -->|                      |  클래스패스 정적 리소스 병합
+ *          |                         |                          |-- 3. JDK 27 build -->|  검증 완료 후 yonsei119.jar 생성
+ *          v                         v                          v                      v
+ *
+ * [3. 사용된 요소 구분 (표준 내장 / 플러그인 / 외부 라이브러리)]
+ * - Gradle 표준 내장
+ *   ㄴ id 'java'             : 컴파일 · 리소스 처리 · 테스트 기본 생명주기 제공
+ *   ㄴ JavaLanguageVersion   : 호스트 환경과 무관하게 JDK 27 툴체인을 고정하는 클래스
+ *   ㄴ Copy                  : 프론트엔드 정적 파일을 빌드 폴더로 복사하는 내장 태스크 타입
+ *   ㄴ JavaCompile / Javadoc : UTF-8 인코딩 및 `-parameters` 컴파일 옵션 설정 타입
+ * - Spring Boot 플러그인
+ *   ㄴ org.springframework.boot (4.2.0)        : `bootRun`, `bootJar` 패키징 제공
+ *   ㄴ io.spring.dependency-management (1.1.7) : 호환 라이브러리 버전 자동 정렬
+ * - 외부 라이브러리 의존성
+ *   ㄴ spring-boot-starter-webmvc   : 내장 Tomcat · Spring MVC · Jackson 3 JSON
+ *   ㄴ spring-boot-starter-actuator : `/actuator/health`, `/actuator/metrics` 관측성
+ *   ㄴ spring-boot-starter-test     : JUnit 5 · Spring Boot 통합 테스트 도구
+ *   ㄴ playwright (1.65.1)          : 실제 Chromium 브라우저 E2E 자동 검증 도구
+ *
+ * [4. 실제 사용처 (연결 파일)]
+ *   ㄴ Dockerfile     : `COPY --from=builder .../yonsei119.jar /app/app.jar`에서 참조
+ *   ㄴ WebConfig.java : `classpath:/static/` 경로로 복사된 프론트엔드 파일을 서빙함
  */
 plugins {
     id 'java'
@@ -21,14 +38,12 @@ plugins {
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
-/** 호스트 PC의 기본 JAVA_HOME 버전과 무관하게 항상 Java 27 툴체인으로 컴파일·실행하도록 고정함 */
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(27)
     }
 }
 
-/** 단일 실행 JAR의 시작점(main 메서드 보유 클래스) 지정 */
 springBoot {
     mainClass = 'com.yonsei119.Yonsei119Application'
 }
@@ -41,7 +56,6 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-/** 한글 주석·문자열 깨짐 방지를 위한 UTF-8 고정 및 컨트롤러 `@RequestParam` 이름 추론용 `-parameters` 활성화 */
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.compilerArgs.add('-parameters')
@@ -51,16 +65,8 @@ tasks.withType(Javadoc).configureEach {
     options.encoding = 'UTF-8'
 }
 
-/*
- * [역할 및 데이터 흐름]
- * - 역할: 배포용 단일 JAR 안에서도 프론트엔드가 그대로 서빙되도록 `../frontend` 파일을 `classpath:/static/` 경로로 복사함
- * - 흐름:
- *   `../frontend` (HTML, CSS, JS, sw.js, manifest.webmanifest)
- *   + `../frontend/Assets` (공공데이터포털 로고 + 전국 대학교병원 SVG/PNG 워터마크 로고)
- *   ──> `backend/build/resources/main/static/`으로 병합 (발표 캡처용 대용량 루트 이미지는 제외하여 JAR 용량 경량화)
- * - 사용처: `processResources` 선행 태스크, `WebConfig.addResourceHandlers()`의 `classpath:/static/` 폴백 경로
- */
-tasks.register('copyFrontendToStatic', Copy) {
+/** 배포용 단일 JAR 안에서도 프론트엔드와 대학병원 로고가 서빙되도록 `static/`으로 동기화함 (삭제된 자산 자동 정리) */
+tasks.register('copyFrontendToStatic', Sync) {
     description = 'Copies frontend static modules (HTML, CSS, JS, PWA, university logos) into backend static resources.'
     from('../frontend') {
         exclude '**/.DS_Store', '**/Thumbs.db', 'Assets/**'
@@ -76,22 +82,18 @@ tasks.named('processResources') {
     dependsOn('copyFrontendToStatic')
 }
 
-/** `Dockerfile`의 `COPY --from=builder /workspace/backend/build/libs/yonsei119.jar` 경로와 일치하도록 산출물 파일명 고정 */
 tasks.named('bootJar') {
     archiveFileName = 'yonsei119.jar'
 }
 
-/** 실행 불가능한 일반 `*-plain.jar` 중복 생성을 비활성화함 */
 tasks.named('jar') {
     enabled = false
 }
 
-/** 로컬 `bootRun` 실행 시 프로젝트 루트(`.env` 및 `./frontend` 위치)를 작업 디렉터리로 고정함 */
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
 }
 
-/** JUnit 5 플랫폼 활성화 및 로컬 설치된 Chrome/Edge 채널 재사용(불필요한 브라우저 중복 다운로드 방지) 설정 */
 tasks.named('test') {
     useJUnitPlatform()
     environment 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1'

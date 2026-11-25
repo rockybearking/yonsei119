@@ -1,20 +1,35 @@
 # ==============================================================================
-# [역할 및 실행 시점]
-# - 역할: 백엔드 서버의 포트·스레드·캐시 주기·외부 API 주소를 한곳에서 관리하는 중앙 설정표 (식당 운영 수칙표 역할)
-# - 실행 시점: Yonsei119Application 부팅 시 스프링 부트가 자동으로 읽어들여 내장 설정과 Yonsei119Properties 빈에 주입함
+# [1. 역할 및 실행 시점]
+# - 역할 : 서버 포트·가상 스레드·60초 캐시 주기·외부 API 주소를 관리하는 중앙 설정표
+# - 실행 시점 : 서버 시작 시 Spring Boot가 자동으로 읽어 `Yonsei119Properties`에 주입함
 #
-# [전체 호출 및 데이터 흐름]
-# - 흐름:
-#   OS 환경변수 / .env 파일 ──> application.yml (${환경변수:기본값} 치환)
-#   ├── spring.* / server.* / management.* ──> Spring Boot 내장 웹 서버(Tomcat)·가상 스레드·Actuator 자동 구성
-#   └── yonsei119.* ──> Yonsei119Properties 레코드에 1:1 자동 바인딩
-#       ├── nemc.*  ──> NmcOpenApiClient, EmergencyDataService (공공데이터 7종 수집 및 60초 실시간 캐시)
-#       ├── naver.* ──> EmergencyApiController(/api/config), NaverDirectionsService, NaverGeocodingService
-#       └── cors / rate-limit ──> WebConfig, ApiRateLimitFilter
+# [2. 전체 설정 주입 흐름 (시퀀스 다이어그램)]
 #
-# [사용처 및 IDE 추적 가이드]
-# - 바인딩 대상: backend/src/main/java/com/yonsei119/config/Yonsei119Properties.java
-# - IntelliJ 추적 팁: 설정 키 위에서 `Ctrl + 좌클릭` 또는 `Ctrl + Shift + F`로 환경변수명 검색
+#    [.env / OS Env]         [application.yml]        [Yonsei119Properties]      [Service / Filter]
+#           |                        |                          |                         |
+#           |-- 1. ${ENV:default} -->|                          |                         |  환경변수 우선 치환
+#           |                        |-- 2. prefix=yonsei119 -->|                         |  불변 설정 레코드 바인딩
+#           |                        |                          |-- 3. inject settings -->|  60초 캐시 · 포트 · 제한 적용
+#           v                        v                          v                         v
+#
+# [3. 주요 설정 그룹 구분]
+# - Spring Boot 표준 내장 설정
+#   ㄴ spring.threads.virtual.enabled : Java 27 가상 스레드 활성화
+#   ㄴ spring.config.import           : 로컬 `.env` 파일 선택적(`optional:`) 자동 로드
+#   ㄴ server.port / compression      : 포트 바인딩 및 1KB 이상 GZIP 압축 전송
+#   ㄴ management.endpoints           : Actuator 헬스·메트릭 노출
+# - 프로젝트 커스텀 설정 (`yonsei119.*`)
+#   ㄴ nemc.*            : NEMC 7대 OpenAPI 주소 · 서비스키 · 60초 실시간 캐시 주기
+#   ㄴ naver.*           : 네이버 지도 공개 ID · 다크 스타일 · 서버 전용 시크릿 키
+#   ㄴ default-origin    : 기본 출발 좌표 (서울시청)
+#   ㄴ cors / rate-limit : 교차 출처 허용 패턴 · IP당 분당 60회 호출 제한
+#
+# [4. 실제 사용처 (연결 파일) 및 IDE 추적 가이드]
+# - 연결 파일
+#   ㄴ Yonsei119Properties.java : 모든 `yonsei119.*` 항목 1:1 바인딩 대상 레코드
+#   ㄴ render.yaml              : 클라우드 환경변수 주입처
+# - IntelliJ 추적 단축키
+#   ㄴ 바인딩 필드로 이동 : YAML 키 위에서 `Ctrl + 좌클릭` (또는 `Ctrl + B`)
 # ==============================================================================
 
 spring:
@@ -22,37 +37,31 @@ spring:
     name: yonsei119
   threads:
     virtual:
-      # [Spring Boot 내장 키] Java 21+/27 가상 스레드를 켜서 동시 HTTP/OpenAPI 대기 중 스레드 고갈을 방지함
       enabled: true
   lifecycle:
     timeout-per-shutdown-phase: 15s
   config:
     import:
-      # [외부 .env 자동 로드] optional: 덕분에 배포 서버에 .env 파일이 없어도 에러 없이 환경변수로 동작함
       - optional:file:.env[.properties]
       - optional:file:../.env[.properties]
       - optional:classpath:application-local.yml
   web:
     resources:
       cache:
-        # [정적 리소스 캐시] WebConfig에서 Weak ETag(304 재검증)를 직접 제어하므로 기본 고정 캐시는 0으로 둠
         period: 0
 
 server:
-  # [포트 바인딩] Render 클라우드의 PORT 환경변수가 있으면 우선 사용하고, 로컬에서는 8080 포트로 실행됨
   port: ${PORT:8080}
   http2:
     enabled: true
   shutdown: graceful
   compression:
-    # [GZIP 압축] 1KB 이상인 JSON·HTML·CSS·JS 응답을 압축해 병원 목록 초기 로딩 속도를 단축함
     enabled: true
     mime-types: application/json,application/javascript,text/javascript,text/css,text/html,text/xml,application/manifest+json
     min-response-size: 1024
 
 yonsei119:
   nemc:
-    # [국립중앙의료원(NEMC) 응급의료 OpenAPI 설정] -> Yonsei119Properties.Nemc 레코드에 바인딩됨
     base-url: ${NEMC_API_BASE_URL:https://apis.data.go.kr/B552657/ErmctInfoInqireService}
     service-key: ${NEMC_API_SERVICE_KEY:}
     cache-ttl-seconds: ${NEMC_CACHE_TTL_SECONDS:60}
@@ -62,8 +71,7 @@ yonsei119:
     refresh-interval-ms: ${NEMC_REFRESH_INTERVAL_MS:60000}
 
   naver:
-    # [네이버 클라우드 지도·길찾기·지오코딩 설정] -> Yonsei119Properties.Naver 레코드에 바인딩됨
-    # 주의: client-secret은 서버 내부 헤더에만 쓰이며 FrontendConfigDto(/api/config)로는 절대 내려가지 않음
+    # client-secret은 서버 내부 전용이며 /api/config 응답에는 절대 포함되지 않음
     client-id: ${NAVER_MAP_CLIENT_ID:xfbxloc8km}
     dark-style-id: ${NAVER_MAP_DARK_STYLE_ID:4b12b380-f70c-4d42-85df-ecf7961ff041}
     client-secret: ${NAVER_MAP_CLIENT_SECRET:}
@@ -71,7 +79,6 @@ yonsei119:
     directions15-url: ${NAVER_DIRECTIONS15_URL:https://maps.apigw.ntruss.com/map-direction-15/v1/driving}
 
   default-origin:
-    # [기본 출발 좌표] GPS 권한 거부·초기화 시 사용하는 기본 기준점 (서울시청)
     lat: 37.5666805
     lng: 126.9784147
     label: 서울시청
@@ -80,7 +87,6 @@ yonsei119:
     allowed-origin-patterns: ${YONSEI119_CORS_ORIGINS:*}
 
   rate-limit:
-    # [유료 API 보호] IP당 분당 최대 60회 토큰 버킷 제한 (ApiRateLimitFilter에서 사용)
     enabled: ${YONSEI119_RATE_LIMIT_ENABLED:true}
     capacity: ${YONSEI119_RATE_LIMIT_CAPACITY:60}
     refill-per-minute: ${YONSEI119_RATE_LIMIT_REFILL_PER_MINUTE:60}

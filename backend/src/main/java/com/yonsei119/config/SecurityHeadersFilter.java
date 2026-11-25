@@ -15,26 +15,44 @@ import java.io.IOException;
 import java.util.Locale;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 모든 HTTP 응답이 브라우저로 나가기 전에 6대 웹 보안 헤더(CSP, nosniff 등)를 찍어 주는 보안 검색대 문지기 필터
- * - 실행 시점: 서버 부팅 시 서블릿 필터 체인 최상단(`HIGHEST_PRECEDENCE + 10`)에 등록되며, 모든 요청마다 딱 1번씩 자동 실행됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 모든 HTTP 응답에 6대 웹 보안 헤더(CSP, nosniff, SAMEORIGIN 등)를 부착하는 보안 검색대 필터
+ * - 실행 시점 : 서블릿 필터 체인 최상단(`HIGHEST_PRECEDENCE + 10`)에서 매 요청마다 1회 자동 실행됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   모든 HTTP 요청(HTML, CSS, JS, SVG, `/api/**`) 진입
- *   ──> doFilterInternal()
- *       ├── 1) 보안 헤더 6종 부착 (nosniff, SAMEORIGIN, Referrer-Policy, Permissions-Policy, COOP, CSP)
- *       ├── 2) `.webmanifest` 요청이면 Content-Type이 덮어써지지 않도록 응답 래퍼(HttpServletResponseWrapper) 적용
- *       └── 3) `filterChain.doFilter()`로 다음 필터(ApiRateLimitFilter) 및 컨트롤러/정적 핸들러에 전달
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [내장 / 프레임워크 / 라이브러리 구분]
- * - Java 표준 내장: String, Locale, IOException
- * - Jakarta Servlet 표준: HttpServletRequest, HttpServletResponse, HttpServletResponseWrapper, FilterChain
- * - Spring / JSpecify: @Component, @Order, OncePerRequestFilter, @NonNull
+ *       [Browser]           [SecurityHeadersFilter]      [ApiRateLimitFilter]      [Controller]
+ *           |                          |                           |                     |
+ *           |-- 1. HTTP Request ------>|                           |                     |  모든 요청 최상단 진입
+ *           |                          |-- 2. set 6 headers        |                     |  CSP · nosniff · SAMEORIGIN
+ *      +----+--------------------------+---------------------------+---------------------+-------+
+ *      | [opt : URI endsWith .webmanifest]                                                       |  PWA 매니페스트 요청 시
+ *      |    |                          |-- wrap Content-Type       |                     |       |  application/manifest+json 고정
+ *      +----+--------------------------+---------------------------+---------------------+-------+
+ *           |                          |-- 3. doFilter() --------->|-- 4. doFilter() --->|  다음 필터 및 컨트롤러 전달
+ *           |<-- 5. Secured Response --|                           |                     |  보안 헤더 포함 응답 수신
+ *           v                          v                           v                     v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 연동 파일: frontend/js/theme-init.js(인라인 스크립트 없이 외부 파일로 분리해 CSP 준수), frontend/js/map-engine.js(네이버 지도 도메인 허용)
- * - 테스트 검증처: Yonsei119BackendTests.testRootStaticResourcesAndSecurityHeaders()
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ String        : 헤더 이름 · CSP 정책 문자열을 다루는 표준 내장 클래스
+ *   ㄴ String.join() : 여러 CSP 지시어를 `"; "`로 이어 붙이는 표준 내장 정적 메서드
+ *   ㄴ Locale.ROOT   : 언어 환경에 흔들리지 않는 소문자 변환 기준 상수
+ *   ㄴ IOException   : 네트워크 입출력 예외를 다루는 표준 내장 클래스
+ * - Spring 프레임워크
+ *   ㄴ @Component           : 필터를 스프링 빈으로 자동 등록하는 어노테이션
+ *   ㄴ @Order               : 필터 실행 우선순위를 지정하는 어노테이션
+ *   ㄴ OncePerRequestFilter : 포워딩 시 중복 실행 없이 요청당 1회만 실행을 보장하는 추상 클래스
+ * - 외부 라이브러리 (표준 스펙)
+ *   ㄴ Jakarta Servlet     : `HttpServletRequest`, `HttpServletResponse`, `FilterChain`
+ *   ㄴ JSpecify (@NonNull) : 매개변수 null 불가 계약을 명시하는 어노테이션
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 연동되는 프론트엔드 / 테스트 파일
+ *   ㄴ frontend/sw.js                   : `X-Frame-Options: SAMEORIGIN`으로 정상 백엔드 응답 식별
+ *   ㄴ frontend/js/map-engine.js        : 네이버 지도 · 실시간 교통(`*.pstatic.net`) 도메인 허용
+ *   ㄴ Yonsei119BackendTests.java       : Test 13 · Test 18 보안 헤더 및 HTTPS CSP 검증
+ *   ㄴ Yonsei119PlaywrightE2ETests.java : 브라우저 `securitypolicyviolation` 0건 검증
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
@@ -50,7 +68,6 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        // [웹 보안 헤더 6종] XSS·클릭재킹·MIME 추측 실행·불필요한 카메라/마이크 권한 접근을 브라우저 단에서 차단함
         response.setHeader("X-Content-Type-Options", "nosniff");
         response.setHeader("X-Frame-Options", "SAMEORIGIN");
         response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -65,7 +82,6 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         boolean isWebManifest = uri != null && uri.toLowerCase(Locale.ROOT).endsWith(".webmanifest");
         HttpServletResponse targetResponse = response;
 
-        // `.webmanifest` 파일 서빙 시 하위 핸들러가 Content-Type을 일반 텍스트로 덮어쓰지 못하도록 보호함
         if (isWebManifest) {
             response.setContentType(WEB_MANIFEST_CONTENT_TYPE);
             targetResponse = new HttpServletResponseWrapper(response) {
@@ -88,7 +104,7 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, targetResponse);
     }
 
-    /** Render 등 리버스 프록시 뒤의 HTTPS 요청(`X-Forwarded-Proto: https`)과 직접 TLS 요청을 모두 판별함 */
+    /** Render 프록시(`X-Forwarded-Proto: https`) 및 직접 TLS 요청 여부를 판별함 */
     private static boolean isHttpsRequest(HttpServletRequest request) {
         if (request.isSecure()) {
             return true;
@@ -97,7 +113,7 @@ public class SecurityHeadersFilter extends OncePerRequestFilter {
         return forwardedProto != null && "https".equalsIgnoreCase(forwardedProto.trim());
     }
 
-    /** 운영 HTTPS 환경과 로컬 HTTP 개발 환경에서 네이버 지도 WebGL SDK·나눔스퀘어네오 웹폰트만 최소 권한으로 허용하는 CSP 문자열을 조립함 */
+    /** 네이버 지도 SDK · 실시간 교통 타일(`*.pstatic.net`) · 나눔웹폰트만 최소 권한으로 허용함 */
     private static String buildCsp(boolean allowHttpNaverSubresources) {
         String scriptHttpNaver = allowHttpNaverSubresources
                 ? " http://oapi.map.naver.com http://*.map.naver.com http://*.map.naver.net http://*.pstatic.net"

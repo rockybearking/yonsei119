@@ -1,14 +1,17 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 네이버 지도 위에 올라가는 병원·클러스터 카드(`.hospital-card`), 병상 여유 신호등 점(`.bed-traffic-dot`),
- *   내 위치 파동 마커(`.location-marker`), 다중 경유 병원 배지(`.waypoint-marker`) 스타일시트
+ * [1. 역할 및 적용 시점]
+ * - 역할 : 네이버 지도 위에 뜨는 병원·클러스터 카드(`.hospital-card`), 병상 신호등 점,
+ *          내 위치 파동 마커(`.location-marker`), 경유지 배지(`.waypoint-marker`) 스타일시트
  *
- * [전체 연결 흐름]
- * - 동적 오버레이 생성처:
- *   ├── `.hospital-card` / `.bed-traffic-dot` ──> `js/markers-cluster.js:updateMarkers()` (`CARD_WIDTH=174`, `CARD_HEIGHT=62`)
- *   ├── `.location-marker`                    ──> `js/map-engine.js:updateLocationMarker()`
- *   └── `.waypoint-marker`                    ──> `js/directions-eta.js:drawRouteOnMap()`
+ * [2. 사용된 CSS3 표준 내장 기능]
+ *   ㄴ contain: layout style : 수백 개 병원 카드 렌더링 시 레이아웃 재계산 범위 격리
+ *   ㄴ ::after 의사 요소     : 카드 하단 말풍선 꼭짓점 및 내 위치 동심원 파동 표현
+ *
+ * [3. 연결된 JS 사용처]
+ *   ㄴ frontend/js/markers-cluster.js : `.hospital-card`, `.bed-traffic-dot` 동적 생성
+ *   ㄴ frontend/js/map-engine.js      : `.location-marker` 출발지 점 오버레이 생성
+ *   ㄴ frontend/js/directions-eta.js  : `.waypoint-marker` 경유 병원 배지 생성
  * ============================================================================
  */
 

@@ -1,22 +1,39 @@
 /*
  * ============================================================================
- * [역할 및 실행 시점]
- * - 역할: 지도 화면 안의 병원들을 반경·종별 필터로 추린 뒤, 겹치는 카드를 O(N) 2차원 공간 격자로 묶고
- *   기존 카드 DOM을 키 비교로 재사용(`state.markerMap`)하는 지도 카드 배치가
- * - 실행 시점: 초기 병원 스냅샷 도착, 지도 이동 종료(`idle`), 반경·종별 체크박스 변경, 창 리사이즈 시 `updateMarkers()`가 호출됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 현재 지도 화면과 반경(기본 `50 km`)·종별 필터에 맞는 병원을 추려,
+ *          겹치는 카드는 O(N) 격자 클러스터로 묶고 기존 DOM을 재사용하는 마커 배치가
+ * - 실행 시점 : 병원 스냅샷 수신, 지도 이동(`idle`), 필터·반경 변경, 리사이즈 시 실행됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   `updateMarkers()`
- *   ├── 1) 4종 체크박스·현재 화면(`viewport`)·반경(기본 `50 km`) 필터링 ──> 종별 우선순위·거리순 정렬
- *   ├── 2) `coordToScreenPoint()` 픽셀 변환 ──> `groupCards()` 인접 3×3 격자 충돌 검사로 클러스터 병합
- *   ├── 3) `state.markerMap` 키 비교 ──> 화면 밖 카드만 제거, 기존 카드는 텍스트·좌표만 갱신(DOM 재사용)
- *   └── 4) 카드 클릭 ──> 단일 병원은 `onOpenHospital()`, 다중 병원은 `openCluster()` 모달 표시
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [사용처 및 IDE 추적 가이드]
- * - 호출처: `app.js`, `map-engine.js:mountNaverMap()`, `search-controls.js` (`initRadius`, `syncFrontendConfig`, `applySnapshotToState`, `locate`, `setCustomOrigin`, `updateSearch`)
- * - 연결 HTML/CSS: `index.html` (`#map-count`, `#cluster-dialog`), `css/map-overlays.css`, `css/dialogs-toast.css`
- * - IntelliJ 추적 팁: 함수명 위에서 `Ctrl + Alt + H` 또는 `Ctrl + Shift + F`로 `updateMarkers` 검색
+ *    [Map Idle / Filter]      [markers-cluster.js]              [map-engine.js]      [state.markerMap]
+ *             |                         |                              |                     |
+ *             |-- 1. updateMarkers() -->|                              |                     |  반경(50km) · 종별 필터링
+ *             |                         |-- 2. coordToScreenPoint() -->|                     |  위경도 -> 화면 픽셀 투영
+ *             |                         |<-- 3. { x, y } offset -------|                     |  픽셀 좌표 반환
+ *             |                         |-- 4. groupCards() (3x3)      |                     |  겹치는 인접 카드 클러스터링
+ *             |                         |-- 5. diff & reuse DOM -------|-------------------->|  기존 카드 재사용 · 외부 제거
+ *             v                         v                              v                     v
+ *
+ * [3. 사용된 요소 구분 (표준 내장 / 외부 SDK / 프로젝트 내부)]
+ * - JS / 브라우저 표준 내장
+ *   ㄴ Map / Set            : 2차원 격자 버킷 및 활성 오버레이 키 비교용 표준 컬렉션
+ *   ㄴ Array.prototype.sort : 종별 우선순위 및 출발지 거리순 정렬 표준 메서드
+ *   ㄴ HTMLDialogElement    : 겹친 병원 목록 모달(`#cluster-dialog.showModal()`) 표준 API
+ * - 외부 SDK / 라이브러리
+ *   ㄴ naver.maps.LatLngBounds : 현재 화면 영역(`getBounds()`) 포함 여부 검사
+ * - 프로젝트 내부 모듈
+ *   ㄴ constants.js / state.js / utils.js / map-engine.js
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 프론트엔드 호출처
+ *   ㄴ frontend/js/app.js             : 종별 체크박스 변경 및 창 리사이즈 시 호출
+ *   ㄴ frontend/js/map-engine.js      : `idle` 이벤트 및 초기 오버레이 동기화 시 호출
+ *   ㄴ frontend/js/search-controls.js : 스냅샷 수신 · 반경 변경 · 출발지 이동 시 호출
+ * - 연결 HTML / CSS
+ *   ㄴ frontend/index.html           : `#map-count`, `#cluster-dialog`, `#cluster-list`
+ *   ㄴ frontend/css/map-overlays.css : `.hospital-card`, `.bed-traffic-dot`
  * ============================================================================
  */
 

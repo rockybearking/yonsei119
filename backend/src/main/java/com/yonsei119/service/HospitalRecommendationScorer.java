@@ -13,29 +13,46 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 병원의 실시간 가용 병상·응급실 차단 공지·중증질환 수용 여부를 종합 심사해 '응급실 핑퐁(재이송)' 위험을 줄이는 추천 심사관
- * - 실행 시점: 서버 부팅 시 @Component 싱글톤 빈으로 생성되며, `/api/directions/rank` 추천 순위 산출 시 호출됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 병원의 실시간 가용 병상 · 응급실 차단 공지 · 중증질환 수용 가능 여부를
+ *          종합 평가해 '응급실 핑퐁(재이송)' 위험을 줄이는 추천 심사관 컴포넌트
+ * - 실행 시점 : 서버 시작 시 `@Component` 싱글톤 빈으로 생성되며,
+ *              `/api/directions/rank` 추천 순위 산출 시 호출됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   NaverDirectionsService.rankHospitalsByDrivingTime()
- *   ├── 1단계(증상 필터): matchesSymptomPreset()
- *   │   └── 활성 차단 공지(isMessageCurrentlyActive && isNoticeBlocking) 확인 ──> 외상·중증질환·병상 수용 가능 여부 판정
- *   └── 2단계(추천 점수): evaluate(hospital, durationMinutes, symptomPreset)
- *       ├── parseBedCount() / classifyBedAvailabilityStatus() [미보고·초과수용(음수)·만실(0)·혼잡(1~2)·여유(3+)]
- *       ├── hasActiveBlockingNotice() [단순 안내·가능·제한없음 공지와 실제 진료불가·중단 공지를 정밀 구분!]
- *       └── 실도로 시간(분) + 페널티/보너스 가중치 합산 ──> Evaluation 레코드 반환 (점수가 낮을수록 우선 추천)
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [내장 / 프레임워크 / 자동생성 구분]
- * - Java 표준 내장: Instant, LocalDateTime, ZoneId, DateTimeFormatter, Pattern, Map, List, Integer
- * - Spring 프레임워크: @Component
- * - Java record 자동 생성: 내부 SymptomRule, Evaluation 레코드의 생성자 및 Getter 자동 생성
+ *    [NaverDirectionsService]      [HospitalRecommendationScorer]
+ *                |                                |
+ *                |-- 1. matchesSymptomPreset() -->|  증상별 수용 가능 필터링
+ *                |                                |-- 2. isNoticeBlocking()  '제한 없음' 소거 후 차단 판별
+ *                |<-- 3. boolean (eligible) ------|  수용 불가 병원 사전 제외
+ *                |-- 4. evaluate(hosp, etaMin) -->|  주행시간 + 병상여유 종합 심사
+ *                |<-- 5. Evaluation(score) -------|  점수(낮을수록 우수) · 사유 반환
+ *                v                                v
  *
- * [사용처 및 IDE 추적 가이드]
- * - 주요 호출처: NaverDirectionsService(rankHospitalsByDrivingTime, candidatePreScore), Yonsei119BackendTests(Test 12)
- * - 프론트엔드 대칭 로직: frontend/js/utils.js의 `isNoticeBlocking()`, `getBedTrafficInfo()`와 동일한 도메인 규칙 공유
- * - Java 호출 계층 추적: 메서드명 위에서 `Ctrl + Alt + H`
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record            : 내부 `SymptomRule`, `Evaluation` 레코드 선언 키워드 (자동생성)
+ *   ㄴ Instant / ZoneId  : 현재 한국 시각(KST) 기준 유효 공지 기간 비교용 시간 클래스
+ *   ㄴ LocalDateTime     : 14자리 공지 시작·종료 시각(`yyyyMMddHHmmss`) 파싱 클래스
+ *   ㄴ DateTimeFormatter : 날짜 문자열 포맷 변환기 표준 내장 클래스
+ *   ㄴ Pattern           : `'제한 없음'` 소거 및 차단 키워드 탐지 정규식 클래스
+ *   ㄴ Map / List        : 증상별 평가 규칙 사전 및 공지 목록 표준 내장 컬렉션
+ *   ㄴ Integer           : 음수(초과수용) · 0(만실) · 양수 병상 파싱 래퍼 클래스
+ * - Spring 프레임워크
+ *   ㄴ @Component         : 스프링 빈 자동 등록 어노테이션
+ * - 프로젝트 내부 타입
+ *   ㄴ HospitalDto        : 평가 대상 병원의 병상·공지·중증질환 데이터를 담은 record
+ *
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ NaverDirectionsService.java : `rankHospitalsByDrivingTime()`, `candidatePreScore()`
+ *   ㄴ Yonsei119BackendTests.java  : Test 12 실시간 공지 오탐 방지 · 수용최적 순위 검증
+ * - 프론트엔드 대칭 로직 연결처
+ *   ㄴ frontend/js/utils.js          : `isNoticeBlocking()`, `getBedTrafficInfo()`
+ *   ㄴ frontend/js/hospital-sheet.js : `renderMessages()`, `renderSevere()`
+ * - IntelliJ 추적 단축키
+ *   ㄴ 호출 계층 보기 : `evaluate` 또는 `isNoticeBlocking` 위에서 `Ctrl + Alt + H`
  */
 @Component
 public class HospitalRecommendationScorer {
@@ -152,9 +169,9 @@ public class HospitalRecommendationScorer {
      *   · 따라서 `symblkmsg`(공지 본문)가 존재할 때는 본문에서 '제한 없음'을 먼저 제외한 뒤 실제 차단 키워드(불가·부재·중단·제한·점검·포화 등)를
      *     검사하여, 진료 가능한 병원이 억울하게 감점되거나 '불가능'으로 뒤집히는 오탐 버그를 방지함.
      * - 흐름:
-     *   messageItem 확인 ──> symblkmsg 본문 존재 시 '제한 없음' 제거 후 BLOCKING_KEYWORD_PATTERN 매칭
-     *   ├── 차단 키워드 발견 ──> true (실제 진료·수용 제한 공지)
-     *   └── 단순 가능·문의 안내 ──> false (비차단 안내 공지)
+     *   messageItem 확인 -> symblkmsg 본문 존재 시 '제한 없음' 제거 후 BLOCKING_KEYWORD_PATTERN 매칭
+     *   ㄴ 차단 키워드 발견 -> true (실제 진료·수용 제한 공지)
+     *   ㄴ 단순 가능·문의 안내 -> false (비차단 안내 공지)
      * - 사용처: hasActiveBlockingNotice(), matchesSymptomPreset(), Yonsei119BackendTests
      */
     public boolean isNoticeBlocking(Map<String, String> messageItem) {
@@ -277,10 +294,10 @@ public class HospitalRecommendationScorer {
      * [역할 및 점수 공식]
      * - 역할: 실도로 소요 시간(분)에 병상 포화도·차단 공지·권역센터 가중치를 더해 추천 점수를 계산함 (낮을수록 상위 추천)
      * - 가중치 규칙:
-     *   ├── 초과수용(음수): +(25.0 + min(20.0, 초과병상수 * 2.5))분 페널티
-     *   ├── 만실(0석): +18.0분 페널티 | 미보고: +6.0분 페널티 | 혼잡(1~2석): +3.0분 페널티
-     *   ├── 여유(3석+): -min(2.5, 병상수 * 0.25)분 보너스
-     *   └── 활성 차단 공지: +14.0분 페널티 | 권역응급의료센터: -1.0분 보너스
+     *   ㄴ 초과수용(음수): +(25.0 + min(20.0, 초과병상수 * 2.5))분 페널티
+     *   ㄴ 만실(0석): +18.0분 페널티 | 미보고: +6.0분 페널티 | 혼잡(1~2석): +3.0분 페널티
+     *   ㄴ 여유(3석+): -min(2.5, 병상수 * 0.25)분 보너스
+     *   ㄴ 활성 차단 공지: +14.0분 페널티 | 권역응급의료센터: -1.0분 보너스
      * - 사용처: NaverDirectionsService(rankHospitalsByDrivingTime, candidatePreScore)
      */
     public Evaluation evaluate(HospitalDto hospital, int durationMinutes, String symptomPreset) {

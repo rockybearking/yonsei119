@@ -1,37 +1,33 @@
 package com.yonsei119.dto;
 
 /*
- * [역할 및 실행 시점]
- * - 역할: 위도·경도 좌표를 한국어 요약·도로명·지번 주소로 변환한 결과를 담아 전달하는 역지오코딩 응답 그릇 DTO
- * - 실행 시점: `GET /api/reverse-geocode?lat=...&lng=...` 요청 시 `NaverGeocodingService.reverseGeocode()`에서 생성되어 10분간 캐싱됨
+ * [1. 역할 및 실행 시점]
+ * - 역할 : 위경도 좌표를 한국어 요약·도로명·지번 주소로 바꾼 결과를 담는 역지오코딩 그릇 (DTO)
+ * - 실행 시점 : `GET /api/reverse-geocode` 요청 시 생성되어 10분간 캐싱됨
  *
- * [전체 호출 및 데이터 흐름]
- * - 흐름:
- *   NaverGeocodingService.reverseGeocode() ──> parseReverseGeocodeJson() ──> new ReverseGeocodeResponseDto(...)
- *   ──> EmergencyApiController.reverseGeocode() ──> Jackson JSON 직렬화
- *   ──> frontend/js/search-controls.js의 `updateOriginAddress()` 수신
- *   ──> `state.originAddress` 갱신 후 화면 하단 출발 기준 표시줄(`#origin-address-text`)에 주소 표시
+ * [2. 전체 호출 및 데이터 흐름 (시퀀스 다이어그램)]
  *
- * [자바 문법 및 자동 생성 요소]
- * - Java 내장 `record`: 8개 불변 필드와 생성자, `.code()`, `.shortAddress()`, `.fullAddress()` 등 자동 Getter 생성
+ *    [search-controls.js]              [ApiController]          [GeocodingService]         [ReverseGeocodeDto]
+ *              |                              |                          |                          |
+ *              |-- 1. GET /reverse-geocode -->|-- 2. reverseGeocode() -->|                          |  좌표 -> 한국어 주소 요청
+ *              |                              |                          |-- 3. new ReverseDto() -->|  요약 · 도로명 · 지번 포장
+ *              |<-- 4. 200 JSON --------------|<-- cached 10m -----------|<-- dto ------------------|  하단 출발 기준 주소 갱신
+ *              v                              v                          v                          v
  *
- * [프론트엔드 연결 및 IDE 추적 가이드]
- * - 프론트엔드 사용처: `frontend/js/search-controls.js` (`updateOriginAddress()`)
- * - 전체 검색(`Ctrl + Shift + F`): `/api/reverse-geocode` 또는 `shortAddress`
+ * [3. 사용된 요소 구분 (표준 내장 / 프레임워크 / 외부 라이브러리)]
+ * - Java 표준 내장
+ *   ㄴ record       : 8개 불변 필드 · 생성자 · `.shortAddress()` 등 Getter 자동생성 키워드
+ *   ㄴ String       : 상태 메시지 및 한국어 주소 문자열을 담는 표준 내장 클래스
+ *   ㄴ int / double : 응답 코드 및 위경도 실수를 담는 기본형 키워드
+ * - 외부 라이브러리 (자동 동작)
+ *   ㄴ Jackson     : 응답 객체를 JSON 문자열로 자동 직렬화
  *
- * [실행 방법 및 JSON 예시]
- * - 호출 예시: `curl "http://localhost:8080/api/reverse-geocode?lat=37.3190&lng=127.9012"`
- * - JSON 출력 예시:
- *   {
- *     "code": 0,
- *     "message": "ok",
- *     "lat": 37.319,
- *     "lng": 127.9012,
- *     "shortAddress": "강원 원주시 흥업면",
- *     "fullAddress": "강원특별자치도 원주시 연세대길 1 연세대학교 미래캠퍼스",
- *     "roadAddress": "강원특별자치도 원주시 연세대길 1 연세대학교 미래캠퍼스",
- *     "jibunAddress": ""
- *   }
+ * [4. 실제 사용처 (호출 위치) 및 IDE 추적 가이드]
+ * - 백엔드 사용처
+ *   ㄴ NaverGeocodingService.java  : `reverseGeocode()`, `parseReverseGeocodeJson()`
+ *   ㄴ EmergencyApiController.java : `reverseGeocode()`
+ * - 프론트엔드 연결처
+ *   ㄴ frontend/js/search-controls.js : `updateOriginAddress()`
  */
 public record ReverseGeocodeResponseDto(
         int code,
