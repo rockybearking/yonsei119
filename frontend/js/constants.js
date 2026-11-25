@@ -1,5 +1,37 @@
+/*
+ * ============================================================================
+ * [역할 및 실행 시점]
+ * - 역할: 프론트엔드 전체 모듈이 함께 참조하는 공통 기준표·사전 보관함 (식당의 표준 레시피·메뉴 코드표 역할)
+ * - 실행 시점: `index.html`의 `<link rel="modulepreload">`로 선행 로드된 뒤, 각 ES 모듈이 `import`할 때 메모리에 1회 상주함
+ *
+ * [전체 호출 및 데이터 흐름]
+ * - 흐름:
+ *   `constants.js` 상수·사전 정의
+ *   ├── 카드·화면·반경·주기 상수 ──> `state.js`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`, `search-controls.js`
+ *   ├── 병상·기준 코드 사전(`HV_LABELS`, `HVS_LABELS`, `API_FIELD_LABELS`) ──> `utils.js:fieldLabel()`, `hospital-sheet.js:renderRawBeds()`
+ *   ├── 28대 중증질환·공지 차단 매핑(`SEVERE_DISEASE_GROUPS`, `SPECIFIC_BLOCK_TARGETS`) ──> `utils.js`, `hospital-sheet.js:renderSevere()`
+ *   └── E-Gen 현황판 스키마(`EMERGENCY_BED_ITEMS`, `INPATIENT_BED_SECTIONS`, `EQUIPMENT_TABLE_ITEMS`) ──> `hospital-sheet.js`
+ *
+ * [사용처 및 IDE 추적 가이드]
+ * - 참조 모듈: `app.js`, `state.js`, `utils.js`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`, `hospital-sheet.js`, `search-controls.js`
+ * - IntelliJ 추적 팁: 상수명 위에서 `Ctrl + B` (선언/사용처 이동) 또는 `Ctrl + Shift + F`로 상수명 검색
+ * ============================================================================
+ */
+
+/*
+ * [역할 및 사용처 — UI 규격·반경·저장소·초기 지도 상수]
+ * - `CARD_WIDTH` / `CARD_HEIGHT`: 지도 위 병원 카드 크기(`174 × 62px`) ──> `markers-cluster.js:groupCards()`, `css/map-overlays.css`
+ * - `DEFAULT_RADIUS_KM`: 최초 접속·폴백 시 기본 탐색 반경(`'50'` = 50km) ──> `index.html(#radius)`, `map-engine.js`, `markers-cluster.js`, `directions-eta.js`
+ * - `AUTO_REFRESH_INTERVAL_MS`: 열린 탭의 실시간 병상·응급메시지 자동 동기화 주기(`60000ms` = 60초) ──> `search-controls.js:startAutoRefreshLoop()`
+ * - `GL_ROUTE_SOURCE_ID`: 네이버 WebGL 지도 내부 GeoJSON 경로 소스 ID ──> `directions-eta.js`, `app.js` 진단 객체
+ * - `NOTICE_KEY` / `OFFLINE_SNAPSHOT_KEY`: 브라우저 `localStorage` 키 이름 ──> `search-controls.js` (안내 숨김·오프라인 스냅샷 백업)
+ * - `DEFAULT_NAVER_CLIENT_ID` / `DEFAULT_NAVER_DARK_STYLE_ID`: `/api/config` 수신 전 기본 지도 키·다크 스타일 UUID ──> `state.js`, `map-engine.js`
+ * - `LARGE_MONITOR_MIN_*` / `MOBILE_MAX_WIDTH`: 3단 반응형 시트(`1200×680` 모달, `640px` 모바일) 분기 기준 ──> `hospital-sheet.js`, `css/responsive.css`
+ */
 export const CARD_WIDTH = 174;
 export const CARD_HEIGHT = 62;
+export const DEFAULT_RADIUS_KM = '50';
+export const AUTO_REFRESH_INTERVAL_MS = 60000;
 export const GL_ROUTE_SOURCE_ID = 'yonsei-route-source';
 export const NOTICE_KEY = 'emergency-notice-hidden-v1';
 export const OFFLINE_SNAPSHOT_KEY = 'yonsei119-offline-snapshot-v1';
@@ -8,54 +40,25 @@ export const DEFAULT_NAVER_DARK_STYLE_ID = '4b12b380-f70c-4d42-85df-ecf7961ff041
 export const LARGE_MONITOR_MIN_WIDTH = 1200;
 export const LARGE_MONITOR_MIN_HEIGHT = 680;
 export const MOBILE_MAX_WIDTH = 640;
-/*
- * [JS 문법]
- * - export const : 선언과 동시에 초기화한 상수를 외부 ES 모듈에 공개하는 키워드 조합임.
- *   · 비교 : 파일 내부 전용은 `const`, 기본 내보내기는 `export default`임.
- * - `UPPER_SNAKE_CASE` 명명 관례 : 실행 중 바뀌지 않는 고정 설정 상수임을 구분함.
- *
- * [프로젝트 상수명]
- * - `CARD_WIDTH` / `CARD_HEIGHT` : 지도 위 병원 카드의 픽셀 크기(`174 × 62`) 상수임.
- *   · `css/map-overlays.css` 규격과 맞추고 `markers-cluster.js` 격자 계산에 씀.
- * - `GL_ROUTE_SOURCE_ID` : WebGL 지도 내부에 GeoJSON 경로를 등록할 때 쓰는 고유 ID임.
- *   · `directions-eta.js`의 경로 렌더링·제거와 `app.js` 진단 객체에서 참조함.
- * - `NOTICE_KEY` / `OFFLINE_SNAPSHOT_KEY` : `localStorage` 저장·조회에 쓰는 키 문자열임.
- *   · 이용 안내 숨김 플래그와 오프라인 비상용 병원 스냅샷 JSON을 저장함.
- * - `DEFAULT_NAVER_CLIENT_ID` / `DEFAULT_NAVER_DARK_STYLE_ID` : 기본 네이버 지도 공개 ID와 다크 스타일 UUID임.
- *   · 서버 설정 수신 전이나 정적 미리보기 상태에서 초기값으로 사용함.
- * - `LARGE_MONITOR_MIN_WIDTH` / `LARGE_MONITOR_MIN_HEIGHT` / `MOBILE_MAX_WIDTH` : 반응형 화면 분기 픽셀 기준임.
- *   · `1200×680` 이상은 대화면 모달, `640` 이하와 터치 기기는 모바일 UI로 전환함.
- *
- * [동작 흐름]
- * - 초기화 연동 :
- *   ├── `state.js` 로딩 ──> `DEFAULT_NAVER_CLIENT_ID`·`DEFAULT_NAVER_DARK_STYLE_ID` 초기 적용
- *   └── `search-controls.js:syncFrontendConfig()` ──> `GET /api/config` 응답 수신 ──> 변경 시 재동기화
- */
 
+/*
+ * [역할 및 동작 원리]
+ * - 역할: 현재 브라우저가 개별 CSS `translate` 속성을 지원하는지 모듈 로드 시 1회 판별함
+ * - 흐름:
+ *   `CSS.supports('translate', '0px')` (브라우저 표준 CSSOM 내장 API)
+ *   ├── `true`  ──> `map-engine.js:createNaverDomOverlay()`에서 GPU 합성 친화적인 `style.translate` 사용
+ *   └── `false` ──> 구형 브라우저 호환용 `style.left` / `style.top` 폴백 사용
+ */
 export const CAN_USE_CSS_TRANSLATE =
     typeof CSS !== 'undefined' &&
     typeof CSS.supports === 'function' &&
     CSS.supports('translate', '0px');
-/*
- * [JS 문법]
- * - export const : 모듈 로드 시 기능 지원 여부를 1회만 판별해 불리언 상수로 내보냄.
- * - typeof : 피연산자의 자료형 문자열(`'undefined'`, `'function'`)을 반환하는 단항 연산자임.
- * - !== / === / && : 앞 조건이 참일 때만 뒤를 평가해 전역 객체 부재 시 오류를 막음.
- *
- * [브라우저 내장 Web API (이름 변경 불가)]
- * - CSS : CSS 객체 모델(CSSOM) 기능 탐지 유틸리티를 제공하는 전역 네임스페이스임.
- * - CSS.supports(propertyName, value) : 브라우저가 해당 CSS 속성과 값 조합을 지원하는지 반환함.
- *
- * [프로젝트 상수명]
- * - `CAN_USE_CSS_TRANSLATE` : 개별 CSS `translate` 속성 지원 여부(`true`/`false`)를 담는 상수임.
- *
- * [동작 흐름]
- * - 호출 출처 : `map-engine.js`의 `createNaverDomOverlay()`(`onAdd()`, `draw()`)가 카드 좌표를 옮길 때 참조함.
- * - 분기 흐름 :
- *   ├── `CAN_USE_CSS_TRANSLATE === true` ──> GPU 합성 친화적인 `style.translate` 사용
- *   └── `CAN_USE_CSS_TRANSLATE === false` ──> 구형 엔진 호환용 `style.left`·`style.top` 폴백
- */
 
+/*
+ * [역할 및 사용처]
+ * - 역할: 국립중앙의료원 실시간 가용병상 API(`getEmrrmRltmUsefulSckbdInfoInqire`)의 `hv1`~`hv61` 코드 한글 사전
+ * - 흐름: `HV_LABELS` ──> 아래 `API_FIELD_LABELS`에 병합 & `hospital-sheet.js:renderRawBeds()`의 `#all-beds` 원본 대조표에 표시
+ */
 export const HV_LABELS = {
     hv1: '예비항목2',
     hv2: '[중환자실] 내과',
@@ -102,17 +105,12 @@ export const HV_LABELS = {
     hv60: '외상소생실',
     hv61: '외상환자진료구역'
 };
-/*
- * [JS 문법]
- * - export const / 객체 리터럴 : 실시간 가용 병상·장비 키(`hv1`~`hv61`)와 한글 설명의 매핑 사전임.
- *
- * [프로젝트 상수명]
- * - `HV_LABELS` : 국립중앙의료원 실시간 가용 병상 API의 `hv*` 필드 한글 사전 상수임.
- *
- * [동작 흐름]
- * - 흐름 : `HV_LABELS` ──> `API_FIELD_LABELS` 병합 ──> `utils.js:fieldLabel()` & `hospital-sheet.js:renderRawBeds()` ──> `#all-beds` 출력
- */
 
+/*
+ * [역할 및 사용처]
+ * - 역할: 가용 병상 포화율을 계산할 때 분모(기준 병상·장비 총수)가 되는 `hvs01`~`hvs61` 코드 한글 사전
+ * - 흐름: `HVS_LABELS` ──> `API_FIELD_LABELS`에 병합 & `hospital-sheet.js:renderRawBeds()`의 `#all-beds` 기준 항목 출력
+ */
 export const HVS_LABELS = {
     hvs01: '일반 기준',
     hvs02: '소아 기준',
@@ -169,17 +167,13 @@ export const HVS_LABELS = {
     hvs60: '외상소생실 기준',
     hvs61: '외상환자진료구역 기준'
 };
-/*
- * [JS 문법]
- * - export const / 객체 리터럴 : 기준 병상·보유 장비 수 키(`hvs01`~`hvs61`)와 한글 설명의 매핑 사전임.
- *
- * [프로젝트 상수명]
- * - `HVS_LABELS` : 가용 병상 포화도를 판단할 때 기준 총수 역할을 하는 `hvs*` 필드 한글 사전 상수임.
- *
- * [동작 흐름]
- * - 흐름 : `HVS_LABELS` ──> `API_FIELD_LABELS` 병합 ──> `utils.js:fieldLabel()` & `hospital-sheet.js:renderRawBeds()` ──> `#all-beds` 기준 설명 출력
- */
 
+/*
+ * [역할 및 사용처]
+ * - 역할: `HV_LABELS` + `HVS_LABELS` + 기본 병상(`hvec` 등)·장비 가용(`hv*ayn`)·당직의(`hvdnm`)·보고시각(`hvidate`) 통합 사전
+ * - 문법 원리: 객체 전개 연산자(`...`)로 두 사전을 얕은 복사해 하나의 마스터 객체로 합침
+ * - 사용처: `utils.js:fieldLabel(key)` ──> `hospital-sheet.js:renderRawBeds()`, `renderBasic()`
+ */
 export const API_FIELD_LABELS = {
     ...HV_LABELS,
     ...HVS_LABELS,
@@ -204,19 +198,12 @@ export const API_FIELD_LABELS = {
     hvhypoayn: '중심체온조절유도기가용(가/부)',
     hvamyn: '구급차가용여부'
 };
-/*
- * [JS 문법]
- * - export const : 통합된 필드 사전 상수를 외부 모듈에 공개함.
- * - 객체 전개 구문 (`...객체`) : 기존 객체의 열거 가능 키-값 쌍을 새 객체 안에 펼쳐 복사함.
- *   · 주의 : 뒤에 선언한 같은 이름의 키가 앞선 값을 덮어씀.
- *
- * [프로젝트 상수명]
- * - `API_FIELD_LABELS` : `HV_LABELS`·`HVS_LABELS`와 기본 병상·장비(`hv*ayn`)·입력일시(`hvidate`)·당직의(`hvdnm`)를 합친 마스터 사전임.
- *
- * [동작 흐름]
- * - 흐름 : `utils.js:fieldLabel(key)` ──> 소문자 변환 후 `API_FIELD_LABELS[key]` 조회 ──> `hospital-sheet.js:renderRawBeds()` ──> `#all-beds` 렌더링
- */
 
+/*
+ * [역할 및 사용처]
+ * - 역할: 28대 중증응급질환(`mkioskty1`~`mkioskty28`)을 16개 진료군 카드로 묶은 화면 배치 설계도
+ * - 사용처: `hospital-sheet.js:renderSevere()` (`#severe` 영역 렌더링), `app.js` 진단 `getSchemas()`
+ */
 export const SEVERE_DISEASE_GROUPS = [
     {
         title: '뇌출혈수술',
@@ -327,19 +314,12 @@ export const SEVERE_DISEASE_GROUPS = [
         ]
     }
 ];
-/*
- * [JS 문법]
- * - export const / 중첩 배열·객체 리터럴 : 그룹 제목과 하위 항목 배열을 2단 계층으로 묶은 구조임.
- *
- * [프로젝트 상수명]
- * - `SEVERE_DISEASE_GROUPS` : 28대 중증응급질환(`mkioskty1`~`mkioskty28`)을 16개 화면 그룹으로 묶은 스키마임.
- *
- * [동작 흐름]
- * - 사용처 :
- *   ├── `hospital-sheet.js:renderSevere()` ──> `#severe` 영역에 질환별 수용 여부 표시
- *   └── `app.js` 진단 `getSchemas()` ──> 스키마 목록 참조 반환
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 중증질환 수용 API가 `'Y'`여도 실시간 응급메시지(`getEmrrmSrsillDissMsgInqire`)에 진료 불가 공지가 떴을 때 교차 차단하기 위한 코드·키워드 표
+ * - 흐름: `SPECIFIC_BLOCK_TARGETS` ──> `utils.js:isDiseaseSpecificallyBlocked()` ──> `hospital-sheet.js:renderSevere()`에서 빨간 `'불가능'` 배지로 전환
+ */
 export const SPECIFIC_BLOCK_TARGETS = {
     mkioskty1: { codes: ['Y0010'], names: ['심근경색', '관상동맥중재술'] },
     mkioskty2: { codes: ['Y0020'], names: ['뇌경색', '혈전용해술'] },
@@ -369,20 +349,12 @@ export const SPECIFIC_BLOCK_TARGETS = {
     mkioskty26: { codes: ['Y0171'], names: ['영상의학혈관중재(성인)'] },
     mkioskty27: { codes: ['Y0172'], names: ['영상의학혈관중재(영유아)'] }
 };
-/*
- * [JS 문법]
- * - export const / 중첩 객체·문자열 배열 리터럴 : 키마다 `codes`와 `names` 배열을 함께 묶어 정의함.
- *
- * [프로젝트 상수명]
- * - `SPECIFIC_BLOCK_TARGETS` : 중증질환(`mkioskty1~27`)과 실시간 진료 공지를 대조할 매핑 테이블임.
- *   · `codes` : 공지 유형 코드(`symtypcod`) 매칭 목록.
- *   · `names` : 공지 질환명(`symtypcodmag`)·본문(`symblkmsg`) 매칭 키워드 목록.
- *
- * [동작 흐름]
- * - 흐름 : `utils.js:isDiseaseSpecificallyBlocked()` ──> `SPECIFIC_BLOCK_TARGETS[itemKey]` 대조
- *   └── API가 `'Y'`여도 차단 공지가 있으면 ──> `hospital-sheet.js:renderSevere()`가 `'불가능'`으로 보정
- */
 
+/*
+ * [역할 및 사용처]
+ * - 역할: 개발자 모드(`#all-severe`)에서 `mkioskty1`~`28`, 가능연령 비고(`*msg`), 보고일시를 한글 명칭으로 대조 출력하는 사전
+ * - 사용처: `hospital-sheet.js:renderRawSevere()`
+ */
 export const MKIOSKTY_METADATA = {
     mkioskty1: '[재관류중재술] 심근경색',
     mkioskty2: '[재관류중재술] 뇌경색',
@@ -420,18 +392,12 @@ export const MKIOSKTY_METADATA = {
     mkioskdate: '키오스크 정보 보고일시 (mkioskdate)',
     hvidate: '중증질환 정보 보고일시 (hvidate)'
 };
-/*
- * [JS 문법]
- * - export const / 객체 리터럴 : 여러 종류의 문자열 키와 한글 설명을 하나의 사전 객체로 묶음.
- *
- * [프로젝트 상수명]
- * - `MKIOSKTY_METADATA` : 중증질환 원본 필드의 공식 한글 명칭 사전 상수임.
- *   · 구성 : 28대 중증질환 키, 영유아 가능연령 비고 5개(`mkioskty*msg`), 보고일시 2개(`mkioskdate`, `hvidate`).
- *
- * [동작 흐름]
- * - 흐름 : `MKIOSKTY_METADATA` ──> `hospital-sheet.js:renderRawSevere()` ──> 개발자 모드 `#all-severe` 대조표 출력
- */
 
+/*
+ * [역할 및 사용처]
+ * - 역할: 상세 시트 '응급실 병상' 보드(`#er-beds-board`)에 표시할 11종 핵심 응급 병상 가용(`current`)/기준(`baseline`) 매핑
+ * - 사용처: `hospital-sheet.js:renderErBeds()`, `app.js` 진단 `getSchemas()`
+ */
 export const EMERGENCY_BED_ITEMS = [
     { label: '일반', current: 'hvec', baseline: 'hvs01' },
     { label: '소아', current: 'hv28', baseline: 'hvs02' },
@@ -445,20 +411,12 @@ export const EMERGENCY_BED_ITEMS = [
     { label: '소아음압격리', current: 'hv15', baseline: 'hvs48' },
     { label: '코호트격리', current: 'hv27', baseline: 'hvs59' }
 ];
-/*
- * [JS 문법]
- * - export const / 객체 배열 리터럴 : 같은 구조의 설정 객체 여러 개를 배열에 순서대로 담음.
- *
- * [프로젝트 상수명 및 속성명]
- * - 상수명 : `EMERGENCY_BED_ITEMS` (응급실 병상 보드에 그릴 11종 핵심 병상 목록).
- * - 속성명 : `label`(표시 명칭), `current`(현재 가용 키), `baseline`(기준 총 병상 키).
- *
- * [동작 흐름]
- * - 사용처 :
- *   ├── `hospital-sheet.js:renderErBeds()` ──> `#er-beds-board`에 가용·기준 병상 짝지어 표시
- *   └── `app.js` 진단 `getSchemas()` ──> 스키마 참조용 반환
- */
 
+/*
+ * [역할 및 사용처]
+ * - 역할: 상세 시트 '입원 병상' 보드(`#inpatient-beds-board`)의 6개 분과 섹션(총 34종 병상·수술실·분만실) 매핑
+ * - 사용처: `hospital-sheet.js:renderInpatientBeds()`, `app.js` 진단 `getSchemas()`
+ */
 export const INPATIENT_BED_SECTIONS = [
     {
         title: '중환자실',
@@ -525,22 +483,12 @@ export const INPATIENT_BED_SECTIONS = [
         ]
     }
 ];
-/*
- * [JS 문법]
- * - export const / 중첩 섹션 배열 리터럴 / `null` 리터럴 : 대분류 제목과 세부 항목 배열을 묶음.
- *   · 참고 : 값이 아예 존재하지 않는 필드는 `null`로 명시해 누락과 구분함.
- *
- * [프로젝트 상수명 및 속성명]
- * - 상수명 : `INPATIENT_BED_SECTIONS` (입원·배후진료 수용 여부를 확인하는 6개 섹션 34개 병상 스키마).
- *   · 섹션 : 중환자실, 응급전용, 외상전용, 감염병 전담병상, 입원실, 기타.
- * - 특수 속성 : 정형외과(`hv4`)는 기준 키가 없어 `baseline: null`, 분만실(`hv42`)은 `type: 'delivery'`를 둠.
- *
- * [동작 흐름]
- * - 사용처 :
- *   ├── `hospital-sheet.js:renderInpatientBeds()` ──> `#inpatient-beds-board` 섹션별 병상 셀 생성
- *   └── `app.js` 진단 `getSchemas()` ──> 스키마 목록 반환
- */
 
+/*
+ * [역할 및 사용처]
+ * - 역할: 상세 시트 '가용 장비' 보드(`#equipment`)에 표시할 11종 특수 응급의료장비 가용(`key`)/기준(`baseline`) 매핑
+ * - 사용처: `hospital-sheet.js:renderEquipment()`, `app.js` 진단 `getSchemas()`
+ */
 export const EQUIPMENT_TABLE_ITEMS = [
     { label: '인공호흡기 일반', key: 'hvventiayn', baseline: 'hvs30' },
     { label: '인공호흡기 조산아', key: 'hvventisoayn', baseline: 'hvs31' },
@@ -554,16 +502,3 @@ export const EQUIPMENT_TABLE_ITEMS = [
     { label: '혈관촬영기', key: 'hvangioayn', baseline: 'hvs29' },
     { label: '구급차 가용여부', key: 'hvamyn', baseline: null }
 ];
-/*
- * [JS 문법]
- * - export const / 객체 배열 리터럴 / `null` 리터럴 : 항목마다 가용 키와 기준 키를 짝지어 정의함.
- *
- * [프로젝트 상수명 및 속성명]
- * - 상수명 : `EQUIPMENT_TABLE_ITEMS` (상세 시트 가용 장비 보드에 그릴 11종 특수 의료장비 목록).
- * - 속성명 : `label`(장비 이름), `key`(가용 여부 필드), `baseline`(기준 대수 필드, 구급차 `hvamyn`은 `null`).
- *
- * [동작 흐름]
- * - 사용처 :
- *   ├── `hospital-sheet.js:renderEquipment()` ──> `#equipment`에 장비 가용 상태와 기준 대수 표시
- *   └── `app.js` 진단 `getSchemas()` ──> 스키마 목록 반환
- */

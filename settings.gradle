@@ -1,40 +1,19 @@
+/*
+ * [역할 및 실행 시점]
+ * - 역할: Gradle 멀티모듈 프로젝트의 이름과 포함 모듈(`backend`), JDK 27 자동 탐색 플러그인을 선언하는 최상위 설정 파일
+ * - 실행 시점: `gradlew` 명령 실행 시 가장 먼저(초기화 단계) 읽힘
+ *
+ * [전체 빌드 구조 흐름]
+ * - settings.gradle 실행
+ *   ├── foojay-resolver-convention ──> 로컬에 JDK 27이 없으면 OpenJDK 27을 자동 탐색·연결
+ *   ├── rootProject.name = 'yonsei119' ──> 프로젝트 고유 이름 고정
+ *   └── include 'backend' ──> `backend/build.gradle`을 하위 모듈(`:backend`)로 등록
+ *       (참고: `frontend/`는 별도 Gradle 모듈이 아니라 `:backend:copyFrontendToStatic` 태스크가 정적 리소스로 합침)
+ */
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
 
 rootProject.name = 'yonsei119'
-/*
- * [Gradle 내장 속성 및 문법]
- * - rootProject.name : 루트 프로젝트의 이름을 정하는 Gradle 내장 속성임.
- * - 작은따옴표('...') : 글자를 있는 그대로 표현하는 문자열 표기법임.
- * - 비교 문법 : 문자열 안에 변수(${...})를 넣을 때는 큰따옴표("...")를 씀.
- * - 형제 속성 : 루트 폴더 경로를 가리키는 rootProject.projectDir가 있음.
- *
- * [프로젝트명]
- * - 'yonsei119' : 최상위 모노레포 루트 프로젝트의 고정 이름임.
- *
- * [동작 흐름]
- * - Gradle 시작 -> settings.gradle 먼저 실행 -> 루트 프로젝트 이름을 'yonsei119'로 확정함.
- *   └── 로컬 폴더 이름을 다르게 받아도 Gradle 프로젝트 이름은 항상 'yonsei119'로 유지됨.
- */
 
 include 'backend'
-/*
- * [Gradle 내장 함수]
- * - include '...' : 하위 서브프로젝트(모듈)를 빌드에 등록하는 내장 함수임.
- * - 형제 함수 : 외부 독립 빌드를 합치는 includeBuild('...')가 있음.
- * - 형제 함수 : 바깥 폴더에 있는 모듈을 붙이는 includeFlat('...')도 있음.
- *
- * [모듈명]
- * - 'backend' : 루트 아래 backend/ 폴더를 가리키는 모듈 이름임.
- * - 실제 폴더명(backend/)과 일치해야 Gradle이 backend/build.gradle을 인식함.
- *
- * [동작 흐름]
- * - Gradle 초기화 -> include 'backend' 읽음 -> ':backend' 모듈을 빌드 트리에 연결함.
- *   └── frontend/는 별도 Gradle 모듈이 아니라 copyFrontendToStatic 태스크가 리소스로 복사함.
- *   └── 복사 결과는 단일 실행 JAR 내부 정적 리소스(classpath:/static/)에 포함됨.
- *
- * [실행 방법]
- * - Windows : .\gradlew.bat bootRun 또는 .\gradlew.bat :backend:bootRun
- * - Linux/macOS : ./gradlew bootRun 또는 ./gradlew :backend:bootRun
- */

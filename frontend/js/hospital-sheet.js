@@ -1,3 +1,29 @@
+/*
+ * ============================================================================
+ * [역할 및 실행 시점]
+ * - 역할: 병원 상세 시트(`#sheet`)의 전담 상황실 화면 조립가
+ *   · 3단 반응형 레이아웃(모달·슬라이더·바텀시트), 대학교병원 정적 배경 로고 워터마크,
+ *     직통 전화·3사 내비게이션(네이버·카카오·T맵)·공유 링크, 실시간 진료 공지·응급/입원 병상·장비·28대 중증질환 보드,
+ *     그리고 개발자 모드 원본 API 인스펙터(`GET /api/hospitals/{hpid}`)를 렌더링함
+ * - 실행 시점: 앱 시작 시 `syncResponsiveSheetLayout()`·`initSheetDrag()`가 1회 초기화되고,
+ *   사용자가 지도 병원 카드·클러스터·검색 결과·추천 순위를 클릭할 때마다 `openHospital()`이 실행됨
+ *
+ * [전체 호출 및 데이터 흐름]
+ * - 흐름:
+ *   병원 선택 ──> `openHospital(hospital)`
+ *   ├── `syncSheetUniversityWatermark()` ──> 대학교병원(의료원 제외) 로고를 시트 맨 뒤 정적 배경에 고정 배치
+ *   ├── `renderContacts()` ──> 응급실/대표 `tel:` 발신 + 네이버·카카오·T맵 앱/웹 길안내 + 공유 URL 복사
+ *   ├── `renderMessages()` / `renderBeds()` / `renderEquipment()` / `renderSevere()` ──> 실시간 의료 자원 보드 생성
+ *   ├── `loadDirectionsForHospital()` ──> `GET /api/directions` 자동차 경로·예상 소요시간 조회
+ *   └── `#developer-mode` 펼침 시 ──> `renderDeveloperInspector()` ──> `GET /api/hospitals/{hpid}` 전체 원본 대조표 출력
+ *
+ * [사용처 및 IDE 추적 가이드]
+ * - 외부 호출처: `app.js` (초기화·닫기·인스펙터 토글), `markers-cluster.js`, `directions-eta.js`, `search-controls.js`
+ * - 연결 HTML/CSS: `index.html` (`#sheet`, `#sheet-dim`), `css/sheet-egen.css`, `css/dark-theme.css`, `css/responsive.css`
+ * - IntelliJ 추적 팁: 함수명 위에서 `Ctrl + Alt + H` 또는 `Ctrl + Shift + F`로 `/api/hospitals/` 검색
+ * ============================================================================
+ */
+
 import {
     EMERGENCY_BED_ITEMS,
     EQUIPMENT_TABLE_ITEMS,
@@ -48,30 +74,16 @@ import {
 import {
     resolveUniversityHospitalLogo
 } from './user-features.js';
-/*
- * [JS 문법]
- * - import { ... } from './모듈.js' : 다른 JS 파일에서 공개한 상수·함수를 가져오는 ES 모듈 문법임.
- * - 브라우저 네이티브 ES 모듈에서는 상대 경로('./...') 뒤에 '.js' 확장자를 꼭 붙여야 함.
- *
- * [프로젝트 내부 모듈 의존성]
- * - constants.js (스키마) : EMERGENCY_BED_ITEMS, INPATIENT_BED_SECTIONS, EQUIPMENT_TABLE_ITEMS, SEVERE_DISEASE_GROUPS.
- * - constants.js (사전·화면) : MKIOSKTY_METADATA, HV_LABELS, HVS_LABELS, LARGE_MONITOR_MIN_*, MOBILE_MAX_WIDTH.
- * - state.js : 공용 런타임 상태(state)와 순환 참조 방지용 콜백 모음(uiCallbacks)을 가져옴.
- * - utils.js (DOM·거리) : byId, node, empty, createMarqueeEl, updateMarquees, setStatus, distanceKm, getOriginDisplayLabel.
- * - utils.js (정제·판정) : availability, bedValue, displayValue, fieldLabel, firstReported, formatParamLabel, integerValue.
- * - utils.js (공지·기기) : isBlankOrNull, isMissing, parseApiDate, getActiveMessages, isDiseaseSpecificallyBlocked, isAppleTouchDevice.
- * - markers-cluster.js : 병원 종별·권역 라벨 문자열 생성 함수(hospitalLabel)를 가져옴.
- * - directions-eta.js : hasRenderedRoute, loadDirectionsForHospital, populateWaypointSelect를 가져옴.
- *
- * [아키텍처 계층]
- * - hospital-sheet.js는 3단 반응형 병원 상세 시트(#sheet)와 모바일 Half-Peek 스냅·터치 드래그를 담당함.
- * - 3사 내비 딥링크(네이버·카카오·T맵), 직통 공유 URL(?hospital=...), E-Gen 병상·장비·질환 보드를 그림.
- * - 개발자 모드 원본 인스펙터와 필요 시 GET /api/hospitals/{hpid} 상세 보충 조회를 처리함.
- */
 
 let marqueeTimerId = null;
 let watermarkErrorBound = false;
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 대학교병원(의료원 제외) 상세 시트를 열 때 소속 대학교 로고를 `.sheet-scroll` 바깥의 `#sheet-univ-watermark`에 정적 배치함
+ *   · `.sheet-scroll`과 형제 레이어로 분리되어 있어 내부 내용을 스크롤해도 대학교 로고는 흔들리지 않고 제자리에 고정됨
+ * - 호출처: `openHospital()`, `closeSheet()`
+ */
 function syncSheetUniversityWatermark(hospital) {
     const sheet = byId('sheet');
     const wrap = byId('sheet-univ-watermark');
@@ -106,6 +118,11 @@ function syncSheetUniversityWatermark(hospital) {
     wrap.hidden = false;
 }
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 시트 열림 트랜지션(220ms)이 끝난 직후 `updateMarquees()`를 실행해 긴 텍스트 전광판 폭을 정확히 계산함
+ * - 호출처: `openHospital()`, `closeSheet()`(취소용)
+ */
 function scheduleMarqueeRefresh() {
     if (marqueeTimerId !== null) {
         clearTimeout(marqueeTimerId);
@@ -116,30 +133,26 @@ function scheduleMarqueeRefresh() {
     }, 260);
 }
 
+/*
+ * [역할 및 호출처]
+ * - 역할: `tel:` 전화 발신용 `<a>` 버튼 요소를 생성함
+ * - 호출처: `renderContacts(hospital)`
+ */
 function contactLink(text, href, className) {
     const link = node('a', className, text);
     link.href = href;
     return link;
 }
-/*
- * [JS 문법]
- * - function (hospital-sheet.js 모듈 내부 비공개 함수 선언), const, return
- *
- * [브라우저 내장 Web API]
- * - HTMLAnchorElement.prototype.href : <a> 링크 요소에 이동 주소('tel:...' 등)를 설정하는 표준 속성임.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : contactLink.
- * - 매개변수명 : text(버튼 글자), href('tel:...' 전화 연결 주소), className(CSS 클래스명).
- *
- * [지역 변수명]
- * - link : utils.js의 node()로 만든 <a> DOM 요소.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderContacts()에서 응급실·대표 전화 버튼을 만들 때 호출됨.
- * - 흐름 : node('a', className, text) 생성 ──> link.href = href 지정 ──> link 반환.
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 기기 OS에 맞춰 모바일 내비게이션 앱을 실행하고, 앱이 설치되어 있지 않으면 스토어·웹 지도로 안전하게 연결함
+ * - 분기 흐름:
+ *   ├── Android: `intent://...#Intent;scheme=...;package=...;S.browser_fallback_url=...;end` 실행
+ *   ├── 데스크톱 PC: `window.open(fallback, '_blank', 'noopener,noreferrer')` 새 탭 웹 지도 열기
+ *   └── iOS/iPadOS: 커스텀 스킴 실행 후 `1.8초` 안에 앱 전환(`visibilityState === 'hidden'`)이 없으면 `fallback` 이동
+ * - 호출처: `launchNavigation(provider, hospital)`
+ */
 function openMobileApp(scheme, androidPackage, fallback) {
     if (/Android/i.test(navigator.userAgent)) {
         const intent = scheme.replace(/^[a-z]+:\/\//, 'intent://');
@@ -185,46 +198,12 @@ function openMobileApp(scheme, androidPackage, fallback) {
 
     window.location.href = scheme;
 }
-/*
- * [JS 문법]
- * - export function, const, let, 화살표 함수(=>), if, !isAppleTouchDevice(), &&, <, -, 템플릿 리터럴, return
- * - 정규표현식 : /Android/i (대소문자 구분 없이 Android 확인), /^[a-z]+:\/\// (앱 스킴 앞부분 치환)
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - navigator.userAgent : 현재 브라우저와 운영체제 정보를 담은 문자열 속성임.
- * - String.prototype.replace(), .split(), RegExp.prototype.test(), encodeURIComponent() : 문자열 가공·인코딩.
- * - window.location.href : 현재 탭 주소를 바꿔 모바일 앱 스킴이나 스토어·웹 주소를 실행함.
- * - window.open(url, '_blank', 'noopener,noreferrer') : 데스크톱에서 새 탭을 열어 원래 탭 조작 위험을 막음.
- * - Date.now(), window.setTimeout(), window.clearTimeout() : 1.8초 뒤 앱 전환 실패 여부를 확인하는 타이머 API.
- * - document.addEventListener('visibilitychange', ...), window.addEventListener('pagehide', ...) : 탭 숨김 감시.
- * - document.visibilityState : 페이지가 화면에 보이는지('visible') 숨겨졌는지('hidden') 확인하는 속성임.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : openMobileApp.
- * - 매개변수명 : scheme(앱 실행 주소), androidPackage(Android 패키지 ID), fallback(미설치 시 이동 주소).
- *
- * [지역 변수명 및 내부 함수]
- * - intent, protocol : 'intent://'로 바꾼 URI 앞부분과 추출한 원래 스킴명('nmap'|'kakaomap'|'tmap').
- * - started, timer : iOS 딥링크 시도 시작 시각(ms)과 1800ms 타이머 ID.
- * - cleanup, onVisibility : 타이머·감시 리스너를 정리하고 화면 백그라운드 전환을 확인하는 내부 함수.
- *
- * [Android Intent URI 조립 분해]
- *   intent://route/car?slat=...&dlat=...#Intent;scheme=nmap;action=android.intent.action.VIEW;package=com.nhn.android.nmap;S.browser_fallback_url=https%3A%2F%2Fplay.google.com...;end
- *   ├── intent://...              : 원본 스킴 접두사(nmap://, kakaomap://, tmap://)를 intent://로 치환한 본체
- *   ├── #Intent;scheme=protocol;  : 실제 앱이 받을 커스텀 스킴 이름 지정
- *   ├── action=...VIEW;           : Android 표준 VIEW 액티비티 실행 액션
- *   ├── package=androidPackage;   : 실행 대상 패키지(com.nhn.android.nmap | net.daum.android.map | com.skt.tmap.ku)
- *   └── S.browser_fallback_url=.. : 앱 미설치 시 Chrome이 자동으로 여는 인코딩된 스토어·웹 주소
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 launchNavigation()에서 호출됨.
- * - 흐름 :
- *   1) Android ──> Intent URI 조립 ──> window.location.href로 앱 실행(미설치 시 fallback 이동)
- *   2) PC 데스크톱 ──> window.open(fallback, '_blank', 'noopener,noreferrer')로 새 탭 웹 지도 열기
- *   3) iOS/iPadOS ──> document 'visibilitychange' -> onVisibility() · window 'pagehide' -> cleanup() 등록
- *      └── scheme 실행 후 1.8초 내 백그라운드 미전환 시 cleanup() 후 fallback 이동
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 네이버지도(`nmap://`), 카카오맵(`kakaomap://`), T맵(`tmap://`)의 출발지·목적지 길안내 딥링크와 웹 폴백 주소를 조립함
+ * - 호출처: `launchNavigation(provider, hospital)`
+ */
 function navigationLink(provider, hospital) {
     const name = encodeURIComponent(hospital.name);
     const lat = hospital.lat;
@@ -294,67 +273,23 @@ function navigationLink(provider, hospital) {
             : 'https://play.google.com/store/apps/details?id=com.skt.tmap.ku'
     };
 }
-/*
- * [JS 문법]
- * - export function, const, let, if, ===, ||, &&, ? : 중첩, 템플릿 리터럴, 객체 반환, /Android/i
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - encodeURIComponent(str) : 한글·공백·특수문자가 들어간 이름이나 주소를 URL 안전 문자로 바꿈.
- * - Boolean(val), Number.isFinite(val) : 불리언 변환 및 NaN·무한대가 아닌 정상 숫자인지 검사함.
- * - navigator.userAgent, window.location.origin : 기기 판별 문자열과 현재 서비스 도메인 출처 조회.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : navigationLink.
- * - 매개변수명 : provider('naver'|'kakao'|'tmap'), hospital(도착지 병원 객체).
- *
- * [지역 변수명]
- * - name, lat, lng : URL 인코딩된 병원명과 도착 위도·경도.
- * - hasCustomOrigin, sLat, sLng, sName : 확정된 출발지 유무와 출발 위도·경도·인코딩 이름.
- * - mobile, appname, scheme, fallback, originSegment : 모바일 여부 및 네이버지도 링크 변수.
- * - start, webFallback, tmapScheme : 카카오맵 출발 쿼리·웹 링크 및 T맵 분기 딥링크.
- *
- * [3사 내비게이션 딥링크 URL 분해]
- * - 1) 네이버지도 (provider === 'naver', 패키지: com.nhn.android.nmap)
- *   · 출발지 지정 시 : nmap://route/car?slat={sLat}&slng={sLng}&sname={sName}&dlat={lat}&dlng={lng}&dname={name}&appname={appname}
- *   · 출발지 미지정  : nmap://navigation?dlat={lat}&dlng={lng}&dname={name}&appname={appname}
- *   · PC 웹 폴백     : https://map.naver.com/p/directions/{sLng,sLat,sName,, | -}/{lng},{lat},{name},,/-/car?c=15.00,0,0,0,dh
- *   · 파라미터 의미  : slat/slng/sname(출발 위경도·이름), dlat/dlng/dname(도착 위경도·이름), appname(호출 출처)
- *
- * - 2) 카카오맵 (provider === 'kakao', 패키지: net.daum.android.map)
- *   · 딥링크 구조    : kakaomap://route?[sp={sLat},{sLng}&]ep={lat},{lng}&by=car
- *   · 웹 폴백        : https://map.kakao.com/link/[from/{sName},{sLat},{sLng}/]to/{name},{lat},{lng}
- *   · 파라미터 의미  : sp(출발 위도,경도), ep(도착 위도,경도), by=car(자동차 길안내)
- *
- * - 3) T맵 (기본 분기, 패키지: com.skt.tmap.ku)
- *   · iOS/iPadOS     : tmap://route?[rStName={sName}&rStX={sLng}&rStY={sLat}&]rGoName={name}&rGoX={lng}&rGoY={lat}
- *   · Android/기타   : tmap://route?[startname={sName}&startx={sLng}&starty={sLat}&]goalname={name}&goalx={lng}&goaly={lat}
- *   · 좌표 순서 주의 : T맵은 X=경도(lng), Y=위도(lat)이며 Apple은 rSt·rGo, Android는 start·goal 접두사를 씀.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 launchNavigation()에서 호출됨.
- * - 흐름 : 출발지 확정 여부 + provider·OS 판별 ──> 딥링크(scheme)·패키지·대체 URL(fallback) 객체 조립 후 반환.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 선택한 내비게이션 사업자(`naver`·`kakao`·`tmap`) 링크를 만들어 앱/웹 실행을 위임함
+ * - 호출처: `renderContacts(hospital)` 내 내비게이션 버튼 클릭 리스너
+ */
 function launchNavigation(provider, hospital) {
     const link = navigationLink(provider, hospital);
     openMobileApp(link.scheme, link.package, link.fallback);
 }
-/*
- * [JS 문법]
- * - function (비공개 보조 함수), const
- *
- * [함수명 및 매개변수명]
- * - 함수명 : launchNavigation.
- * - 매개변수명 : provider('naver'|'kakao'|'tmap'), hospital(목적지 병원 객체).
- *
- * [지역 변수명]
- * - link : navigationLink()가 반환한 { scheme, package, fallback } 객체.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderContacts()가 만든 네이버지도·카카오맵·T맵 버튼 클릭 시 호출됨.
- * - 흐름 : navigationLink(provider, hospital) ──> link 생성 ──> openMobileApp(scheme, package, fallback) 실행.
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 선택한 병원으로 바로 열리는 직통 링크(`?hospital=HPID`)를 생성해 모바일 공유창 또는 클립보드 복사로 전달함
+ * - 흐름: URL 조립 ──> 모바일 `navigator.share()` 우선 시도 ──> 미지원·데스크톱은 `navigator.clipboard.writeText()` 후 토스트 안내
+ * - 호출처: `renderContacts(hospital)`의 `'공유하기'` 버튼 클릭 리스너
+ */
 async function shareHospital(hospital) {
     if (!hospital?.id) {
         return;
@@ -398,38 +333,12 @@ async function shareHospital(hospital) {
 
     setStatus(`공유 주소: ${shareUrl}`);
 }
-/*
- * [JS 문법]
- * - export async function, ?., if, !hospital?.id, return, const, ||, &&, ===, typeof, try/catch, void, 템플릿 리터럴, await
- *
- * [브라우저 내장 Web API]
- * - new URL(url), .toString() : 주소 문자열을 다루기 쉬운 URL 객체로 만들고 다시 문자열로 바꿈.
- * - URLSearchParams.prototype.delete(), .set() : URL 쿼리(?key=val) 파라미터를 지우거나 새로 넣음.
- * - navigator.userAgent, navigator.share({ title, text, url }) : 모바일 기본 공유 창을 여는 Web Share API(취소 시 AbortError).
- * - navigator.clipboard.writeText(text) : 보안 환경(HTTPS/localhost)에서 클립보드에 글자를 복사하는 API.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : shareHospital.
- * - 매개변수명 : hospital (공유 링크를 만들 병원 객체).
- *
- * [지역 변수명]
- * - shareUrlObj, shareUrl, erSummary, shareTitle, shareText, isMobileDevice, shareErr, clipErr.
- *
- * [공유 URL 조립 분해]
- * - 1단계 : new URL(window.location.href)로 현재 페이지 주소를 복사함.
- * - 2단계 : searchParams.delete('preview'), delete('hpid')로 시연·예전 파라미터를 지움.
- * - 3단계 : searchParams.set('hospital', hospital.id)로 병원 ID를 넣고 .toString()으로 완성함.
- *   https://서비스도메인/?hospital=A2200001
- *   ├── origin/path : window.location.href 기준 현재 서비스 루트 주소
- *   └── ?hospital=  : 수신자가 열면 search-controls.js가 읽어 해당 병원으로 이동 후 시트를 엶.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderContacts()가 만든 '공유하기' 버튼 클릭 시 호출됨.
- * - 흐름 :
- *   1) 공유 URL 조립 ──> 모바일 & navigator.share 지원 시 네이티브 공유 창 호출(취소 시 종료)
- *   2) 미지원·실패 ──> clipboard.writeText() 복사 시도 ──> setStatus() 안내(복사 실패 시 주소 직접 표시)
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 시트 상단 `#contact-actions`에 응급실·대표전화 발신 버튼과 3사 내비게이션·공유 버튼을 렌더링함
+ * - 호출처: `openHospital(hospital)`
+ */
 function renderContacts(hospital) {
     const target = byId('contact-actions');
     if (!target) {
@@ -478,32 +387,13 @@ function renderContacts(hospital) {
 
     target.replaceChildren(phones, maps);
 }
-/*
- * [JS 문법]
- * - export function, const, if/else, !target, &&, for...of + 배열 구조 분해([label, raw], [provider, label]), ? :, 화살표 함수
- * - 정규표현식 : /^[0-9+()\s-]+$/ (허용 전화 문자), /\d/ (숫자 포함), /[^\d+]/g (tel: 링크용 숫자·'+' 외 제거)
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - String(val), String.prototype.trim(), .replace() : 문자열 변환 및 양쪽 공백·특수문자 정제.
- * - RegExp.prototype.test(str) : 문자열이 정규표현식 규칙에 맞는지 검사함.
- * - Element.prototype.setAttribute(), .append(), .replaceChildren(), HTMLButtonElement.prototype.type : DOM 속성·자식 교체.
- * - HTMLElement.prototype.title, EventTarget.prototype.addEventListener('click', fn) : 툴팁 지정·클릭 이벤트 등록.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderContacts.
- * - 매개변수명 : hospital (전화·길찾기 버튼을 그릴 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : target(#contact-actions).
- * - 지역 변수 : phones, maps, label, raw, number, provider, button, shareBtn.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 openHospital()에서 호출됨.
- * - 흐름 : 응급실·대표전화 검증(tel: 또는 미정보) ──> 네이버·카카오·T맵·공유 버튼 생성 ──> #contact-actions 교체
- *   ├── button(.map-button.naver|kakao|tmap) 'click' ──> launchNavigation(provider, hospital)
- *   └── shareBtn(.share-hospital-btn) 'click' ──> shareHospital(hospital)
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 현재 시각에 유효한 실시간 응급·중증 진료 공지(`getEmrrmSrsillDissMsgInqire`)를 중요도(`[중증]` 우선) 순으로 `#messages`에 표시함
+ * - 흐름: `getActiveMessages(hospital)` ──> 중요도·진료과·본문 정렬 ──> `#message-count` 건수 갱신 및 `.message-card` 조립
+ * - 호출처: `openHospital(hospital)`
+ */
 function renderMessages(hospital) {
     const target = byId('messages');
     const countEl = byId('message-count');
@@ -597,31 +487,17 @@ function renderMessages(hospital) {
         target.append(article);
     }
 }
-/*
- * [JS 문법]
- * - export function, const, if/else if, !target, !==, ===, &&, ||, >, ? : 중첩, 화살표 함수, for...of, 템플릿 리터럴, return
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - Array.prototype.sort(compareFn) : [중증] 우선 -> 진료과명 한국어·숫자순 -> 공지 본문 가나다순 정렬.
- * - String(val), String.prototype.trim(), .localeCompare(..., 'ko', { numeric: true }) : 한국어·숫자 자연순 비교.
- * - Element.prototype.replaceChildren(), .append(), .childElementCount, Node.prototype.textContent : DOM 조립·자식 수 확인.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderMessages.
- * - 매개변수명 : hospital (진료 공지를 표시할 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : target(#messages), countEl(#message-count).
- * - 정렬·집계 변수 : messages, isCritA, isCritB, deptA, deptB, deptCompare, msgA, msgB.
- * - 카드 생성 변수 : item, level, article, heading, deptName, badge, deptTitle, end, start, meta.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 openHospital()에서 호출됨.
- * - 흐름 :
- *   1) state.sources.messages 실패 ──> 안내 문구 출력 후 종료
- *   2) 정상 ──> getActiveMessages(hospital) 정렬 ──> #message-count 건수 표시 ──> 공지 카드(#messages) 조립
- */
 
+/*
+ * [역할 및 데이터 정합성 핵심 — 실측 비고값 보정 반영]
+ * - 역할: 28대 중증응급질환 수용 여부(`mkioskty1`~`28`)와 실시간 차단 공지·비고(`*msg`)를 교차 검증해 `#severe`에 그림
+ * - 배지 우선순위(실제 NEMC 응답 사례 반영):
+ *   1) 의미 없는 자리표시 비고(`'.'`, `'-'`, `'정보미제공'`, `'미정보'`, `'없음'`)는 빈 비고로 정제
+ *   2) 원본값이 `'N*'`(`status.className === 'no'`)이거나 실시간 차단 공지(`isBlockedByNotice`) 또는 비고가 `'불가능'`인 경우 ──> 빨강 `'불가능'` 최우선 적용!
+ *   3) 원본값이 `'Y'`일 때 연령·시간 조건부 비고(`'36개월 이상'`, `'문의 요망'` 등)가 있으면 노랑 `'확인 필요'`,
+ *      `'연령제한없음'`·`'제한없음'`·`'0세 이상'`이거나 비고가 없으면 초록 `'가능'` 표시
+ * - 호출처: `openHospital(hospital)`
+ */
 function renderSevere(hospital) {
     const target = byId('severe');
     const severeTimeEl = byId('severe-time');
@@ -665,17 +541,31 @@ function renderSevere(hospital) {
             const rawVal = fields[item.key];
             const rawMsg = fields[`${item.key}msg`];
             const cleanVal = isBlankOrNull(rawVal) ? '-' : String(rawVal).trim();
-            const cleanMsg = isBlankOrNull(rawMsg) || rawMsg === '정보미제공' ? '' : String(rawMsg).trim();
+            const rawMsgTrimmed = isBlankOrNull(rawMsg) ? '' : String(rawMsg).trim();
+            const cleanMsg = /^(?:\.+|[-−–—]+|정보\s*미제공|미정보|없음)$/i.test(rawMsgTrimmed)
+                ? ''
+                : rawMsgTrimmed;
 
             const status = availability(rawVal, '가능', '불가능');
             const isBlockedByNotice = isDiseaseSpecificallyBlocked(activeMessages, item.key);
+            const cleanMsgWithoutNoLimit = cleanMsg.replace(/제한\s*없음/g, '');
+            const hasBlockingRemark = Boolean(
+                cleanMsg && /(불가능|불가|차단|중단|부재|휴진)/.test(cleanMsgWithoutNoLimit)
+            );
+            const isUnrestrictedRemark =
+                /^(?:연령\s*)?제한\s*없음$|^0세\s*이상$|^전\s*연령(?:\s*가능)?$|^정상(?:\s*진료)?$|^가능$/i.test(cleanMsg);
+            const hasConditionalRemark = Boolean(cleanMsg && !hasBlockingRemark && !isUnrestrictedRemark);
 
-            if (cleanMsg) {
-                valWrap.append(node('span', 'egen-badge-avail-yellow', '확인 필요'));
-            } else if (status.className === 'no' || isBlockedByNotice) {
+            if (status.className === 'no' || isBlockedByNotice || hasBlockingRemark) {
                 valWrap.append(node('span', 'egen-badge-avail-red', '불가능'));
             } else if (status.className === 'yes') {
-                valWrap.append(node('span', 'egen-badge-avail-green', '가능'));
+                if (hasConditionalRemark) {
+                    valWrap.append(node('span', 'egen-badge-avail-yellow', '확인 필요'));
+                } else {
+                    valWrap.append(node('span', 'egen-badge-avail-green', '가능'));
+                }
+            } else if (hasConditionalRemark) {
+                valWrap.append(node('span', 'egen-badge-avail-yellow', '확인 필요'));
             } else {
                 valWrap.append(node('span', 'egen-badge-dash', '-'));
             }
@@ -708,31 +598,17 @@ function renderSevere(hospital) {
         severeTimeEl.textContent = `보고 ${reported.display}`;
     }
 }
-/*
- * [JS 문법]
- * - export function, const, if/else if/else, !target, ||, ===, &&, ? :, 중첩 for...of, 템플릿 리터럴, '\u00A0'
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - String(val), String.prototype.trim() : 값을 문자열로 바꾸고 앞뒤 공백을 잘라냄.
- * - Element.prototype.replaceChildren(), .append(), Node.prototype.textContent : DOM 자식 교체·추가 및 텍스트 갱신.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderSevere.
- * - 매개변수명 : hospital (28대 중증응급질환 현황을 그릴 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : target(#severe), severeTimeEl(#severe-time).
- * - 보드·순회 변수 : fields, card, header, scrollArea, matrix, activeMessages, group, box, item, row, topRow, label, valWrap.
- * - 값·판별 변수 : rawVal, rawMsg, cleanVal, cleanMsg, status, isBlockedByNotice, paramText, paramEl, remarkText, remarkEl, reported.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 openHospital()에서 호출됨.
- * - 흐름 :
- *   1) SEVERE_DISEASE_GROUPS 순회 ──> availability()와 isDiseaseSpecificallyBlocked() 교차 판별
- *   2) 연령 비고(*msg) 있으면 '확인 필요'(노랑), 불가·차단 공지면 '불가능'(빨강), 정상이면 '가능'(초록) 배지 부여
- *   3) #severe에 매트릭스 보드 삽입 ──> hvidate/mkioskdate 중 먼저 보고된 시각으로 #severe-time 갱신
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 가용 병상(`current`)과 기준 병상(`baseline`) 비율을 계산해 E-Gen 스타일 배지 클래스·문구를 산출함
+ * - 판정 흐름:
+ *   ├── 분만실(`type === 'delivery'`): `'Y'` 또는 양수면 초록 `'Y / 기준'`
+ *   ├── 결측치(`isBlankOrNull`): 회색 `'-'` (`.egen-badge-dash`)
+ *   ├── 음수(`current < 0`): 진빨강 `'초과수용 N/기준'` (`.egen-badge-overflow` 보존!)
+ *   └── 가용률 비교: `<= 35%`·`0석` 빨강 `'혼잡'`, `< 70%` 주황 `'보통'`, `>= 70%` 초록 `'원활'`
+ * - 호출처: `createBedCell(fields, item)`
+ */
 function getBedStatusBadge(fields, def) {
     const rawVal = fields[def.current];
     const rawBase = def.baseline ? fields[def.baseline] : null;
@@ -795,28 +671,12 @@ function getBedStatusBadge(fields, def) {
     }
     return { className: 'egen-badge-pill-red', text: '혼잡 0' };
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, if, ===, !==, &&, ||, ?? (null/undefined 기본값), <, >, <=, >=, /, ? :, 템플릿 리터럴, return
- *
- * [JS 표준 내장 API]
- * - String(val), String.prototype.trim(), .toUpperCase() : 문자열 변환, 공백 제거, 대문자 통일.
- * - Math.abs(num) : 음수(예: -4)의 부호를 떼어 절댓값(4)을 구함.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : getBedStatusBadge.
- * - 매개변수명 : fields(hospital.beds 객체), def({ label, current, baseline, type } 병상 항목 정의).
- *
- * [지역 변수명]
- * - rawVal, rawBase, valStr, baseNum, currNum, isY, count, current, baseline, overflow, textVal, ratio.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 createBedCell()에서 호출됨.
- * - 흐름 :
- *   1) 분만실(type === 'delivery') ──> 'Y' 또는 양수면 기준 대수와 함께 초록 배지('Y / N') 반환
- *   2) 일반 병상 ──> 빈 값('-') · 음수('초과수용') · 가용률(<=35% 혼잡, <70% 보통, >=70% 원활) 배지 객체 반환
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 병상 1개 항목의 상단 라벨·배지와 하단 API 원본 수신값(`[가용 / 기준]`) 셀(`.egen-cell`)을 생성함
+ * - 호출처: `renderErBeds()`, `renderInpatientBeds()`
+ */
 function createBedCell(fields, item) {
     const cell = node('div', 'egen-cell');
     const topRow = node('div', 'egen-cell-top');
@@ -843,26 +703,12 @@ function createBedCell(fields, item) {
     cell.append(topRow, paramEl);
     return cell;
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, let, ? :, if/else, !==, +=, 템플릿 리터럴, '\u00A0', return
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - String(val), String.prototype.trim() : 값을 문자열로 바꾸고 앞뒤 공백을 제거함.
- * - Element.prototype.append(...nodes) : 만든 DOM 요소들을 부모 요소 끝에 순서대로 붙임.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : createBedCell.
- * - 매개변수명 : fields(hospital.beds), item(EMERGENCY_BED_ITEMS 또는 INPATIENT_BED_SECTIONS 항목).
- *
- * [지역 변수명]
- * - cell, topRow, badge, currRaw, baseRaw, paramText, paramEl.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderErBeds(), renderInpatientBeds()에서 병상 항목마다 호출됨.
- * - 흐름 : getBedStatusBadge()로 배지 계산 ──> createMarqueeEl()로 파라미터 줄 생성 ──> .egen-cell 조립 후 반환.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: `EMERGENCY_BED_ITEMS` 11종 응급실 병상 현황판을 `#er-beds-board`에 렌더링함
+ * - 호출처: `renderBeds(hospital)`
+ */
 function renderErBeds(hospital) {
     const target = byId('er-beds-board');
     if (!target) {
@@ -891,26 +737,12 @@ function renderErBeds(hospital) {
     card.append(header, grid);
     target.append(card);
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, if, !target, ||, for...of
- *
- * [브라우저 내장 Web API]
- * - Element.prototype.replaceChildren(), .append(...nodes) : 기존 자식을 비우고 새 요소들을 삽입함.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderErBeds.
- * - 매개변수명 : hospital (대상 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : target(#er-beds-board).
- * - 지역 변수 : fields, card, header, grid, item.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderBeds()에서 호출됨.
- * - 흐름 : state.sources.beds 확인 ──> EMERGENCY_BED_ITEMS 11개 순회 ──> createBedCell() 호출 후 #er-beds-board에 삽입.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: `INPATIENT_BED_SECTIONS` 6개 분과 입원·중환자실·수술실 현황판을 `#inpatient-beds-board`에 렌더링함
+ * - 호출처: `renderBeds(hospital)`
+ */
 function renderInpatientBeds(hospital) {
     const target = byId('inpatient-beds-board');
     if (!target) {
@@ -946,26 +778,12 @@ function renderInpatientBeds(hospital) {
 
     target.append(card);
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, if, !target, ||, 중첩 for...of
- *
- * [브라우저 내장 Web API]
- * - Element.prototype.replaceChildren(), .append(...nodes) : 기존 자식을 비우고 섹션별 그리드를 삽입함.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderInpatientBeds.
- * - 매개변수명 : hospital (대상 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : target(#inpatient-beds-board).
- * - 지역 변수 : fields, card, header, section, subHeader, subGrid, item.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderBeds()에서 호출됨.
- * - 흐름 : INPATIENT_BED_SECTIONS 6개 섹션 순회 ──> 소제목 + createBedCell() 조립 ──> #inpatient-beds-board에 삽입.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 응급실·입원 병상 보드를 일괄 갱신하고 보고일시(`hvidate`)를 `#bed-time`에 표시함
+ * - 호출처: `openHospital(hospital)`
+ */
 function renderBeds(hospital) {
     const bedTimeEl = byId('bed-time');
     if (bedTimeEl) {
@@ -981,26 +799,12 @@ function renderBeds(hospital) {
         bedTimeEl.textContent = `보고 ${reported.display}`;
     }
 }
-/*
- * [JS 문법]
- * - export function, const, if, ||, &&, 템플릿 리터럴
- *
- * [브라우저 내장 Web API]
- * - Node.prototype.textContent : HTML 태그 해석 없이 안전한 일반 글자만 요소에 설정함.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderBeds.
- * - 매개변수명 : hospital (대상 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : bedTimeEl(#bed-time).
- * - 지역 변수 : fields, reported.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 openHospital()에서 호출됨.
- * - 흐름 : renderErBeds() ──> renderInpatientBeds() ──> parseApiDate(fields.hvidate) ──> #bed-time 보고 시각 갱신.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 의료 장비 1개 항목(`hv*ayn` 및 기준 대수 `hvs*`)의 상태 셀(`.equipment-cell`)을 생성함
+ * - 호출처: `renderEquipment(hospital)`
+ */
 function createEquipmentCell(fields, item) {
     const cell = node('div', 'egen-cell equipment-cell');
     const topRow = node('div', 'egen-cell-top');
@@ -1047,26 +851,12 @@ function createEquipmentCell(fields, item) {
     cell.append(topRow, paramEl);
     return cell;
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, let, if/else if/else, !isBlankOrNull(), ===, !==, &&, ||, >, >=, ? :, +=, 템플릿 리터럴, '\u00A0', return
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - String(val), String.prototype.trim(), .toUpperCase(), .startsWith('N') : 문자열 정규화 및 'N' 시작 여부 검사.
- * - Element.prototype.append(...nodes) : 장비명·배지 상단 행과 파라미터 줄을 셀에 조립함.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : createEquipmentCell.
- * - 매개변수명 : fields(hospital.beds), item(EQUIPMENT_TABLE_ITEMS 항목).
- *
- * [지역 변수명]
- * - cell, topRow, rawVal, rawBase, badgeClass, badgeText, valStr, numVal, isAvail, baseline, currRaw, baseRaw, paramText, paramEl.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderEquipment()에서 11대 의료 장비마다 호출됨.
- * - 흐름 : rawVal === 'Y' 또는 양수면 'Y / N' 초록 배지, 'N*'·0·빈 값이면 '-' 배지 ──> 장비 셀 조립 후 반환.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: `EQUIPMENT_TABLE_ITEMS` 11종 특수 응급장비 가용 보드를 `#equipment`에 렌더링함
+ * - 호출처: `openHospital(hospital)`
+ */
 function renderEquipment(hospital) {
     const target = byId('equipment');
     if (!target) {
@@ -1095,26 +885,12 @@ function renderEquipment(hospital) {
     card.append(header, grid);
     target.append(card);
 }
-/*
- * [JS 문법]
- * - export function, const, if, !target, ||, for...of
- *
- * [브라우저 내장 Web API]
- * - Element.prototype.replaceChildren(), .append(...nodes) : 기존 자식을 비우고 장비 카드 그리드를 삽입함.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderEquipment.
- * - 매개변수명 : hospital (대상 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : target(#equipment).
- * - 지역 변수 : fields, card, header, grid, item.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 openHospital()에서 호출됨.
- * - 흐름 : state.sources.beds 확인 ──> EQUIPMENT_TABLE_ITEMS 11종 순회 ──> createEquipmentCell() 생성 후 #equipment에 삽입.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 개발자 모드 `#all-beds` 영역에 `hv*`, `hvs*`, 당직의·보고시각 원본 키-값을 빠짐없이 대조 출력함
+ * - 호출처: `renderDeveloperInspector(hospital)`
+ */
 function renderRawBeds(hospital) {
     const all = byId('all-beds');
     if (!all) {
@@ -1186,30 +962,12 @@ function renderRawBeds(hospital) {
         empty(all, '미정보 · 세부 항목이 없습니다.');
     }
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, if, !all, [...new Set([...])], 화살표 함수, /^hv\d+$/, /^hvs\d+$/, 중첩 for...of, continue
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - new Set(iterable) : 중복된 키를 자동으로 제거하는 표준 집합 컬렉션임.
- * - Object.keys(obj) : 객체의 키 이름들을 배열로 꺼냄.
- * - Array.prototype.filter(), .sort(), String.prototype.localeCompare(..., { numeric: true }) : hv1, hv2, ..., hv10 숫자순 정렬.
- * - RegExp.prototype.test(str) : 문자열이 정규표현식 규칙과 일치하는지 확인함.
- * - Element.prototype.replaceChildren(), .append(), .childElementCount : 정의 목록 DOM 조립·자식 유무 확인.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderRawBeds.
- * - 매개변수명 : hospital (대상 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : all(#all-beds).
- * - 지역 변수 : fields, groups, group, section, list, key, pair.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderDeveloperInspector()에서 호출됨.
- * - 흐름 : hv*·hvs*·기타 병상 키 중복 제거 및 숫자순 정렬 ──> fieldLabel(key) + displayValue() 쌍으로 #all-beds에 출력.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 개발자 모드 `#all-severe`에 `mkioskty1`~`28` 및 모든 비고(`*msg`) 원본 필드를 출력함
+ * - 호출처: `renderDeveloperInspector(hospital)`
+ */
 function renderRawSevere(hospital) {
     const all = byId('all-severe');
     if (!all) {
@@ -1256,29 +1014,12 @@ function renderRawSevere(hospital) {
     section.append(list);
     all.append(section);
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, if, !all, [...Array.from(...), ...], 화살표 함수, &&, !==, ||, ? :, 템플릿 리터럴, for...of
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - Array.from({ length: 28 }, mapFn) : 길이 28 배열을 만들어 mkioskty1~28 키 목록을 생성함.
- * - Object.keys(obj), Array.prototype.filter(), .includes(val) : 기본 키 외 추가 수신 키를 추려냄.
- * - String(val), String.prototype.trim() : 원본값 문자열 변환 및 양쪽 공백 제거.
- * - Element.prototype.replaceChildren(), .append(...nodes) : 정의 목록 DOM을 비우고 새로 채움.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderRawSevere.
- * - 매개변수명 : hospital (대상 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : all(#all-severe).
- * - 지역 변수 : fields, section, list, standardKeys, extraKeys, key, val, label, pair.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderDeveloperInspector()에서 호출됨.
- * - 흐름 : mkioskty1~28·비고·보고일시·추가 키 결합 ──> MKIOSKTY_METADATA 한글 설명 + 원본값을 #all-severe에 출력.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 개발자 모드 `#all-messages`에 실시간 진료 공지 XML 원본 태그 10종을 건별로 전부 표시함
+ * - 호출처: `renderDeveloperInspector(hospital)`
+ */
 function renderRawMessages(hospital) {
     const all = byId('all-messages');
     if (!all) {
@@ -1334,27 +1075,12 @@ function renderRawMessages(hospital) {
 
     all.append(section);
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, if, !all, ||, for (let i = 0; ...), for...of + 구조 분해([dt, dd]), ? :, 템플릿 리터럴
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - String(val), String.prototype.trim() : 값을 문자열로 바꾸고 양쪽 공백을 제거함.
- * - Element.prototype.replaceChildren(), .append(...nodes) : 기존 자식을 비우고 새 카드 목록을 채움.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderRawMessages.
- * - 매개변수명 : hospital (대상 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : all(#all-messages).
- * - 지역 변수 : msgs, section, i, item, card, dl, fields, dt, dd, pair, titleText.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderDeveloperInspector()에서 호출됨.
- * - 흐름 : hospital.messages 배열 순회 ──> 공지마다 10개 XML 원본 태그를 <dl> 카드로 조립 ──> #all-messages에 삽입.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 개발자 모드 `#basic-info`에 응급의료기관 기본정보 및 권역외상센터 기본정보 원본 필드를 표시함
+ * - 호출처: `renderDeveloperInspector(hospital)`
+ */
 function renderBasic(hospital) {
     const target = byId('basic-info');
     if (!target) {
@@ -1396,28 +1122,13 @@ function renderBasic(hospital) {
         target.append(section);
     }
 }
-/*
- * [JS 문법]
- * - function (내부 보조 함수), const, if/else if/else, !target, ||, for...of + 구조 분해([heading, fields, loaded], [key, value]), continue
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - Object.keys(obj), Object.entries(obj) : 객체의 키 배열과 [키, 값] 쌍 배열을 얻음.
- * - Array.prototype.includes(val) : 배열에 특정 값이 들어 있는지 검사함.
- * - Element.prototype.replaceChildren(), .append(...nodes) : 기존 자식을 비우고 아코디언 목록을 채움.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderBasic.
- * - 매개변수명 : hospital (대상 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : target(#basic-info).
- * - 지역 변수 : blocks, heading, fields, loaded, section, list, key, value, pair.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderDeveloperInspector()에서 호출됨.
- * - 흐름 : hospital.basic·hospital.trauma 순회 ──> 로딩 상태 확인 ──> 중복 키 제외 후 <dl> 원본 사전을 #basic-info에 출력.
- */
 
+/*
+ * [역할 및 백엔드 API 연결]
+ * - 역할: 초기 경량 목록(`?compact=true`)에서 생략된 장문 약도·원본 태그들을 `GET /api/hospitals/{hpid}`로 온디맨드 보충함
+ * - 백엔드 연결: `EmergencyApiController.getHospitalDetail(hpid)` -> `HospitalDto` 전체 JSON 반환 -> `state.detailCache` 캐싱
+ * - 호출처: `renderDeveloperInspector(hospital)`
+ */
 async function hydrateHospitalDetailIfNeeded(hospital) {
     if (!hospital?.id || hospital._detailHydrated) {
         return hospital;
@@ -1450,23 +1161,6 @@ async function hydrateHospitalDetailIfNeeded(hospital) {
             priority: 'low',
             headers: { Accept: 'application/json' }
         });
-        /*
-         * [JS 문법]
-         * - const, await, 템플릿 리터럴
-         *
-         * [브라우저 내장 Web API]
-         * - encodeURIComponent(str) : URL 경로에 들어갈 ID 문자열의 특수문자를 안전하게 인코딩함.
-         * - fetch(url, { priority: 'low', headers }) : 낮은 네트워크 우선순위로 HTTP GET 요청을 보냄.
-         *
-         * [경로 변수 URL 조립 분해]
-         * - 1단계 (경로 접두사) : '/api/hospitals/'
-         * - 2단계 (경로 변수 인코딩) : encodeURIComponent(hospital.id) (예: 'A2200001')
-         *   GET /api/hospitals/A2200001
-         *   ├── 경로 prefix     : /api                        (EmergencyApiController @RequestMapping("/api"))
-         *   ├── 매핑 경로       : /hospitals/{hpid}           (EmergencyApiController.getHospitalDetail() @GetMapping)
-         *   └── 경로 변수 {hpid} : @PathVariable("hpid") String (형식 검증 통과 시 전체 HospitalDto JSON 반환, 오류 400, 없음 404)
-         *   ──> 초기 목록(?compact=true)에서 뺐던 약 60여 개 상세 필드를 개발자 모드 열람 시 추가 수신함.
-         */
         if (response.ok) {
             const fullDto = await response.json();
             state.detailCache.set(hospital.id, fullDto);
@@ -1492,34 +1186,12 @@ async function hydrateHospitalDetailIfNeeded(hospital) {
     }
     return hospital;
 }
-/*
- * [JS 문법]
- * - async function, ?., ||, !hospital?.id, if, 객체 펼치기({ ...(hospital.beds || {}), ...(cached.beds || {}) })
- * - 예외·제어 : try/catch/finally, void, +=, return
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - Map.prototype.get(key), .set(key, val) : 키-값 캐시 맵에서 데이터를 바로 꺼내거나 저장함.
- * - Object.assign(target, ...sources) : 기존 객체의 속성을 덮어써서 여러 객체 내용을 하나로 합침.
- * - response.ok, response.json() : HTTP 2xx 성공 확인 및 응답 JSON -> JS 객체 변환.
- * - HTMLElement.prototype.hidden, Node.prototype.textContent : 요소 숨김 및 안내 문구 텍스트 갱신.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : hydrateHospitalDetailIfNeeded.
- * - 매개변수명 : hospital (전체 원본 필드를 채워 넣을 병원 객체).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : spinner(#developer-spinner), statusText(#developer-status).
- * - 지역 변수 : cached, response, fullDto, detailErr.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 renderDeveloperInspector()에서 호출됨.
- * - 흐름 :
- *   1) _detailHydrated가 참이면 즉시 hospital 반환
- *   2) state.detailCache.get() 캐시 적중 ──> Object.assign()으로 hospital에 바로 합쳐 반환
- *   3) 캐시 미적중 ──> GET /api/hospitals/{hpid} 호출 ──> detailCache·hospital 저장 + detailHydratedCount += 1
- *   4) finally에서 !state.loading이면 스피너 숨김 ──> hospital 반환
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 개발자 모드 아코디언(`#developer-mode`)이 펼쳐졌을 때 4종 원본 대조표를 그리고 필요 시 단건 상세 데이터를 보강함
+ * - 호출처: `app.js` (`#developer-mode` `toggle` 이벤트), `openHospital(hospital)`
+ */
 export async function renderDeveloperInspector(hospital) {
     if (!hospital) {
         return;
@@ -1540,24 +1212,12 @@ export async function renderDeveloperInspector(hospital) {
         }
     }
 }
-/*
- * [JS 문법]
- * - export async function, if, !hospital, await, ?., ===, &&
- *
- * [브라우저 내장 Web API]
- * - HTMLDetailsElement.prototype.open : <details> 접힘·펼침 상태를 불리언으로 확인하는 속성임.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : renderDeveloperInspector.
- * - 매개변수명 : hospital (개발자 인스펙터에 출력할 병원 객체).
- *
- * [동작 흐름]
- * - 호출 출처 : app.js의 #developer-mode toggle 이벤트 및 hospital-sheet.js의 openHospital()에서 호출됨.
- * - 흐름 :
- *   1) 현재 데이터로 renderRawBeds·renderBasic·renderRawSevere·renderRawMessages 4종 먼저 그리기
- *   2) !_detailHydrated ──> hydrateHospitalDetailIfNeeded() 호출 ──> 같은 병원·열린 상태면 4종 다시 그리기
- */
 
+/*
+ * [역할 및 접근성 원리]
+ * - 역할: 모달 시트가 열렸을 때 뒤쪽 지도·검색창에 키보드 탭·스크린 리더 포커스가 새지 않도록 `inert` 속성을 일괄 전환함
+ * - 호출처: `snapSheetToHalfPeek()`, `expandSheetFromHalfPeek()`, `openHospital()`, `closeSheet()`
+ */
 function setBackgroundInert(value) {
     for (const selector of ['#map', '#search-panel', '#active-route-banner', '#mobile-top-left-menu']) {
         const el = document.querySelector(selector);
@@ -1566,27 +1226,12 @@ function setBackgroundInert(value) {
         }
     }
 }
-/*
- * [JS 문법]
- * - export function, for...of, const, if
- *
- * [브라우저 내장 Web API]
- * - document.querySelector(selector) : CSS 선택자와 일치하는 첫 번째 DOM 요소를 찾음.
- * - HTMLElement.prototype.inert : true일 때 클릭·Tab 초점·스크린 리더 접근을 모두 막는 HTML 표준 속성임.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : setBackgroundInert.
- * - 매개변수명 : value (true면 배경 조작 차단, false면 배경 조작 복구).
- *
- * [지역 변수명]
- * - selector : 배경 영역 선택자('#map', '#search-panel', '#active-route-banner', '#mobile-top-left-menu').
- * - el : 찾은 DOM 요소.
- *
- * [동작 흐름]
- * - 호출 출처 : hospital-sheet.js의 snapSheetToHalfPeek(), expandSheetFromHalfPeek(), openHospital(), closeSheet()에서 호출됨.
- * - 흐름 : 4개 배경 영역 순회 ──> querySelector(selector) ──> el.inert = value 일괄 적용.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 모바일에서 경로 표시 후 시트를 하단 `268px` 반열림(`.half-peek`)으로 내려 지도 경로선과 전화·내비 버튼을 동시에 조작하게 함
+ * - 호출처: `directions-eta.js:initDirectionsControls()` (`uiCallbacks.onSnapSheetHalfPeek`), `initSheetDrag()`
+ */
 export function snapSheetToHalfPeek() {
     const sheet = byId('sheet');
     const dim = byId('sheet-dim');
@@ -1610,28 +1255,12 @@ export function snapSheetToHalfPeek() {
         scrollBox.scrollTop = 0;
     }
 }
-/*
- * [JS 문법]
- * - export function, const, if, !sheet, ||
- *
- * [브라우저 내장 Web API]
- * - Element.prototype.classList.add(...classes) : 요소에 CSS 클래스를 추가함.
- * - HTMLElement.prototype.style.transform, .style.transition, .inert, .hidden : 인라인 스타일·비활성·숨김 제어.
- * - Element.prototype.setAttribute(), .querySelector(), .scrollTop : 속성 지정·하위 조회·스크롤 맨 위 이동.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : snapSheetToHalfPeek (매개변수 없음).
- *
- * [DOM 요소 참조명]
- * - sheet(#sheet), dim(#sheet-dim), scrollBox(.sheet-scroll).
- *
- * [동작 흐름]
- * - 호출 출처 : directions-eta.js의 initDirectionsControls()(onSnapSheetHalfPeek 콜백) 및 hospital-sheet.js의 initSheetDrag().
- * - 흐름 :
- *   1) state.sheetHalfPeek = true ──> 'open', 'half-peek' 클래스 추가 ──> 드래그 스타일·배경 딤 해제
- *   2) setBackgroundInert(false) ──> scrollTop = 0으로 맞춰 지도 경로와 전화·내비 버튼을 동시에 보게 함.
- */
 
+/*
+ * [역할 및 호출처]
+ * - 역할: 반열림(`.half-peek`) 상태인 시트를 다시 전체 모달 상태로 펼침
+ * - 호출처: `directions-eta.js:initDirectionsControls()` (`uiCallbacks.onExpandSheetFromHalfPeek`), `syncResponsiveSheetLayout()`, `initSheetDrag()`
+ */
 export function expandSheetFromHalfPeek() {
     const sheet = byId('sheet');
     const dim = byId('sheet-dim');
@@ -1651,26 +1280,12 @@ export function expandSheetFromHalfPeek() {
     }
     setBackgroundInert(true);
 }
-/*
- * [JS 문법]
- * - export function, const, if, !sheet, ||
- *
- * [브라우저 내장 Web API]
- * - Element.prototype.classList.remove(), .add() : CSS 클래스를 제거하거나 추가함.
- * - HTMLElement.prototype.style.transform, .style.transition, .inert, .hidden, Element.prototype.setAttribute() : 모달 상태 제어.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : expandSheetFromHalfPeek (매개변수 없음).
- *
- * [DOM 요소 참조명]
- * - sheet(#sheet), dim(#sheet-dim).
- *
- * [동작 흐름]
- * - 호출 출처(외부) : directions-eta.js의 reopenActiveRouteHospital()(onExpandSheetFromHalfPeek 콜백).
- * - 호출 출처(내부) : hospital-sheet.js의 syncResponsiveSheetLayout()·initSheetDrag().
- * - 흐름 : sheetHalfPeek = false ──> 'half-peek' 제거 ──> #sheet-dim 표시 ──> setBackgroundInert(true)로 전체 시트 복귀.
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 선택된 병원의 상세 시트(`#sheet`)를 열고 대학교 배경 로고·연락처·공지·병상·장비·중증질환·길찾기를 한 번에 채움
+ * - 호출처: `markers-cluster.js` (카드·클러스터 클릭), `search-controls.js` (검색·딥링크·실시간 자동갱신·미리보기), `directions-eta.js` (추천순위·배너)
+ */
 export function openHospital(hospital, focus = true, options = {}) {
     if (!hospital) {
         return;
@@ -1779,37 +1394,12 @@ export function openHospital(hospital, focus = true, options = {}) {
 
     scheduleMarqueeRefresh();
 }
-/*
- * [JS 문법]
- * - export function, 기본값 매개변수(focus = true, options = {}), const, if/else, !hospital, ?., ??, !==, &&, ||, ? :
- * - 화살표 함수 + 구조 분해(([, loaded]), ([name])), 템플릿 리터럴
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - Date.now(), Date.prototype.toLocaleString('ko-KR', opts) : 현재 타임스탬프·한국 시간 문자열 변환.
- * - document.activeElement : 현재 키보드 초점이 놓인 요소를 기억함.
- * - Object.entries(obj), Array.prototype.filter(), .map(), .join(), Number.prototype.toFixed() : 목록 추출·거리 포맷.
- * - HTMLElement.prototype.hidden, .inert, .focus(), .classList, .setAttribute(), .querySelector(), .scrollTop, setTimeout() : 시트 제어.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : openHospital.
- * - 매개변수명 : hospital(열 병원 객체), focus(포커스·스크롤 초기화 여부), options({ skipDirections } 길찾기 생략 여부).
- *
- * [DOM 요소 및 지역 변수]
- * - 시트·검색 요소 : searchResultsEl(#search-results), devModeEl(#developer-mode), dirClearBtn(#directions-clear-btn), sheet(#sheet).
- * - 텍스트·버튼 ID : #hospital-name, #sheet-updated, #hospital-type, #hospital-address, #hospital-distance, #data-state.
- * - 닫기·배경 ID : #sheet-dim, #sheet-close.
- * - 지역 변수 : isDifferentHospital, updated, offlineNote, distance, originName, failed.
- *
- * [동작 흐름]
- * - 호출 출처(내부·배너) : directions-eta.js의 순위 클릭·배너 재열기.
- * - 호출 출처(지도·검색) : markers-cluster.js의 마커·클러스터 클릭, search-controls.js의 딥링크·검색·스냅샷·프리뷰.
- * - 흐름 :
- *   1) 반경 팝오버·검색 결과 닫기 ──> 직전 포커스 저장 ──> 병원 변경 시 개발자 모드·경로 캐시 초기화
- *   2) 상단 정보 갱신 ──> populateWaypointSelect() ──> 연락처·공지·병상·장비·질환(열려 있으면 인스펙터) 렌더링
- *   3) !options.skipDirections ──> loadDirectionsForHospital(hospital, false)
- *   4) 시트 열기 + setBackgroundInert(true) ──> #sheet-close 포커스 ──> updateMarquees() 100ms·350ms 재실행
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 열린 병원 상세 시트를 닫고 URL의 `?hospital=` 쿼리를 정리한 뒤 직전 초점 요소로 포커스를 복원함
+ * - 호출처: `app.js` (`#sheet-close`, `#sheet-dim`, `Escape` 키), `directions-eta.js`, `search-controls.js`, `initSheetDrag()`
+ */
 export function closeSheet() {
     if (marqueeTimerId !== null) {
         clearTimeout(marqueeTimerId);
@@ -1856,30 +1446,12 @@ export function closeSheet() {
         byId('search-toggle')?.focus({ preventScroll: true });
     }
 }
-/*
- * [JS 문법]
- * - export function, const, if/else, !sheet, ?., ||, &&, !==, >, try/catch, void
- *
- * [브라우저 내장 Web API]
- * - Element.prototype.classList.remove(), .setAttribute(), HTMLElement.prototype.style, .hidden, .inert : 시트 상태 초기화.
- * - new URL(url), URLSearchParams.prototype.has(), .delete(), window.history.replaceState() : 새로고침 없이 URL 쿼리 제거.
- * - Node.prototype.isConnected, Element.prototype.closest(), .getClientRects(), HTMLElement.prototype.focus() : 안전 포커스 복원.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : closeSheet (매개변수 없음).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : sheet(#sheet), #sheet-dim, #keyword, #search-toggle.
- * - 지역 변수 : currentUrl, histErr, previous.
- *
- * [동작 흐름]
- * - 호출 출처 : app.js(ESC·닫기·딤), directions-eta.js(onCloseSheet), search-controls.js, hospital-sheet.js의 initSheetDrag().
- * - 흐름 :
- *   1) 시트 'open'·'half-peek' 제거 + sheet.inert = true + setBackgroundInert(false)
- *   2) URL에 ?hospital 또는 ?hpid 있으면 history.replaceState()로 주소창 쿼리만 정리
- *   3) previous 요소가 화면에 살아 있으면 focus() 복원 ──> 아니면 #search-toggle로 포커스 이동
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 화면 크기와 터치 기기 여부에 따라 시트 형태를 `modal`(`1200×680` 이상 PC) / `slider`(일반 PC) / `mobile`(`640px` 이하·터치)로 동기화함
+ * - 호출처: `app.js` (`init`, `window` `resize` 리스너)
+ */
 export function syncResponsiveSheetLayout() {
     const isCoarseOnlyMobile =
         window.matchMedia('(pointer: coarse)').matches &&
@@ -1913,29 +1485,12 @@ export function syncResponsiveSheetLayout() {
         }
     }
 }
-/*
- * [JS 문법]
- * - export function, const, let, &&, ||, !window.matchMedia(), <=, >=, !==, if/else if
- *
- * [브라우저 내장 Web API]
- * - window.matchMedia(query), MediaQueryList.prototype.matches : 마우스 없이 터치 입력만 있는 환경인지 미디어 쿼리로 확인함.
- * - window.innerWidth, window.innerHeight : 현재 브라우저 화면 가로·세로 크기(px).
- * - DOMTokenList.prototype.toggle(cls, force) : 조건에 따라 CSS 클래스를 붙이거나 뗌.
- * - HTMLElement.prototype.dataset, .style.transform, .style.transition : data-* 속성 및 인라인 스타일 제어.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : syncResponsiveSheetLayout (매개변수 없음).
- *
- * [DOM 요소 및 지역 변수]
- * - isCoarseOnlyMobile, isMobileEnv, layoutMode, sheet(#sheet).
- *
- * [동작 흐름]
- * - 호출 출처 : app.js의 init() 및 window resize 이벤트에서 호출됨.
- * - 흐름 :
- *   1) 폭 640px 이하·Apple 터치·순수 터치 -> 'mobile' / 1200x680 이상 -> 'modal' / 나머지 PC -> 'slider'
- *   2) body.dataset.sheetLayout 변경 시 갱신 ──> 비모바일에서 Half-Peek 중이었으면 expandSheetFromHalfPeek() 자동 복귀
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 모바일 바텀시트 상단 손잡이(`#sheet-drag-handle`) 터치 스와이프를 감지해 전체 펼침 <-> 반열림(`Half-Peek`) <-> 닫기를 처리함
+ * - 호출처: `app.js:init()`에서 앱 시작 시 1회 바인딩
+ */
 export function initSheetDrag() {
     const handle = byId('sheet-drag-handle');
     const sheet = byId('sheet');
@@ -2010,35 +1565,3 @@ export function initSheetDrag() {
         }
     });
 }
-/*
- * [JS 문법]
- * - export function, const, let, if/else if, !handle, ||, &&, ===, !==, >, <, <=, -, 화살표 함수, 템플릿 리터럴, ?.
- *
- * [JS 표준 및 브라우저 내장 Web API]
- * - EventTarget.prototype.addEventListener(type, fn, options) : touchmove만 { passive: false }로 등록해 preventDefault() 허용.
- * - TouchEvent.prototype.touches, Touch.prototype.clientY : 한 손가락 터치 개수와 수직 Y 좌표를 읽음.
- * - Math.max(a, b) : 계산 결과가 0 미만 음수로 내려가지 않도록 하한을 제한함.
- * - HTMLElement.prototype.offsetHeight, .style.transform, .style.transition : translate3d로 드래그 위치를 실시간 반영함.
- * - DOMTokenList.prototype.contains(), Element.prototype.querySelector(), .closest() : 클래스 유무·조상 요소 검사.
- *
- * [함수명 및 매개변수명]
- * - 함수명 : initSheetDrag (매개변수 없음).
- * - 내부 보조 함수명 : finish (손가락을 뗐을 때 스냅·닫기 결정 함수).
- *
- * [DOM 요소 및 지역 변수]
- * - DOM 요소 : handle(#sheet-drag-handle), sheet(#sheet).
- * - 지역 변수 : startY, delta, baseOffset, nextOffset.
- *
- * [동작 흐름]
- * - 호출 출처 : app.js의 init()에서 앱 시작 시 1회 호출되어 터치 제스처를 등록함.
- * - 이벤트 바인딩 :
- *   ├── handle(#sheet-drag-handle) 'touchstart' ──> startY·delta 초기화 및 sheet.style.transition 해제
- *   ├── handle(#sheet-drag-handle) 'touchmove' ──> preventDefault() 후 sheet.style.transform 실시간 이동
- *   ├── handle(#sheet-drag-handle) 'touchend' · 'touchcancel' ──> finish()로 스냅·닫기 판정
- *   └── #sheet .sheet-header 'click' ──> Half-Peek && #sheet-close 외 탭 시 expandSheetFromHalfPeek()
- * - 스냅·닫기 임계값 흐름 :
- *   1) 전체 펼침 ──> 경로 있고 아래로 70 초과~210px 이하 드래그 ──> snapSheetToHalfPeek()
- *      └── 경로 없거나 95px 초과(또는 210px 초과) 아래 드래그 ──> closeSheet()
- *   2) Half-Peek ──> 위로 45px 넘게(delta < -45) 또는 .sheet-header 탭 ──> expandSheetFromHalfPeek()
- *      └── 아래로 75px 넘게 드래그(delta > 75) ──> closeSheet()
- */

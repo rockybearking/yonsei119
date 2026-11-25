@@ -1,3 +1,17 @@
+/*
+ * ============================================================================
+ * [역할 및 실행 시점]
+ * - 역할: 주변 병원 클러스터 모달(`#cluster-dialog`), 최초 접속 이용 안내 모달(`#notice-dialog`),
+ *   그리고 화면 상단 알약형 상태·오류 토스트(`#status-toast`) 스타일시트
+ *
+ * [전체 연결 흐름]
+ * - `#cluster-dialog` ──> `js/markers-cluster.js:openCluster()`, `js/app.js`(`#cluster-zoom`)
+ * - `#notice-dialog`  ──> `js/search-controls.js:initNotice()`
+ * - `#status-toast`   ──> `js/utils.js:setStatus(message)` (HTML5 Popover Top Layer 표시·자동 닫힘)
+ * ============================================================================
+ */
+
+/* [HTML5 네이티브 <dialog> 공통 배경 막(::backdrop) 및 스크롤 전파 차단] */
 dialog {
     color: #233448;
 }
@@ -11,27 +25,8 @@ dialog::backdrop {
     overscroll-behavior: contain;
     background: rgba(10, 22, 40, 0.62);
 }
-/*
- * [CSS 문법]
- * - dialog : HTML5 표준 모달·대화창 요소(<dialog>)를 선택하는 타입 선택자임.
- * - :modal : showModal() 호출로 최상위 레이어(Top Layer)에 열린 모달 상태만 선택함.
- * - ::backdrop : 모달 뒤쪽 화면 전체를 덮는 반투명 배경 막을 가리키는 가상 의사 요소임.
- *
- * [표준 CSS 속성·단위·함수]
- * - color : 다이얼로그 내부의 기본 글자색을 지정하는 표준 속성임.
- * - overscroll-behavior: contain : 모달이나 뒷배경 스크롤이 뒤쪽 본문으로 번지지 않게 막음.
- * - overflow: hidden : 배경 막 레이어 자체에 스크롤바가 생기지 않도록 숨김.
- * - background / rgba(...) : 반투명 어두운 배경 오버레이 색상을 지정하는 속성·함수임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : <dialog id="cluster-dialog" closedby="any"> 및 #notice-dialog에 적용됨.
- * - js/markers-cluster.js / js/search-controls.js / js/app.js : showModal()·close()로 제어함.
- *
- * [동작 흐름]
- * - showModal() 호출 -> <dialog>를 Top Layer로 올리고 :modal과 ::backdrop을 함께 활성화함.
- * - 모바일 터치 스크롤 -> 양쪽 overscroll-behavior: contain 덕분에 뒤쪽 지도가 움직이지 않음.
- */
 
+/* [겹친 주변 병원 선택 클러스터 모달(#cluster-dialog)] */
 .cluster-dialog {
     width: min(480px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
     max-height: 85dvh;
@@ -46,29 +41,6 @@ dialog::backdrop {
     flex-direction: column;
     overflow: hidden;
 }
-/*
- * [CSS 문법]
- * - [open] : <dialog>가 열릴 때 브라우저가 자동으로 붙이는 open 속성을 감지하는 선택자임.
- *
- * [표준 CSS 속성·단위·함수]
- * - width: min(...) / calc(...) : 최대 480px 안에서 좌우 여백을 뺀 반응형 폭을 계산함.
- * - env(safe-area-inset-*, 0px) : 노치·둥근 모서리 안전 영역 여백을 읽어와 폭 계산에 반영함.
- * - max-height: 85dvh : 동적 뷰포트 높이의 85% 이하로 모달 최대 높이를 제한함.
- * - display: flex / flex-direction: column / overflow: hidden : 열림 시 세로 배치와 넘침 숨김임.
- * - padding / border / border-radius / box-shadow : 모달 카드 여백·테두리·그림자 속성임.
- *
- * [CSS 선택자명]
- * - .cluster-dialog : 겹친 병원 클러스터 카드를 눌렀을 때 주변 병원을 고르는 모달 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : <dialog id="cluster-dialog" class="cluster-dialog" closedby="any">와 매칭됨.
- * - js/markers-cluster.js : openCluster()가 showModal()을 부르면 [open] 규칙이 켜짐.
- *
- * [동작 흐름]
- * - 닫힌 기본 상태 -> display 미지정으로 브라우저 기본 display: none 숨김 상태를 유지함.
- * - 클러스터 카드 클릭 -> openCluster() -> showModal() 호출
- *   ──> 브라우저가 open 속성을 추가하면서 세로 Flex 배치가 활성화됨.
- */
 
 .dialog-heading {
     flex: 0 0 auto;
@@ -135,28 +107,8 @@ dialog::backdrop {
 .primary-button:hover {
     background: #1d5bb0;
 }
-/*
- * [표준 CSS 속성·단위·함수]
- * - flex: 0 0 auto / flex: 1 1 auto / min-height: 0 : 제목 높이는 고정하고 목록만 내부 스크롤됨.
- * - max-height: min(56dvh, 420px) / overflow-y: auto : 세로 높이를 제한하고 스크롤바를 켬.
- * - overscroll-behavior: contain : 목록 끝에 닿아도 바깥 배경으로 스크롤이 번지지 않게 막음.
- * - display: grid / display: flex / flex-direction: column / gap : 목록 간격과 세로 정렬임.
- * - align-items: flex-start / justify-content: space-between : 헤더 제목과 닫기 버튼을 배치함.
- * - border-left / var(...) : 왼쪽 4px 강조 테두리에 지정한 색상 변수를 적용하는 속성·함수임.
- * - width: 100% / min-height: 46px / padding / margin-bottom : 버튼 최소 높이와 여백 속성임.
- * - border / border-radius / background / color / font-weight / text-align / cursor / :hover : 외형임.
- *
- * [CSS 선택자명]
- * - .dialog-heading : 클러스터·이용 안내 모달 상단 제목·닫기 버튼 행이 공유하는 헤더 클래스임.
- * - .cluster-list / .cluster-item : 병원 목록 스크롤 영역과 개별 병원 선택 버튼 클래스임.
- * - .primary-button : 모달 하단의 파란색 기본 확인·구역 확대 버튼(#cluster-zoom 등) 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : #cluster-title, #cluster-close, #cluster-list, #cluster-zoom, #notice-confirm에 적용됨.
- * - js/markers-cluster.js : openCluster()가 visualGroup() 클래스가 붙은 .cluster-item을 채움.
- * - js/app.js : init()이 #cluster-close 닫기와 #cluster-zoom 구역 확대(fitBounds())를 연결함.
- */
 
+/* [응급의료 정보 이용 안내 및 법적 면책 조항 모달(#notice-dialog)] */
 .notice-dialog {
     width: min(448px, calc(100vw - 28px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
     max-height: 90dvh;
@@ -185,32 +137,11 @@ dialog::backdrop {
     text-decoration: underline;
     text-underline-offset: 3px;
 }
-/*
- * [CSS 문법]
- * - 부모 > 자식 : 직계 자식만 선택해 하단에 직접 놓인 보조 버튼만 고르는 자식 결합자임.
- *
- * [표준 CSS 속성·단위·함수]
- * - width: min(448px, calc(...)) / env(safe-area-inset-*, 0px) : 안전 여백 제외 폭을 계산함.
- * - max-height: 90dvh / overflow: auto : 동적 화면 높이 90%를 넘으면 내부 스크롤을 제공함.
- * - word-break: keep-all : 한국어 문장이 단어 중간에 끊기지 않고 어절 단위로 줄바꿈되게 함.
- * - display: block / margin: 10px auto 0 : 좌우 auto 여백으로 블록 버튼을 가운데 정렬함.
- * - text-decoration: underline / text-underline-offset: 3px : 밑줄과 글자 간격을 3px 띄움.
- * - padding / border / border-radius / background / box-shadow / font-size / line-height / color : 외형임.
- *
- * [CSS 선택자명]
- * - .notice-dialog : 최초 접속 시 이용 안내 및 전화 확인 수칙을 보여 주는 모달 클래스임.
- * - .notice-copy : 이용 안내 본문 단락 영역 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : #notice-dialog, #notice-description(.notice-copy), #notice-skip(.text-button)에 적용됨.
- * - js/search-controls.js : initNotice()가 바깥 클릭 폴백 등록과 숨김 여부를 확인함.
- *
- * [동작 흐름]
- * - 첫 접속(숨김·딥링크 없음) -> initNotice()가 openNotice()로 안내 모달을 염.
- * - 바깥 ::backdrop 클릭 -> closedby="any" 또는 구형 폴백이 모달을 닫음.
- * - 다크 모드 적용 -> dark-theme.css가 배경(#0f172a)과 강조색(#fb7185)을 덮어씀.
- */
 
+/*
+ * [상단 알약형 상태·오류 토스트(.status-toast)]
+ * - 동작 흐름: js/utils.js:setStatus() 호출 ──> showPopover() 표시 ──> 활성 경로 배너(#active-route-banner) 노출 시 58px 아래로 회피
+ */
 .status-toast {
     position: fixed;
     inset: auto;
@@ -292,37 +223,3 @@ body:has(#active-route-banner:not([hidden])) .status-toast {
     line-height: 1;
     cursor: pointer;
 }
-/*
- * [CSS 문법]
- * - :has(...) / :not([hidden]) : 특정 요소가 숨겨지지 않고 보일 때만 상위 조건으로 매칭됨.
- * - [popover] / :is(...) / :popover-open : Popover 열림 상태와 이스케이프(\:) 클래스를 함께 선택함.
- * - @starting-style : 요소가 처음 나타나는 프레임의 시작 스타일을 정해 진입 전환을 가능하게 함.
- * - @supports not selector(:popover-open) : :popover-open 미지원 구형 브라우저에만 폴백 적용함.
- *
- * [표준 CSS 속성·단위·함수]
- * - position: fixed / inset: auto / top / left: 50% / z-index: 45 : 기본 중앙 배치를 풀고 상단 배치함.
- * - transform: translateX(-50%) translateY(...) : 가로 정중앙 맞춤과 위아래 슬라이드를 결합함.
- * - transition / allow-discrete / transition-behavior: allow-discrete : display·overlay 전환 지연임.
- * - display (none|flex|inline-grid) / place-items: center / align-items: center / flex / gap : 정렬임.
- * - min-inline-size: 26px / min-block-size: 26px : 인라인·블록 방향 최소 크기를 지정함.
- * - max-width / min(...) / calc(...) / env(...) / var(...) : 안전 여백 제외 최대 폭을 계산함.
- * - padding / border / border-radius: 999px / background / rgba(...) / color: inherit / opacity : 외형임.
- * - font-size / line-height / word-break: keep-all / box-shadow / cursor: pointer / ms 단위임.
- *
- * [CSS 선택자명]
- * - .status-toast : 화면 상단에 잠깐 떠올랐다가 사라지는 상태·오류 알림 토스트 클래스임.
- * - .status-toast[data-tone="error"] : 오류·오프라인 경고일 때 붉은 배색으로 바꾸는 선택자임.
- * - .status-toast[data-open="true"] : :popover-open 미지원 브라우저용 열림 상태 선택자임.
- * - .status-toast-text / .status-toast-close : 알림 메시지 문구 스팬과 닫기(×) 버튼 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : #status-toast(popover="manual"), #status, #status-toast-close 등과 연동됨.
- * - js/utils.js : setStatus()가 data-tone, data-open, showPopover()/hidePopover(), 타이머를 제어함.
- * - js/app.js / responsive.css : 닫기 버튼은 setStatus('')와 연결되고 모션 감소 시 전환을 끔.
- *
- * [동작 흐름]
- * - setStatus('...') 호출 -> data-tone·data-open='true' 설정 -> showPopover()로 Top Layer에 올림.
- *   ├── @starting-style(opacity: 0) -> :popover-open(opacity: 1)까지 180ms 동안 등장함.
- *   └── #active-route-banner 표시 중 -> body:has(...)가 top을 +58px 내려 겹침을 피함.
- * - 자동 타이머(일반 4.2초, 오류 6.5초) 만료 또는 닫기 클릭 -> hidePopover() 페이드아웃 후 숨김.
- */

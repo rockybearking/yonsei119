@@ -1,4 +1,36 @@
-const CACHE_NAME = 'yonsei119-pwa-v261125-r2';
+/*
+ * ============================================================================
+ * [역할 및 실행 시점]
+ * - 역할: 오프라인 비상 백업 창고 관리자 (PWA 서비스 워커)
+ *   · 평상시 온라인에서는 최신 서버 응답과 Render 콜드스타트 대기 화면을 그대로 통과시키고,
+ *     인터넷이 완전히 끊긴 오프라인 재난 상황에서만 미리 저장해 둔 화면·병원 데이터를 꺼내 줌
+ * - 실행 시점: 페이지 로드 완료 후 `js/search-controls.js`의 `registerServiceWorker()`가
+ *   `navigator.serviceWorker.register('/sw.js')`를 호출할 때 브라우저 백그라운드 스레드에서 구동됨
+ *
+ * [전체 호출 및 데이터 흐름]
+ * - 흐름:
+ *   브라우저 요청 발생 ──> `self` `'fetch'` 이벤트 가로채기
+ *   ├── 문서 진입(`navigate`, `/`, `/index.html`) ──> `networkFirstNavigation()`
+ *   │   ├── 온라인(Render 깨어나는 중 502/503 포함): 타임아웃 없이 서버/Render 응답 그대로 표시 (Render 로딩 화면 보존!)
+ *   │   └── 완전 오프라인(네트워크 단절 `catch`): 저장된 `/index.html` 비상 반환
+ *   ├── 데이터 API(`/api/hospitals*`, `/api/config`) ──> `networkFirstWithSnapshotFallback()`
+ *   │   ├── 온라인 정상 JSON(또는 304): 최신 캐시 갱신 후 반환
+ *   │   └── 오프라인·장애: `X-Yonsei119-Offline-Fallback: 1` 헤더를 붙여 마지막 스냅샷 반환
+ *   ├── 정적 CSS·JS·매니페스트(`APP_SHELL_ASSETS`) ──> `networkFirstAsset()` (4.5초 내 최신 파일 우선)
+ *   └── 실시간 경로·주소·헬스체크(`/api/directions*`, `/api/geocode*`, `/api/health`) ──> 워커 개입 없이 서버 직통
+ *
+ * [사용처 및 IDE 추적 가이드]
+ * - 등록 호출처: `frontend/js/search-controls.js` -> `registerServiceWorker()`
+ * - 오프라인 헤더 수신처: `frontend/js/search-controls.js` -> `fetchData()` (`X-Yonsei119-Offline-Fallback`)
+ * - 백엔드 정적 서빙 연결: `WebConfig.java`, `SecurityHeadersFilter.java` (`X-Frame-Options: SAMEORIGIN`)
+ * - IntelliJ 추적 팁: `Ctrl + Shift + F`로 `yonsei119-pwa-` 또는 `X-Yonsei119-Offline-Fallback` 검색
+ * ============================================================================
+ */
+
+// [상수] 서비스 워커 캐시 저장소 버전 이름 (배포 시 버전을 올리면 activate 단계에서 구버전 캐시가 자동 삭제됨)
+const CACHE_NAME = 'yonsei119-pwa-v261125-r3';
+
+// [상수] 오프라인 비상 상황에서도 기본 화면이 열리도록 미리 담아 둘 22개 앱 쉘(App Shell) 정적 경로 목록
 const APP_SHELL_ASSETS = [
     '/',
     '/index.html',
@@ -23,27 +55,13 @@ const APP_SHELL_ASSETS = [
     '/js/hospital-sheet.js',
     '/js/search-controls.js'
 ];
-/*
- * [JS 문법]
- * - const : 재할당이 불가능한 블록 스코프 상수 선언 키워드임.
- *   · 비교 : 값을 다시 대입해야 하는 변수는 `let`으로 선언함.
- * - 배열 리터럴 `[ ... ]` : 여러 문자열 경로를 순서대로 묶은 배열임.
- *
- * [프로젝트 상수명]
- * - `CACHE_NAME` : 현재 서비스 워커가 쓰는 Cache Storage 버킷 이름 문자열임.
- *   · 배포 시 `CACHE_NAME` 버전 문자열을 바꾸면 구버전 캐시가 자동 삭제됨.
- * - `APP_SHELL_ASSETS` : 오프라인 시에도 기본 화면이 열리게 미리 저장할 21개 앱 쉘 경로 목록임.
- *   · 구성 : `/`와 `index.html`, `manifest.webmanifest`, CSS 8개, JS 10개.
- *
- * [동작 흐름]
- * - 등록 출처 : `search-controls.js`의 `registerServiceWorker()`가 호출함.
- * - 흐름 : `window` `'load'` 이벤트 ──> `navigator.serviceWorker.register('/sw.js')` ──> 백그라운드 등록
- * - 백엔드 서빙 연결 :
- *   ├── `/` ──> `WebConfig.addViewControllers()`가 `forward:/index.html`로 포워딩
- *   ├── 정적 CSS·JS ──> `WebConfig.addResourceHandlers()`가 `noCache`·Weak ETag로 응답
- *   └── `/manifest.webmanifest` ──> `SecurityHeadersFilter`가 매니페스트 MIME 타입 보호
- */
 
+/*
+ * [역할 및 실행 시점]
+ * - 역할: 서비스 워커 최초 설치 또는 버전(`CACHE_NAME`) 변경 시 앱 쉘 22개 파일을 미리 저장함
+ * - 흐름: `'install'` 발생 ──> `caches.open(CACHE_NAME)` ──> `cache.addAll(APP_SHELL_ASSETS)` ──> `self.skipWaiting()` 즉시 활성화 전환
+ * - 내장 API 구분: `self`, `caches.open`, `cache.addAll`, `self.skipWaiting`, `event.waitUntil`은 브라우저 Service Worker 표준 내장 API임
+ */
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
@@ -51,26 +69,13 @@ self.addEventListener('install', event => {
             .then(() => self.skipWaiting())
     );
 });
-/*
- * [JS 문법]
- * - 화살표 함수 (`param => ...`) : 콜백 함수를 짧게 작성하는 ES6 함수 표현식임.
- * - Promise 체이닝 (`.then(...)`) : 앞선 비동기 작업 완료 후 다음 단계를 이어 실행함.
- *
- * [브라우저 내장 Web API (이름 변경 불가)]
- * - self : 서비스 워커 전용 전역 스코프(`ServiceWorkerGlobalScope`)를 가리키는 내장 객체임.
- *   · 비교 : 일반 브라우저 탭의 `window`에 해당함.
- * - self.addEventListener('install', handler) : 워커 최초 설치나 파일 변경 시 실행되는 이벤트 등록임.
- * - event.waitUntil(promise) : 전달된 Promise가 끝날 때까지 설치 단계를 종료하지 않고 대기함.
- * - caches.open(cacheName) : 지정한 이름의 `Cache` 저장소를 비동기로 여는 메서드임.
- * - cache.addAll(urls) : 배열에 담긴 모든 URL을 가져와 응답을 캐시에 일괄 저장하는 메서드임.
- * - self.skipWaiting() : 대기 상태(`waiting`)를 건너뛰고 즉시 활성화(`activate`)로 전환하는 메서드임.
- *
- * [동작 흐름]
- * - 호출 출처 : 브라우저가 `/sw.js`를 처음 설치하거나 파일 바이트 변경을 감지할 때 실행됨.
- * - 흐름 : `self` `'install'` ──> `caches.open(CACHE_NAME)` ──> `cache.addAll(APP_SHELL_ASSETS)` ──> `self.skipWaiting()`
- * - 결과 : 앱 쉘 21개 파일 저장이 완료되면 대기 없이 바로 활성화 단계로 넘어감.
- */
 
+/*
+ * [역할 및 실행 시점]
+ * - 역할: 새 서비스 워커가 활성화될 때 이전 버전 캐시 버킷을 청소하고 열린 탭 제어권을 즉시 확보함
+ * - 흐름: `'activate'` 발생 ──> `caches.keys()` 조회 ──> `CACHE_NAME`과 다른 구버전 `caches.delete()` ──> `self.clients.claim()`
+ * - 내장 API 구분: `caches.keys`, `caches.delete`, `Promise.all`, `self.clients.claim`은 JS·브라우저 표준 내장 API임
+ */
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(keys =>
@@ -80,26 +85,18 @@ self.addEventListener('activate', event => {
         ).then(() => self.clients.claim())
     );
 });
-/*
- * [JS 문법]
- * - !== : 값과 자료형을 엄격히 비교하는 불일치 연산자임.
- * - 화살표 함수 암묵적 반환 (`x => ...`) : 중괄호 없이 단일 표현식 결과를 바로 반환함.
- *
- * [브라우저 내장 Web API (이름 변경 불가)]
- * - self.addEventListener('activate', handler) : 새 서비스 워커가 활성화될 때 실행되는 이벤트 등록임.
- * - event.waitUntil(promise) : 캐시 정리와 제어권 확보가 끝날 때까지 활성화 단계를 유지함.
- * - caches.keys() : 현재 출처(`origin`)에 저장된 모든 캐시 이름 배열을 반환하는 메서드임.
- * - Array.prototype.filter() / .map() : 조건에 맞는 키만 추린 뒤 새 배열로 변환하는 메서드임.
- * - caches.delete(cacheName) : 더 이상 쓰지 않는 캐시 버킷을 삭제하는 `CacheStorage` 메서드임.
- * - Promise.all(promises) : 여러 비동기 작업이 모두 끝날 때까지 병렬로 기다리는 정적 메서드임.
- * - self.clients.claim() : 열려 있는 제어 범위 내 탭의 요청을 즉시 가로채게 권한을 가져오는 메서드임.
- *
- * [동작 흐름]
- * - 호출 출처 : `'install'`과 `skipWaiting()` 완료 직후 새 서비스 워커가 활성화될 때 실행됨.
- * - 흐름 : `self` `'activate'` ──> `caches.keys()` ──> `key !== CACHE_NAME` 필터링 ──> `caches.delete(oldKey)` ──> `self.clients.claim()`
- * - 효과 : 구버전 캐시 잔여물과 파일 혼용을 없애고 현재 열린 탭까지 즉시 새 워커로 제어함.
- */
 
+/*
+ * [역할 및 실행 시점]
+ * - 역할: 브라우저에서 나가는 동일 출처(Same-Origin) GET 요청을 경로 성격에 따라 알맞은 캐시 전략으로 분기함
+ * - 실행 시점: 서비스 워커 활성화 이후 페이지 이동·정적 파일 로드·API 호출 시마다 자동 실행됨
+ * - 분기 구조:
+ *   GET & 동일 출처 확인
+ *   ├── 문서 진입(`request.mode === 'navigate'`, `/`, `/index.html`) ──> `networkFirstNavigation(request)`
+ *   ├── 병원·설정 API(`/api/hospitals*`, `/api/config`)            ──> `networkFirstWithSnapshotFallback(request)`
+ *   ├── 정적 CSS·JS·매니페스트(`APP_SHELL_ASSETS`)                 ──> `networkFirstAsset(request)`
+ *   └── 그 외(`/api/directions*`, `/api/geocode*`, `/api/health`) ──> 기본 브라우저 네트워크 직통
+ */
 self.addEventListener('fetch', event => {
     const request = event.request;
     if (request.method !== 'GET') {
@@ -108,6 +105,11 @@ self.addEventListener('fetch', event => {
 
     const url = new URL(request.url);
     if (url.origin !== self.location.origin) {
+        return;
+    }
+
+    if (request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+        event.respondWith(networkFirstNavigation(request));
         return;
     }
 
@@ -120,31 +122,13 @@ self.addEventListener('fetch', event => {
         event.respondWith(networkFirstAsset(request));
     }
 });
-/*
- * [JS 문법]
- * - const / if / !== / === / || / return : 조건을 검사해 해당 없으면 일찍 반환해 기본 네트워크로 넘김.
- *
- * [브라우저 내장 Web API (이름 변경 불가)]
- * - self.addEventListener('fetch', handler) : 제어 범위 내 HTTP 요청을 가로채는 이벤트 등록임.
- * - event.request / request.method : 가로챈 `Request` 객체와 HTTP 메서드(`'GET'` 등) 속성임.
- * - new URL(urlString) : URL 문자열을 파싱해 `origin`과 `pathname`을 분리하는 내장 생성자임.
- * - self.location.origin : 서비스 워커가 실행 중인 현재 출처(프로토콜+호스트+포트) 문자열임.
- * - String.prototype.startsWith(prefix) : 문자열이 지정한 접두사로 시작하는지 검사하는 메서드임.
- * - Array.prototype.includes(item) : 배열에 특정 값이 포함되어 있는지 확인하는 메서드임.
- * - event.respondWith(promise) : 기본 fetch 대신 직접 만든 응답 Promise를 돌려주게 하는 메서드임.
- *
- * [지역 변수명]
- * - `request` : 가로챈 이벤트에서 꺼낸 원본 `Request` 객체.
- * - `url` : `request.url`을 파싱해 경로 비교에 쓰는 `URL` 객체.
- *
- * [동작 흐름]
- * - `self` `'fetch'` 요청 분기 ──> GET·출처·경로별 응답 전략 선택 :
- *   ├── `GET`이 아님 / 외부 출처(네이버 지도·웹폰트) ──> `return`으로 브라우저 기본 요청 통과
- *   ├── `/api/hospitals*` 또는 `/api/config` ──> `networkFirstWithSnapshotFallback(request)`
- *   ├── `APP_SHELL_ASSETS` 포함 정적 경로 ──> `networkFirstAsset(request)`
- *   └── `/api/directions*`, `/api/geocode*`, `/api/health` ──> 캐시 없이 항상 실시간 서버 조회
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 정적 자산 응답이 Render 대기 HTML 페이지 등으로 잘못 내려오지 않았는지 확장자별 MIME 타입을 검증함
+ * - 호출처: `networkFirstAsset(request)` 내부에서 캐시 저장 전 검증용으로 호출됨
+ * - 흐름: HTTP 304 통과 ──> 2xx(`response.ok`) 확인 ──> `.css`/`.js`/`.webmanifest`/`.html`별 `Content-Type` 일치 여부 반환
+ */
 function isValidAssetResponse(request, response) {
     if (!response) {
         return false;
@@ -172,6 +156,57 @@ function isValidAssetResponse(request, response) {
     return true;
 }
 
+/*
+ * [역할 및 데이터 흐름 — Render 무료 플랜 콜드스타트 버그 방지 핵심]
+ * - 역할: 최초 사이트 접속(`/`, `/index.html`) 시 4.5초 강제 중단 없이 서버·Render 응답을 그대로 브라우저에 전달함
+ * - 왜 필요한가?
+ *   · 기존에는 문서 요청에도 4.5초 타임아웃과 502/503 캐시 대체가 걸려 있어, Render 무료 서버가 잠들어 있을 때
+ *     Render 기본 로딩 화면이 사라지고 빈 지도에 '정보 확인 중…'만 길게 뜨는 현상이 발생했음
+ * - 흐름:
+ *   `fetch(request)` (타임아웃 없음)
+ *   ├── 온라인 응답 수신 성공:
+ *   │   ├── Spring Boot 보안 필터(`X-Frame-Options: SAMEORIGIN`)가 찍힌 정상 HTML일 때만 캐시 갱신
+ *   │   └── Render 스핀업 대기 화면을 포함한 원본 `fresh` 응답을 그대로 브라우저에 반환
+ *   └── 네트워크 완전 단절(`catch`): 저장된 `/index.html` 캐시본을 꺼내 오프라인 화면 복구
+ * - 호출처: `self` `'fetch'` 이벤트 리스너의 문서 진입 분기
+ */
+async function networkFirstNavigation(request) {
+    const cache = await caches.open(CACHE_NAME);
+    try {
+        const fresh = await fetch(request);
+        const contentType = (fresh?.headers?.get('content-type') || '').toLowerCase();
+        const isGenuineAppHtml =
+            fresh &&
+            fresh.ok &&
+            contentType.includes('text/html') &&
+            fresh.headers.get('x-frame-options') === 'SAMEORIGIN';
+
+        if (isGenuineAppHtml) {
+            cache.put(request, fresh.clone());
+        }
+        return fresh;
+    } catch (err) {
+        const cached =
+            (await cache.match(request)) ||
+            (await cache.match('/index.html')) ||
+            (await cache.match('/'));
+        if (cached) {
+            return cached;
+        }
+        throw err;
+    }
+}
+
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 병원 목록(`/api/hospitals*`)과 공개 설정(`/api/config`)을 온라인 우선으로 조회하되, 장애·오프라인 시 마지막 정상 JSON을 복원함
+ * - 흐름:
+ *   `fetch(request)`
+ *   ├── `If-None-Match` 조건부 요청에 대한 `304 Not Modified` ──> 그대로 반환
+ *   ├── `200 OK` + `application/json` ──> `cache.put()` 백업 갱신 후 최신 응답 반환
+ *   └── 비정상 응답 또는 네트워크 단절(`catch`) ──> `X-Yonsei119-Offline-Fallback: 1` 헤더를 붙여 백업 JSON 반환
+ * - 호출처: `self` `'fetch'` 이벤트 리스너, 수신처는 `js/search-controls.js`의 `fetchData()`
+ */
 async function networkFirstWithSnapshotFallback(request) {
     const cache = await caches.open(CACHE_NAME);
     const pathname = new URL(request.url).pathname;
@@ -218,20 +253,16 @@ async function networkFirstWithSnapshotFallback(request) {
         throw new Error('네트워크 오프라인 및 저장된 백업 응답 없음');
     }
 }
-/*
- * [JS 문법]
- * - async function / await : 비동기 캐시·네트워크 호출을 위에서 아래로 순서대로 작성함.
- * - try { ... } catch { ... } : 네트워크 단절 및 Render 기동 중 비정상 응답을 잡아 안전 캐시로 폴백함.
- *
- * [브라우저 내장 Web API (이름 변경 불가)]
- * - caches.open(cacheName) / fetch(request) / cache.put(request, response) / cache.match(key)
- * - Response.prototype.ok / .clone() / new Headers(init) / new Response(body, init)
- *
- * [동작 흐름]
- * - `/api/config`는 `/api/config` 캐시와만 매칭하고, `/api/hospitals*`는 병원 스냅샷 캐시와만 매칭함.
- * - Render 콜드스타트 중 HTTP 502/503 또는 HTML 대기 페이지가 와도 JSON Content-Type 검증 후 캐시로 안전 폴백함.
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 정적 스타일시트(`.css`), 모듈 스크립트(`.js`), 매니페스트 요청을 온라인 우선(최대 4.5초 대기)으로 가져오고 실패 시 캐시로 복원함
+ * - 흐름:
+ *   캐시 확인 후 4.5초 `AbortController` 설정 ──> `fetch(request)`
+ *   ├── `isValidAssetResponse()` 통과: `200 OK`면 캐시 갱신 후 반환 (`304`도 그대로 반환)
+ *   └── MIME 불일치·타임아웃·오프라인: 저장된 `cached` 정적 파일 반환 (다크 테마 CSS 누락 방지)
+ * - 호출처: `self` `'fetch'` 이벤트 리스너의 `APP_SHELL_ASSETS` 분기
+ */
 async function networkFirstAsset(request) {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(request);
@@ -261,11 +292,3 @@ async function networkFirstAsset(request) {
         }
     }
 }
-/*
- * [JS 문법]
- * - async function / await / try ... catch ... finally : 정적 자산 요청 타임아웃과 MIME 검증 폴백을 제어함.
- *
- * [동작 흐름]
- * - 온라인 200 OK + 올바른 MIME(`text/css`, `javascript`, `text/html`) ──> `cache.put()` 갱신 후 반환
- * - Render 기동 중 502/503, HTML 대기 페이지, 4.5초 타임아웃 ──> 저장된 정상 `cached` 애셋 반환 (다크 CSS 누락 방지)
- */

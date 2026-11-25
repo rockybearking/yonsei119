@@ -18,12 +18,30 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
-/*
- * [파일 역할]
- * 유료 네이버 클라우드 API(/api/directions, /api/directions/rank, /api/geocode, /api/reverse-geocode)를
- * 대리 호출하는 엔드포인트에 대해 클라이언트 IP 기반 토큰 버킷(Token Bucket) 요청률 제한을 적용합니다.
- */
 
+/*
+ * [역할 및 실행 시점]
+ * - 역할: 유료 네이버 클라우드 API를 대리 호출하는 길찾기·지오코딩 4개 경로에 IP별 호출 횟수 제한을 거는 번호표 기계 필터
+ * - 실행 시점: SecurityHeadersFilter 다음 순서(`HIGHEST_PRECEDENCE + 20`)로 동작하며, 대상 API 4종에 GET 요청이 올 때만 토큰을 차감함
+ *
+ * [전체 호출 및 데이터 흐름]
+ * - 흐름:
+ *   HTTP 요청 진입 ──> doFilterInternal()
+ *   ├── 일반 정적 파일 또는 `/api/hospitals`, `/api/health`, `/api/config` ──> 제한 없이 즉시 통과!
+ *   └── 유료 대리 호출 4종(`/api/directions`, `/api/directions/rank`, `/api/geocode`, `/api/reverse-geocode`)
+ *       ──> 클라이언트 IP 추출(`X-Forwarded-For` 우선) ──> IP별 TokenBucket 조회(최대 4096개, 10분 유휴 시 자동 정리)
+ *           ├── 남은 토큰 >= 1 ──> 토큰 1개 차감 + `X-RateLimit-Remaining` 헤더 기록 후 컨트롤러로 통과
+ *           └── 토큰 소진(0)   ──> HTTP 429 Too Many Requests + `Retry-After` 초 안내 JSON 즉시 반환
+ *
+ * [내장 / 프레임워크 / 프로젝트 유틸 구분]
+ * - Java 표준 내장: Set, System.nanoTime(), Math, StandardCharsets
+ * - Spring / Servlet: @Component, @Order, OncePerRequestFilter, MediaType, HttpServletRequest/Response
+ * - 프로젝트 내부 유틸: BoundedTtlCache (메모리 누수 없이 오래 안 쓴 IP 버킷을 자동 삭제)
+ *
+ * [사용처 및 IDE 추적 가이드]
+ * - 설정 연결: application.yml의 `yonsei119.rate-limit.*` -> Yonsei119Properties.RateLimit
+ * - 테스트 검증처: Yonsei119BackendTests (토큰 소진 시 429 응답 및 헤더 검증)
+ */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
 public class ApiRateLimitFilter extends OncePerRequestFilter {
@@ -115,6 +133,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
         return uri;
     }
 
+    /** Render 등 클라우드 프록시가 전달하는 `X-Forwarded-For`의 첫 번째 실제 클라이언트 IP를 우선 추출함 */
     private static String extractClientIp(HttpServletRequest request) {
         String forwardedFor = request.getHeader("X-Forwarded-For");
         String rawIp = null;
@@ -135,6 +154,7 @@ public class ApiRateLimitFilter extends OncePerRequestFilter {
     private record ConsumptionResult(boolean allowed, int remaining, long retryAfterSeconds) {
     }
 
+    /** 경과 시간(나노초)에 비례해 토큰을 연속 충전하고 요청당 1개씩 차감하는 토큰 버킷 상태 객체 */
     private static final class TokenBucket {
         private double tokens;
         private long lastRefillNanos;

@@ -10,40 +10,39 @@ services:
       - key: JAVA_OPTS
         value: "-XX:MaxRAMPercentage=75.0 -Dfile.encoding=UTF-8"
       - key: NEMC_CACHE_TTL_SECONDS
-        value: "180"
+        value: "60"
       - key: NEMC_COLD_CACHE_TTL_SECONDS
         value: "21600"
       - key: NEMC_REFRESH_INTERVAL_MS
-        value: "180000"
+        value: "60000"
       - key: NAVER_MAP_CLIENT_ID
         value: "xfbxloc8km"
       - key: NAVER_MAP_CLIENT_SECRET
         sync: false
       - key: NEMC_API_SERVICE_KEY
         sync: false
-# [Render Blueprint 내장 키]
-# - services : Render Blueprint 최상위 서비스 목록 키임 (형제 키: databases, envVarGroups).
-# - type: web : 외부 HTTPS 요청을 받는 웹 서비스 유형임 (형제 유형: pserv, worker, cron).
-# - name : Render 대시보드에 표시할 서비스 식별 이름 키임.
-# - runtime: docker : Dockerfile로 컨테이너를 빌드·실행하도록 정하는 키임.
-# - plan, region : 요금제 사양(free 등)과 서버 리전(singapore 등)을 고르는 키임.
-# - dockerfilePath : 저장소 루트 기준 Dockerfile 위치를 적는 키임 (연관 키: dockerContext).
-# - healthCheckPath : 배포 후 서버 정상 동작을 확인하기 위해 GET 요청을 보낼 경로 키임.
-# - envVars, key, value : 런타임 환경변수 이름과 기본값을 적는 배열 키임.
-# - sync: false : Git에 비밀 키를 적지 않고 Render 대시보드에서 직접 입력하도록 비워 두는 옵션임.
-# - 형제 옵션 : 자동 난수 생성 generateValue: true, 다른 서비스 참조 fromService 등이 있음.
+
+# ==============================================================================
+# [역할 및 실행 시점]
+# - 역할: Render 클라우드 배포 설계도 (식당 지점 오픈 매뉴얼 역할)
+# - 실행 시점: GitHub 푸시로 Render 배포가 시작될 때 컨테이너 빌드·환경변수·헬스체크 규칙을 설정함
 #
-# [서비스 설정 및 환경변수명]
-# - name: yonsei119 : Render에 생성되는 웹 서비스 이름임.
-# - healthCheckPath: /api/health : EmergencyApiController.health()가 HTTP 200을 반환해 생존 여부를 알림.
-# - JAVA_OPTS : Dockerfile ENTRYPOINT로 전달되어 Java 27 메모리 상한(75%)과 UTF-8 인코딩을 적용함(JEP 534 Compact Object Headers 기본 활성).
-# - NEMC_CACHE_TTL_SECONDS="180" : yonsei119.nemc.cache-ttl-seconds로 바인딩되어 실시간 3종 캐시를 3분 유지함.
-# - NEMC_REFRESH_INTERVAL_MS="180000" : yonsei119.nemc.refresh-interval-ms로 바인딩되어 3분마다 자동 갱신함.
-# - NEMC_COLD_CACHE_TTL_SECONDS="21600" : yonsei119.nemc.cold-cache-ttl-seconds로 바인딩되어 마스터 4종을 6시간 유지함.
-# - NAVER_MAP_CLIENT_ID : yonsei119.naver.client-id로 바인딩되어 지도 SDK와 길찾기·지오코딩에 씀.
-# - NAVER_MAP_CLIENT_SECRET, NEMC_API_SERVICE_KEY : 대시보드에서 직접 입력하는 비밀 키임.
+# [전체 호출 및 데이터 흐름]
+# - 흐름:
+#   GitHub 푸시 ──> Render가 render.yaml 읽기 ──> ./Dockerfile로 이미지 빌드
+#   ├── envVars 주입 ──> application.yml(${...}) ──> Yonsei119Properties 레코드 바인딩
+#   └── GET /api/health 주기 호출 (콜드스타트 화면 제어 핵심!)
+#       ├── 초기 7종 공공데이터 캐시 적재 중: HTTP 503(WARMING_UP) ──> Render 기본 로딩 화면 유지
+#       └── 캐시 적재 완료 직후: HTTP 200(UP) ──> Render 로딩 종료 후 즉시 병원 카드가 준비된 지도로 진입
 #
-# [동작 흐름]
-# - 1) Render에서 Blueprint 연결 -> render.yaml 인식 -> sync: false 비밀 키 2개 입력 요청함.
-# - 2) ./Dockerfile 빌드 -> 런타임 PORT(기본 10000) 주입 -> -Dserver.port=${PORT:-8080}로 앱 기동함.
-# - 3) Render가 GET /api/health 호출 -> HTTP 200 OK 확인 -> 외부 HTTPS 트래픽 연결 완료됨.
+# [내장 키 구분 및 설정값 요약]
+# - Render Blueprint 내장 키: services, type(web), name, runtime(docker), plan(free), region, dockerfilePath, healthCheckPath, envVars, sync
+# - 프로젝트 환경변수:
+#   · NEMC_CACHE_TTL_SECONDS="60" / NEMC_REFRESH_INTERVAL_MS="60000" : 실시간 병상·응급메시지 60초 주기 동기화
+#   · NEMC_COLD_CACHE_TTL_SECONDS="21600" : 병원 주소·좌표 등 마스터 데이터 6시간 캐시 유지
+#   · sync: false : 비밀키(NAVER_MAP_CLIENT_SECRET, NEMC_API_SERVICE_KEY)를 Git에 올리지 않고 Render 대시보드에서 주입
+#
+# [사용처 및 IDE 추적 가이드]
+# - 연결 코드: EmergencyApiController.health() (/api/health), EmergencyDataService.isReadyForTraffic(), application.yml
+# - IntelliJ 전체 검색(`Ctrl + Shift + F`): `/api/health` 또는 `NEMC_REFRESH_INTERVAL_MS` 검색
+# ==============================================================================

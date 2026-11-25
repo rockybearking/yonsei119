@@ -11,78 +11,50 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
-/*
- * [패키지 및 임포트]
- * - com.yonsei119.service : 비즈니스 로직 및 도메인 평가 클래스들이 모인 패키지 선언임.
- * - package, import : 소속 패키지와 날짜·컬렉션·정규식·스프링·DTO 타입 사용을 선언함.
- *
- * [자바 표준 내장 타입 (이름 변경 불가)]
- * - Instant, LocalDateTime, ZoneId (java.time) : UTC 시각, 지역 일시, 시간대 타입임.
- * - DateTimeFormatter (java.time.format) : 날짜·시각 문자열 파싱 및 포맷 도구임.
- * - List, Locale, Map (java.util) : 목록, 로케일 규칙, 키-값 맵 인터페이스임.
- * - Pattern (java.util.regex) : 미리 컴파일된 정규표현식 패턴 객체 타입임.
- *
- * [프로젝트 내부 참조 타입]
- * - HospitalDto (com.yonsei119.dto) : 단일 응급실의 병상·공지·중증질환 정보를 담은 DTO임.
- */
 
+/*
+ * [역할 및 실행 시점]
+ * - 역할: 병원의 실시간 가용 병상·응급실 차단 공지·중증질환 수용 여부를 종합 심사해 '응급실 핑퐁(재이송)' 위험을 줄이는 추천 심사관
+ * - 실행 시점: 서버 부팅 시 @Component 싱글톤 빈으로 생성되며, `/api/directions/rank` 추천 순위 산출 시 호출됨
+ *
+ * [전체 호출 및 데이터 흐름]
+ * - 흐름:
+ *   NaverDirectionsService.rankHospitalsByDrivingTime()
+ *   ├── 1단계(증상 필터): matchesSymptomPreset()
+ *   │   └── 활성 차단 공지(isMessageCurrentlyActive && isNoticeBlocking) 확인 ──> 외상·중증질환·병상 수용 가능 여부 판정
+ *   └── 2단계(추천 점수): evaluate(hospital, durationMinutes, symptomPreset)
+ *       ├── parseBedCount() / classifyBedAvailabilityStatus() [미보고·초과수용(음수)·만실(0)·혼잡(1~2)·여유(3+)]
+ *       ├── hasActiveBlockingNotice() [단순 안내·가능·제한없음 공지와 실제 진료불가·중단 공지를 정밀 구분!]
+ *       └── 실도로 시간(분) + 페널티/보너스 가중치 합산 ──> Evaluation 레코드 반환 (점수가 낮을수록 우선 추천)
+ *
+ * [내장 / 프레임워크 / 자동생성 구분]
+ * - Java 표준 내장: Instant, LocalDateTime, ZoneId, DateTimeFormatter, Pattern, Map, List, Integer
+ * - Spring 프레임워크: @Component
+ * - Java record 자동 생성: 내부 SymptomRule, Evaluation 레코드의 생성자 및 Getter 자동 생성
+ *
+ * [사용처 및 IDE 추적 가이드]
+ * - 주요 호출처: NaverDirectionsService(rankHospitalsByDrivingTime, candidatePreScore), Yonsei119BackendTests(Test 12)
+ * - 프론트엔드 대칭 로직: frontend/js/utils.js의 `isNoticeBlocking()`, `getBedTrafficInfo()`와 동일한 도메인 규칙 공유
+ * - Java 호출 계층 추적: 메서드명 위에서 `Ctrl + Alt + H`
+ */
 @Component
 public class HospitalRecommendationScorer {
-/*
- * [스프링 내장 어노테이션]
- * - @Component 정의 (출처: org.springframework.stereotype.Component, 이름 변경 불가)
- *   · 역할 : 개발자가 작성한 클래스를 컴포넌트 스캔 대상에 포함해 스프링 싱글톤 빈으로 자동 생성·등록하는 범용 어노테이션임.
- * - @Component 현재 코드 적용
- *   · 적용 대상 : HospitalRecommendationScorer 클래스 — 병상·공지·증상·주행시간 기준 병원 추천 점수 평가 빈임.
- *   · 작동 원리 : 컴포넌트 스캔 시 클래스 메타데이터를 읽어 싱글톤 빈 1개를 등록하고 다른 빈 생성자 DI로 주입함.
- *   · 실행 시점 : 스프링 애플리케이션 부팅 및 ApplicationContext 초기화 단계에서 빈 생성과 의존성 주입이 완료됨.
- *   · 비교 : 서비스 계층 @Service, 저장소 @Repository, 웹 API @RestController는 기능상 동일하고 역할 의미만 다름.
- *
- * [자바 문법]
- * - public class : 외부 패키지에서도 접근 가능한 공개 클래스 선언부임.
- *
- * [클래스명]
- * - HospitalRecommendationScorer : 병상 여유도·차단 공지·증상 수용성·주행시간을 합산해 추천 점수를 계산함.
- *
- * [호출 경로]
- * - EmergencyApiController (GET /api/directions/rank) -> NaverDirectionsService.rankHospitalsByDrivingTime(...)
- *   └── 1차 후보 선별(candidatePreScore) 및 최종 점수 계산 시 HospitalRecommendationScorer 메서드를 호출함.
- *
- * [동작 흐름]
- * - 증상 필터링: matchesSymptomPreset -> 차단 공지 확인 -> 외상·중증질환·병상 3단계 검증
- * - 점수 평가: evaluate -> parseBedCount·classifyBedAvailabilityStatus -> hasActiveBlockingNotice
- *   └── 주행 소요 시간(분) + 병상·공지·권역센터 가중치 합산 -> Evaluation 레코드 반환
- */
 
     private static final ZoneId KST_ZONE = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter API_DTM_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-    private static final Pattern BLOCKING_KEYWORD_PATTERN =
-            Pattern.compile("(불가능|불가|차단|수용\\s*불가|진료\\s*불가|수술\\s*불가|시술\\s*불가|부재|중단|마감)");
-    private static final Pattern POSITIVE_ONLY_PATTERN =
-            Pattern.compile("(제한\\s*없음|정상\\s*진료|정상\\s*운영|(?<!불)가능|원활)");
+
+    /** '제한 없음', '연령제한없음' 등 긍정 문구가 '제한' 키워드에 오탐되지 않도록 먼저 제거하는 정규식 */
+    private static final Pattern UNRESTRICTED_PHRASE_PATTERN = Pattern.compile("제한\\s*없음");
+
+    /** 실제 수용·진료·수술 불가, 전문의 부재, 장비 고장·점검, 병상 포화 등 차단성 공지 본문을 탐지하는 정규식 */
+    private static final Pattern BLOCKING_KEYWORD_PATTERN = Pattern.compile(
+            "(불가능|불가|차단|수용\\s*불가|진료\\s*불가|수술\\s*불가|시술\\s*불가|부재|중단|마감|제한|어려움|어렵|고장|점검|포화|금지|휴진)"
+    );
+
     private static final Pattern INTEGER_PATTERN = Pattern.compile("^-?\\d+$");
     private static final Pattern API_DTM_14_PATTERN = Pattern.compile("^\\d{14}$");
-    /*
-     * [자바 문법]
-     * - private static final : 클래스 내부에서만 공유되며 한 번 초기화 후 바꿀 수 없는 상수임.
-     *
-     * [상수명]
-     * - KST_ZONE : 공지 시작·종료 시각을 한국 표준시(Asia/Seoul)로 해석하는 시간대 상수임.
-     * - API_DTM_FORMAT : 공공데이터 14자리 일시 문자열(yyyyMMddHHmmss) 파싱 포맷터 상수임.
-     * - BLOCKING_KEYWORD_PATTERN : 진료·수용 불가나 전문의 부재·중단 공지를 찾는 정규식 상수임.
-     * - POSITIVE_ONLY_PATTERN : 차단 키워드가 없을 때 정상 운영 여부를 보조 확인하는 정규식 상수임.
-     *
-     * [자바/라이브러리 내장 타입 및 메서드 (이름 변경 불가)]
-     * - ZoneId.of("Asia/Seoul") : IANA 표준 시간대 ID로 ZoneId 객체를 생성함.
-     * - DateTimeFormatter.ofPattern("yyyyMMddHHmmss") : 연월일시분초 14자리 파서를 생성함.
-     * - Pattern.compile(String regex) : 생성자가 private이므로 Pattern.compile() 정적 메서드로 정규식 객체를 생성함.
-     *
-     * [정규표현식 원리]
-     * - \s* : 공백이 0개 이상임을 뜻하므로 "수용불가"와 "수용 불가"를 모두 일치시킴.
-     * - (?<!불)가능 : "가능" 바로 앞 글자가 "불"이 아닐 때만 찾는 부정 후방 탐색 문법임.
-     * - "불가능" 글자 안에도 "가능"이 들어 있어, 차단 패턴 우선 검사와 함께 써 오판을 막음.
-     */
 
+    /** 7대 응급 증상 프리셋별 확인 대상 병상 코드·중증질환 코드·공지 제외 키워드 규칙 사전 */
     private static final Map<String, SymptomRule> SYMPTOM_RULES = Map.of(
             "pediatric", new SymptomRule(
                     "소아응급",
@@ -127,31 +99,14 @@ public class HospitalRecommendationScorer {
                     List.of("투석", "혈액투석", "인공신장", "crrt")
             )
     );
-    /*
-     * [자바 문법]
-     * - private static final, 제네릭 Map<String, SymptomRule>, new SymptomRule(...)
-     *
-     * [상수명]
-     * - SYMPTOM_RULES : 7대 응급 증상 프리셋 키와 검사 규칙을 매핑한 불변 사전 상수임.
-     *
-     * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-     * - Map.of(k1, v1, ...) : 최대 10쌍까지 수정 불가 맵을 생성함(11쌍 이상은 Map.ofEntries 사용).
-     * - List.of(...) : 수정 불가(Immutable) 리스트를 생성함.
-     */
 
-    public static Integer parseBedCount(String rawErBeds) {
     /*
-     * [자바 문법]
-     * - public static : 객체 생성 없이 클래스명으로 바로 호출 가능한 정적 메서드 선언임.
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - Integer (java.lang.Integer) : int와 달리 미보고 상태(null)를 표현할 수 있는 정수 래퍼임.
-     * - String (java.lang.String) : 문자열 타입임.
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: parseBedCount
-     * - rawErBeds : 공공데이터 API 원본 병상 수 문자열(예: "-4", "0", "5", "")임.
+     * [역할 및 데이터 흐름]
+     * - 역할: 병상 문자열("-4", "0", "5", "")을 미보고(null)와 정수로 정확히 분리 파싱함
+     * - 도메인 규칙: 음수("-4")는 정원 초과수용 상태이므로 절대 0이나 양수로 바꾸지 않고 -4 그대로 반환함!
+     * - 사용처: classifyBedAvailabilityStatus(), matchesSymptomPreset(), evaluate(), NaverDirectionsService
      */
+    public static Integer parseBedCount(String rawErBeds) {
         if (rawErBeds == null || rawErBeds.isBlank()) {
             return null;
         }
@@ -164,38 +119,14 @@ public class HospitalRecommendationScorer {
         } catch (NumberFormatException ex) {
             return null;
         }
-        /*
-         * [자바 문법]
-         * - if, return null, try { ... } catch (NumberFormatException ex)
-         *
-         * [지역 변수명]
-         * - trimmed (앞뒤 공백 제거 문자열), ex (int 범위 초과 예외 객체)
-         *
-         * [자바/라이브러리 내장 타입 및 메서드 (이름 변경 불가)]
-         * - NumberFormatException (java.lang) : 문자열을 숫자로 바꿀 수 없을 때 발생하는 예외임.
-         * - .isBlank(), .trim() (String) : 공백 전용 문자열 검사 및 앞뒤 공백 제거를 수행함.
-         * - .matches("^-?\\d+$") (String) : 선택적 '-' 기호 + 숫자 1개 이상인지 전체 일치 검사함.
-         * - Integer.parseInt(String s) : 문자열을 int로 바꾼 뒤 Integer로 자동 변환(오토박싱)해 반환함.
-         *
-         * [동작 흐름]
-         * - null 또는 공백 -> null(미보고) 즉시 반환
-         * - 정수 정규식 불일치 또는 범위 초과 -> 0으로 왜곡하지 않고 null 반환
-         * - Integer.parseInt 성공 -> "-4"(초과수용), "0"(만실), "5"(여유) 정수 반환
-         */
     }
 
-    public String classifyBedAvailabilityStatus(String rawErBeds) {
     /*
-     * [자바 문법]
-     * - public : 외부 서비스 및 테스트에서 호출 가능한 공개 인스턴스 메서드임.
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String, Integer
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: classifyBedAvailabilityStatus
-     * - rawErBeds : 응급실 일반병상(hvec) 원본 문자열임.
+     * [역할 및 데이터 흐름]
+     * - 역할: 응급실 일반병상(hvec) 원시값을 5단계 한글 상태("미보고" | "초과수용" | "만실" | "혼잡" | "여유")로 분류함
+     * - 사용처: evaluate()
      */
+    public String classifyBedAvailabilityStatus(String rawErBeds) {
         Integer count = parseBedCount(rawErBeds);
         if (count == null) {
             return "미보고";
@@ -210,117 +141,53 @@ public class HospitalRecommendationScorer {
             return "혼잡";
         }
         return "여유";
-        /*
-         * [자바 문법]
-         * - if, 비교 연산자(==, <, <=), return
-         *
-         * [지역 변수명]
-         * - count (parseBedCount로 변환한 병상 수 또는 null)
-         *
-         * [동작 흐름]
-         * - parseBedCount(rawErBeds) 호출 -> 정수 또는 null 추출
-         *   ├── null -> "미보고" | < 0 -> "초과수용" | == 0 -> "만실"
-         *   └── <= 2 -> "혼잡" | >= 3 -> "여유" 반환
-         */
     }
 
-    public boolean isNoticeBlocking(Map<String, String> messageItem) {
     /*
-     * [자바 문법]
-     * - public boolean, 제네릭 타입 Map<String, String>
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - Map (java.util.Map), String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: isNoticeBlocking
-     * - messageItem : 단일 응급실 공지 항목의 키-값 맵임.
+     * [역할 및 데이터 흐름]
+     * - 역할: 응급실 실시간 메시지 1건이 실제 '진료·수용 차단 공지'인지 판별함
+     * - 공공데이터 실측 반영 핵심:
+     *   · NEMC `getEmrrmSrsillDissMsgInqire` 실제 응답에서는 "정상 진료 가능", "제한 없음", "사전 문의 바랍니다" 같은
+     *     일반 안내 메시지까지도 모든 행에 `<symOutDspYon>차단</symOutDspYon>` 코드가 일괄로 붙어 내려옴!
+     *   · 따라서 `symblkmsg`(공지 본문)가 존재할 때는 본문에서 '제한 없음'을 먼저 제외한 뒤 실제 차단 키워드(불가·부재·중단·제한·점검·포화 등)를
+     *     검사하여, 진료 가능한 병원이 억울하게 감점되거나 '불가능'으로 뒤집히는 오탐 버그를 방지함.
+     * - 흐름:
+     *   messageItem 확인 ──> symblkmsg 본문 존재 시 '제한 없음' 제거 후 BLOCKING_KEYWORD_PATTERN 매칭
+     *   ├── 차단 키워드 발견 ──> true (실제 진료·수용 제한 공지)
+     *   └── 단순 가능·문의 안내 ──> false (비차단 안내 공지)
+     * - 사용처: hasActiveBlockingNotice(), matchesSymptomPreset(), Yonsei119BackendTests
      */
+    public boolean isNoticeBlocking(Map<String, String> messageItem) {
         if (messageItem == null || messageItem.isEmpty()) {
             return false;
         }
-        String yon = messageItem.getOrDefault("symoutdspyon", "").trim();
-        if ("차단".equals(yon)) {
-            return true;
-        }
         String body = messageItem.getOrDefault("symblkmsg", "").trim();
-        if (body.isEmpty()) {
-            return false;
+        if (!body.isEmpty()) {
+            String sanitized = UNRESTRICTED_PHRASE_PATTERN.matcher(body).replaceAll("");
+            return BLOCKING_KEYWORD_PATTERN.matcher(sanitized).find();
         }
-        if (BLOCKING_KEYWORD_PATTERN.matcher(body).find()) {
-            return true;
-        }
-        if (POSITIVE_ONLY_PATTERN.matcher(body).find()) {
-            return false;
-        }
-        return false;
-        /*
-         * [자바 문법]
-         * - if, 논리합(||), return
-         *
-         * [지역 변수명]
-         * - yon (차단 여부 코드 symoutdspyon 값), body (공지 본문 symblkmsg 값)
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .isEmpty() (Map, String) : 항목이 없거나 문자열 길이가 0이면 true를 반환함.
-         * - .getOrDefault(Object key, String defaultVal) (Map) : 키가 없으면 기본값을 반환해 NPE를 막음.
-         * - .trim(), .equals(Object) (String) : 공백 제거 및 문자열 내용 비교를 수행함.
-         * - Pattern.matcher(CharSequence) : 문자열 탐색용 Matcher 객체를 생성함.
-         * - Matcher.find() : 부분 일치 시 true를 반환함(형제 메서드 .matches()는 전체 일치 검사).
-         *
-         * [동작 흐름]
-         * - 1단계: messageItem 비어 있음 -> false | symoutdspyon이 "차단" -> 즉시 true 반환
-         * - 2단계: symblkmsg 비어 있음 -> false | BLOCKING_KEYWORD_PATTERN.find() 먼저 검사
-         *   ├── 차단 키워드 일치 -> 즉시 true 반환
-         *   └── POSITIVE_ONLY_PATTERN 일치 또는 중립 문구 -> false(비차단) 반환
-         */
+        String yon = messageItem.getOrDefault("symoutdspyon", "").trim();
+        return "차단".equals(yon);
     }
 
-    public boolean isMessageCurrentlyActive(Map<String, String> messageItem, long nowEpochMillis) {
     /*
-     * [자바 문법]
-     * - public boolean, 기본형 long
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - Map, Long
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: isMessageCurrentlyActive
-     * - messageItem : 단일 공지 맵임.
-     * - nowEpochMillis : 비교 기준 현재 UTC 밀리초(Epoch ms)임.
+     * [역할 및 데이터 흐름]
+     * - 역할: 공지의 시작일시(symblksttdtm)와 종료일시(symblkenddtm)를 KST 기준으로 비교해 현재 유효한 공지인지 확인함
+     * - 사용처: hasActiveBlockingNotice(), matchesSymptomPreset()
      */
+    public boolean isMessageCurrentlyActive(Map<String, String> messageItem, long nowEpochMillis) {
         Long startMs = parseApiDateMillis(messageItem.get("symblksttdtm"));
         Long endMs = parseApiDateMillis(messageItem.get("symblkenddtm"));
         return (startMs == null || startMs <= nowEpochMillis)
                 && (endMs == null || endMs > nowEpochMillis);
-        /*
-         * [자바 문법]
-         * - 논리곱(&&), 논리합(||), 비교 연산자(<=, >), return
-         *
-         * [지역 변수명]
-         * - startMs (공지 시작 일시 밀리초 또는 null), endMs (공지 종료 일시 밀리초 또는 null)
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - Map.get(Object key) : 키가 존재하지 않으면 null을 반환함.
-         *
-         * [동작 흐름]
-         * - parseApiDateMillis로 시작(symblksttdtm)·종료(symblkenddtm) 시각 추출
-         * - └── (시작 없음 || 시작 <= 현재) && (종료 없음 || 현재 < 종료) -> true 반환(만료 공지 제외)
-         */
     }
 
-    public boolean hasActiveBlockingNotice(HospitalDto hospital) {
     /*
-     * [자바 문법]
-     * - public boolean
-     *
-     * [프로젝트 내부 참조 타입]
-     * - HospitalDto
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: hasActiveBlockingNotice
-     * - hospital : 검사 대상 병원 DTO 객체임.
+     * [역할 및 사용처]
+     * - 역할: 병원이 보유한 공지 중 현재 시각 기준 유효하면서 실제 차단 키워드를 포함한 공지가 1건이라도 있는지 확인함
+     * - 사용처: evaluate()
      */
+    public boolean hasActiveBlockingNotice(HospitalDto hospital) {
         if (hospital == null || hospital.messages() == null || hospital.messages().isEmpty()) {
             return false;
         }
@@ -331,42 +198,18 @@ public class HospitalRecommendationScorer {
             }
         }
         return false;
-        /*
-         * [자바 문법]
-         * - long, 향상된 for(:), if, 논리곱(&&), 논리합(||), return
-         *
-         * [지역 변수명]
-         * - now (현재 UTC 밀리초 타임스탬프), msg (순회 중인 단일 공지 맵)
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - Instant.now() (java.time.Instant) : 현재 UTC 시각 인스턴스를 반환함.
-         * - .toEpochMilli() (Instant) : 1970-01-01T00:00:00Z 기준 경과 밀리초(long)를 반환함.
-         * - .isEmpty() (List) : 공지 목록이 비어 있는지 확인함.
-         *
-         * [동작 흐름]
-         * - hospital 또는 messages 비어 있음 -> false 즉시 반환
-         * - messages 순회 -> isMessageCurrentlyActive(msg, now) && isNoticeBlocking(msg) 확인
-         *   ├── 1건이라도 활성 차단 공지임 -> 즉시 true 반환
-         *   └── 모두 비활성 또는 비차단 -> false 반환
-         */
     }
 
-    public boolean matchesSymptomPreset(HospitalDto hospital, String rawSymptomPreset) {
     /*
-     * [자바 문법]
-     * - public boolean
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String, Map, Locale
-     *
-     * [프로젝트 내부 참조 타입]
-     * - HospitalDto
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: matchesSymptomPreset
-     * - hospital : 검사 대상 병원 DTO 객체임.
-     * - rawSymptomPreset : 사용자가 선택한 증상 프리셋 키 문자열임.
+     * [역할 및 데이터 흐름]
+     * - 역할: 특정 증상 프리셋(뇌졸중·심근경색·소아응급 등) 요청 시 해당 질환 수용이 가능한 병원만 통과시킴
+     * - 흐름:
+     *   1단계: 활성 차단 공지에 해당 진료과/증상 불가 문구가 있으면 즉시 제외(false)
+     *   2단계: 중증외상('trauma') 요청 시 권역외상센터 지정 병원이면 통과(true)
+     *   3단계: 28대 중증질환(mkioskty*) 값이 'Y'/'가능'이거나 관련 병상·장비가 1석 이상이면 통과(true)
+     * - 사용처: NaverDirectionsService.rankHospitalsByDrivingTime()
      */
+    public boolean matchesSymptomPreset(HospitalDto hospital, String rawSymptomPreset) {
         if (rawSymptomPreset == null || rawSymptomPreset.isBlank() || "all".equalsIgnoreCase(rawSymptomPreset.trim())) {
             return true;
         }
@@ -428,44 +271,19 @@ public class HospitalRecommendationScorer {
             }
         }
         return false;
-        /*
-         * [자바 문법]
-         * - if, continue(다음 반복으로 건너뜀), 향상된 for(:), +, 논리곱(&&), 논리합(||), return
-         *
-         * [지역 변수명]
-         * - key, rule, now, msg, combined, kw, severe, mkKey, val, beds, bedKey, raw, count
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .isBlank(), .equalsIgnoreCase(String), .trim(), .equals(Object) (String)
-         * - .contains(CharSequence), .startsWith(String) (String)
-         * - .toLowerCase(Locale.ROOT), .toUpperCase(Locale.ROOT) (String) : OS 무관 일관 대소문자 변환함.
-         * - Map.get(Object), Map.getOrDefault(Object, V) (Map), Instant.now().toEpochMilli() (Instant)
-         *
-         * [동작 흐름]
-         * - 0단계: 공백·"all"·미등록 프리셋 키 -> 필터 없이 true 즉시 반환
-         * - 1단계(차단 공지): 활성 차단 공지에 응급실 수용불가 또는 rule.blockKeywords() 포함 -> false
-         * - 2단계(외상·중증): "trauma" 외상센터 정보 존재 또는 severe 값이 "Y"·"가능..." -> true
-         * - 3단계(병상·장비): beds 값이 "Y" 또는 1 이상 양수 -> true, 모두 미충족 시 false 반환
-         */
     }
 
-    public Evaluation evaluate(HospitalDto hospital, int durationMinutes, String symptomPreset) {
     /*
-     * [자바 문법]
-     * - public, 기본형 int
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [프로젝트 내부 참조 타입]
-     * - HospitalDto (입력 병원 DTO), Evaluation (HospitalRecommendationScorer 내부 공개 중첩 레코드)
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: evaluate
-     * - hospital : 평가 대상 병원 DTO 객체임.
-     * - durationMinutes : 실도로 또는 추정 주행 소요 시간(분)임.
-     * - symptomPreset : 선택된 증상 프리셋 코드 또는 null임.
+     * [역할 및 점수 공식]
+     * - 역할: 실도로 소요 시간(분)에 병상 포화도·차단 공지·권역센터 가중치를 더해 추천 점수를 계산함 (낮을수록 상위 추천)
+     * - 가중치 규칙:
+     *   ├── 초과수용(음수): +(25.0 + min(20.0, 초과병상수 * 2.5))분 페널티
+     *   ├── 만실(0석): +18.0분 페널티 | 미보고: +6.0분 페널티 | 혼잡(1~2석): +3.0분 페널티
+     *   ├── 여유(3석+): -min(2.5, 병상수 * 0.25)분 보너스
+     *   └── 활성 차단 공지: +14.0분 페널티 | 권역응급의료센터: -1.0분 보너스
+     * - 사용처: NaverDirectionsService(rankHospitalsByDrivingTime, candidatePreScore)
      */
+    public Evaluation evaluate(HospitalDto hospital, int durationMinutes, String symptomPreset) {
         String rawErBeds = (hospital.beds() != null) ? hospital.beds().getOrDefault("hvec", "") : "";
         Integer erCount = parseBedCount(rawErBeds);
         String status = classifyBedAvailabilityStatus(rawErBeds);
@@ -512,46 +330,9 @@ public class HospitalRecommendationScorer {
 
         double finalScore = Math.round((durationMinutes + penaltyMinutes) * 10.0) / 10.0;
         return new Evaluation(status, blocked, finalScore, reason.toString());
-        /*
-         * [자바 문법]
-         * - 삼항 연산자(? :), if / else if / else, 복합 대입(+=, -=), new, return
-         * - boolean, double, int : 기본형 지역 변수 타입임.
-         *
-         * [지역 변수명]
-         * - rawErBeds, erCount, status, blocked, penaltyMinutes, reason, overflow, rule, finalScore
-         *
-         * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
-         * - new StringBuilder(), .append(...), .toString() : 가변 문자열 조합 버퍼를 생성·누적·반환함.
-         * - .getOrDefault(...) (Map), .isBlank(), .equalsIgnoreCase(...), .trim(), .toLowerCase(Locale.ROOT)
-         * - Math.abs(int), Math.min(double, double), Math.round(double) (java.lang.Math)
-         *
-         * [점수 산출 공식]
-         * - 병상 가중치: 미보고 +6.0 | 초과 +(25.0+min(20.0, 초과*2.5)) | 만실 +18.0 | 혼잡 +3.0 | 여유 -min(2.5, 병상*0.25)
-         * - 추가 가중치: 활성 차단 공지 +14.0분, 권역응급의료센터 -1.0분
-         * - 최종 점수: round((durationMinutes + penaltyMinutes) * 10.0) / 10.0 (낮을수록 우선 추천)
-         *
-         * [동작 흐름]
-         * - 1단계: hvec 파싱(parseBedCount) -> 상태 분류(classifyBedAvailabilityStatus) -> 차단 공지 확인
-         * - 2단계: 병상 등급별 penaltyMinutes 가감 및 reason 문자열 누적
-         *   ├── 차단 공지(+14분) 및 권역센터(-1분) 가중치 적용
-         *   └── 유효 증상 프리셋 존재 시 reason에 수용 가능 라벨 추가
-         * - 3단계: finalScore 소수 첫째 자리 반올림 -> new Evaluation(status, blocked, finalScore, reason) 반환
-         */
     }
 
     private static Long parseApiDateMillis(String rawDtm) {
-    /*
-     * [자바 문법]
-     * - private static
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - Long (java.lang.Long) : null 반환이 가능한 64비트 정수 래퍼 타입임.
-     * - String (java.lang.String)
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: parseApiDateMillis
-     * - rawDtm : 공공데이터 공지 일시 14자리 문자열(예: "20261117183000")임.
-     */
         if (rawDtm == null) {
             return null;
         }
@@ -565,23 +346,6 @@ public class HospitalRecommendationScorer {
         } catch (Exception ex) {
             return null;
         }
-        /*
-         * [자바 문법]
-         * - if, try { ... } catch (Exception ex), return null
-         *
-         * [지역 변수명]
-         * - ldt (파싱된 KST 날짜·시각 객체), ex (날짜 파싱 실패 예외 객체)
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .trim(), .matches("^\\d{14}$") (String) : 정확히 14자리 숫자인지 정규식으로 검증함.
-         * - LocalDateTime.parse(CharSequence, DateTimeFormatter) : 문자열을 LocalDateTime으로 파싱함.
-         * - .atZone(ZoneId) (LocalDateTime) : 시간대 정보를 결합해 ZonedDateTime을 생성함.
-         * - .toInstant().toEpochMilli() (ZonedDateTime) : UTC 밀리초(long)를 Long으로 변환해 반환함.
-         *
-         * [동작 흐름]
-         * - rawDtm이 null이거나 14자리 숫자 정규식 불일치 -> null 즉시 반환
-         * - LocalDateTime.parse(KST) -> ZonedDateTime(Asia/Seoul) -> Epoch 밀리초(Long) 반환(실패 시 null)
-         */
     }
 
     private record SymptomRule(
@@ -590,31 +354,14 @@ public class HospitalRecommendationScorer {
             List<String> severeKeys,
             List<String> blockKeywords
     ) {
-    /*
-     * [자바 문법]
-     * - private record : Java 16+ 불변 데이터 전용 중첩 레코드 선언임.
-     * - 생성자와 label(), bedKeys(), severeKeys(), blockKeywords(), equals·hashCode·toString을 자동 생성함.
-     *
-     * [중첩 레코드명 및 컴포넌트명]
-     * - 레코드명: SymptomRule
-     * - label (한글 증상 라벨), bedKeys (병상·장비 키), severeKeys (중증질환 키), blockKeywords (제외 키워드)
-     */
     }
 
+    /** 병원 1곳의 병상 상태·차단 공지 유무·최종 추천 점수·사유 문구를 담는 불변 결과 레코드 */
     public record Evaluation(
             String availabilityStatus,
             boolean hasBlockingNotice,
             double recommendationScore,
             String recommendationReason
     ) {
-    /*
-     * [자바 문법]
-     * - public record : 외부 클래스와 단위 테스트에서도 참조 가능한 공개 불변 레코드 선언임.
-     *
-     * [중첩 레코드명 및 컴포넌트명]
-     * - 레코드명: Evaluation
-     * - availabilityStatus (병상 상태), hasBlockingNotice (차단 공지 여부)
-     * - recommendationScore (추천 점수), recommendationReason (추천 근거 요약)
-     */
     }
 }

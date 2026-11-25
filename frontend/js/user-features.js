@@ -1,3 +1,28 @@
+/*
+ * ============================================================================
+ * [역할 및 실행 시점]
+ * - 역할: 전국 대학교병원(의료원 제외)의 소속 대학교 엠블럼 워터마크 매칭 및 구버전 로컬 저장소 정리 담당 모듈
+ * - 실행 시점: 앱 시작 시 `loadPersistedUserPrefs()`가 1회 실행되고, 병원 상세 시트를 열 때마다 `resolveUniversityHospitalLogo()`가 호출됨
+ *
+ * [전체 호출 및 데이터 흐름]
+ * - 흐름:
+ *   병원 카드·목록 클릭 ──> `hospital-sheet.js:openHospital()` ──> `syncSheetUniversityWatermark(hospital)`
+ *   ──> `resolveUniversityHospitalLogo(hospital)`
+ *       ├── 의료원(`group === 'medical'` 또는 병원명에 `'의료원'` 포함) ──> `null` 반환 (배경 로고 제외)
+ *       ├── 1순위: 정규화된 병원명 키워드(`UNIVERSITY_NAME_RULES`) 매칭
+ *       ├── 2순위: 공공데이터 기관코드(`UNIVERSITY_BY_HPID`) 매칭
+ *       └── 매칭 성공 ──> `{ code, universityName, assetPath: './Assets/universities/...' }` 반환 ──> `#sheet-univ-logo` 정적 배경 표시
+ *
+ * [사용처 및 IDE 추적 가이드]
+ * - 호출처:
+ *   ├── `resolveUniversityHospitalLogo` ──> `frontend/js/hospital-sheet.js` (`syncSheetUniversityWatermark`)
+ *   └── `loadPersistedUserPrefs`        ──> `frontend/js/app.js` (`init`)
+ * - 연결 HTML/CSS: `index.html` (`#sheet-univ-watermark`, `#sheet-univ-logo`), `css/sheet-egen.css`, `css/dark-theme.css`
+ * - IntelliJ 추적 팁: 함수명 위에서 `Ctrl + Alt + H` 또는 `Ctrl + Shift + F`로 `resolveUniversityHospitalLogo` 검색
+ * ============================================================================
+ */
+
+// [상수] 이전 버전에서 제거된 기능들의 잔여 localStorage 키 목록
 const LEGACY_REMOVED_KEYS = [
     'yonsei119-favorites-v1',
     'yonsei119-bed-alert-v1',
@@ -5,6 +30,7 @@ const LEGACY_REMOVED_KEYS = [
     'yonsei119-recent-v1'
 ];
 
+// [상수] 전국 41개 의과대학·대학교병원 엠블럼 자산 사전 (`Object.freeze`로 런타임 변조 방지)
 const UNIVERSITY_LOGOS = Object.freeze({
     ajou: { name: '아주대학교', file: 'ajou.png' },
     catholic: { name: '가톨릭대학교', file: 'catholic.svg' },
@@ -49,9 +75,7 @@ const UNIVERSITY_LOGOS = Object.freeze({
     yu: { name: '영남대학교', file: 'yu.svg' }
 });
 
-/**
- * NEMC 전국 응급의료기관 기관코드(HPID) 기준 대학교병원·상급종합병원 확정 매핑.
- */
+// [상수] 국립중앙의료원 기관코드(HPID) 기준 대학교병원·상급종합병원 확정 매핑 테이블
 const UNIVERSITY_BY_HPID = Object.freeze({
     A1400001: 'gachon',    // 의료법인 길의료재단 길병원 (가천대길병원)
     A1400015: 'cku',       // 가톨릭관동대학교국제성모병원
@@ -147,9 +171,7 @@ const UNIVERSITY_BY_HPID = Object.freeze({
     A2100039: 'hanyang'    // 한양대학교구리병원
 });
 
-/**
- * 신규 분원·별칭·테스트 픽스처 대응용 정규화 병원명 매칭 규칙 (복합 명칭 우선).
- */
+// [상수] 신규 분원·별칭·테스트 데이터 대응용 병원명 키워드 우선순위 규칙 (구체적인 복합 명칭을 앞에 배치)
 const UNIVERSITY_NAME_RULES = [
     ['cku', ['가톨릭관동대', '국제성모병원']],
     ['cu', ['대구가톨릭대']],
@@ -197,6 +219,11 @@ const UNIVERSITY_NAME_RULES = [
     ['jejunu', ['제주대']]
 ];
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 병원 이름에서 공백·괄호·가운데점을 제거하고 유니코드(NFKC)·소문자로 통일해 비교하기 쉽게 다듬음
+ * - 호출처: `resolveUniversityHospitalLogo(hospital)` 내부 전용 보조 함수
+ */
 function normalizeHospitalName(value) {
     if (!value) {
         return '';
@@ -207,8 +234,14 @@ function normalizeHospitalName(value) {
         .toLowerCase();
 }
 
-/**
- * 전국의 대학교병원 이상(의료원 제외)에 해당하는 경우 소속 대학교 로고 메타데이터를 반환한다.
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 선택된 병원이 대학교병원 이상(지방의료원·국립의료원 등 의료원 제외)일 때 소속 대학교 로고 경로를 반환함
+ * - 흐름:
+ *   `hospital` 입력 ──> 의료원(`type.group === 'medical'` 또는 `'의료원'` 포함) 제외
+ *   ──> `UNIVERSITY_NAME_RULES` 이름 규칙 대조 ──> 미일치 시 `UNIVERSITY_BY_HPID[hospital.id]` 기관코드 대조
+ *   ──> `{ code, universityName, assetPath }` 반환 (일반 병원은 `null`)
+ * - 호출처: `frontend/js/hospital-sheet.js` -> `syncSheetUniversityWatermark()`
  */
 export function resolveUniversityHospitalLogo(hospital) {
     if (!hospital) {
@@ -250,8 +283,10 @@ export function resolveUniversityHospitalLogo(hospital) {
     };
 }
 
-/**
- * 문서 언어를 한국어로 고정하고 제거된 구버전 `localStorage` 키를 정리한다.
+/*
+ * [역할 및 실행 시점]
+ * - 역할: 문서 기본 언어를 한국어(`ko`)로 고정하고 더 이상 쓰지 않는 예전 `localStorage` 키들을 깔끔히 삭제함
+ * - 호출처: `frontend/js/app.js` -> `init()` 최상단에서 1회 호출됨
  */
 export function loadPersistedUserPrefs() {
     document.documentElement.lang = 'ko';

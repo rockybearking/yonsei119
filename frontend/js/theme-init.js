@@ -1,3 +1,26 @@
+/*
+ * ============================================================================
+ * [역할 및 실행 시점]
+ * - 역할: 첫 화면이 그려지기 직전 저장된 다크·라이트 테마를 즉시 확정해 흰 화면 깜빡임(FOUC)을 막는 선발대 스크립트
+ * - 실행 시점: `index.html`의 `<head>` 최상단에서 일반 동기 `<script src="js/theme-init.js">`로 CSS보다 먼저 즉시 1회 실행(IIFE)됨
+ *
+ * [전체 호출 및 데이터 흐름]
+ * - 흐름:
+ *   `<head>` 파싱 시작 ──> `applyInitialThemeBeforePaint()` 즉시 실행
+ *   ├── `localStorage.getItem('yonsei119-theme')` 조회 (미저장·차단 시 기본 `'dark'`)
+ *   ├── `<html data-theme>`·`.dark-mode` 클래스·`<meta name="color-scheme">`·`<meta name="theme-color">` 동기화
+ *   └── `DOMContentLoaded` 이후 `#nanum-webfont-link`(`media="print"` -> `'all'`)를 비차단 활성화해 초기 렌더링 지연을 예방함
+ *
+ * [내장 API 및 보안 특징]
+ * - 브라우저 내장 API: `localStorage`, `document.documentElement`, `document.querySelector`, `addEventListener`, `setTimeout`
+ * - 보안(CSP): 인라인 `<script>` 대신 외부 파일로 분리하여 `SecurityHeadersFilter`의 엄격한 `script-src 'self'` 정책을 100% 준수함
+ *
+ * [사용처 및 IDE 추적 가이드]
+ * - 로드 위치: `frontend/index.html` (`<script src="js/theme-init.js"></script>`)
+ * - 테마 토글 연동: `frontend/js/search-controls.js` -> `initThemeToggle()`, `applyTheme()` (`yonsei119-theme` 키 공유)
+ * - IntelliJ 추적 팁: `Ctrl + Shift + F`로 `yonsei119-theme` 또는 `nanum-webfont-link` 검색
+ * ============================================================================
+ */
 (function applyInitialThemeBeforePaint() {
     let initialTheme = 'dark';
     try {
@@ -46,38 +69,3 @@
         promoteFontStylesheet();
     }
 })();
-/*
- * [JS 문법]
- * - (function 이름() { ... })() : 선언과 동시에 1회 실행되는 즉시 실행 함수(IIFE)임.
- *   · 내부 변수가 전역 스코프로 새어 나가지 않게 격리함.
- * - let / const : 값이 바뀌는 변수는 `let`, 참조가 고정된 변수는 `const`로 선언함.
- * - try { ... } catch (err) { ... } : 저장소 접근이 차단된 환경의 예외를 흡수해 중단을 막음.
- * - === / || / if : 엄격 동등 비교(`===`)와 논리합(`||`)으로 허용된 값만 걸러냄.
- * - void : 표현식을 평가하되 반환값을 버려 미사용 변수 경고를 피하는 연산자임.
- *
- * [브라우저 내장 Web API (이름 변경 불가)]
- * - localStorage.getItem(key) : 브라우저 영구 저장소에서 문자열 설정값을 동기 조회하는 메서드임.
- *   · 비교 : 탭 종료 시 비워지는 `sessionStorage`, 비동기 DB인 `IndexedDB`와 구분됨.
- * - document.querySelector(selector) : CSS 선택자와 일치하는 첫 번째 DOM 요소를 반환함.
- *   · 형제 메서드 : ID 전용 `getElementById()`, 다건 조회 `querySelectorAll()`.
- * - HTMLMetaElement.prototype.content : `<meta>` 태그의 `content` 속성값을 읽고 쓰는 프로퍼티임.
- * - document.documentElement : 문서 최상위 루트 요소(`<html>`)를 가리키는 읽기 전용 프로퍼티임.
- * - HTMLElement.prototype.dataset : 요소의 `data-*` 속성을 카멜 표기 키로 다루는 표준 프로퍼티임.
- *
- * [함수명 및 지역 변수명]
- * - 함수명 : `applyInitialThemeBeforePaint` (초기 화면 그리기 전 테마 확정 IIFE).
- * - 지역 변수명 :
- *   · `initialTheme` : 기본값 `'dark'`로 시작해 최종 적용할 테마 문자열을 담는 변수.
- *   · `savedTheme` : `localStorage`에서 꺼낸 `'yonsei119-theme'` 저장값.
- *   · `storageErr` : 저장소 접근 거부 시 `catch` 블록이 받는 예외 객체.
- *   · `colorSchemeMeta` : `<meta name="color-scheme">` 요소 참조.
- *
- * [동작 흐름]
- * - 호출 출처 : `index.html` `<head>` 안에서 CSS 파일보다 먼저 동기 `<script>`로 실행됨.
- * - 흐름 :
- *   ├── `localStorage`에서 `'yonsei119-theme'` 조회 ──> `'light'`/`'dark'`면 `initialTheme` 갱신
- *   ├── 저장소 차단·오류 발생 ──> `catch`로 예외 무시 후 기본 `'dark'` 유지
- *   └── `<meta name="color-scheme">`와 `<html data-theme>`에 `initialTheme` 즉시 반영
- * - 효과 : 첫 프레임부터 선택된 색상이 적용되어 초기 화면 깜빡임(FOUC)을 막음.
- * - 연동 : 외부 JS 파일로 분리해 CSP 보안 정책과 맞고 `search-controls.js`와 같은 키를 공유함.
- */

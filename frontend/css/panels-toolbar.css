@@ -1,3 +1,19 @@
+/*
+ * ============================================================================
+ * [역할 및 실행 시점]
+ * - 역할: 우측 하단 통합 검색·필터 패널(`#search-panel`), 원형 지도 조작 버튼(`#map-actions`), 반경 설정 팝오버(`#radius-popover`),
+ *   검색 자동완성(`#search-results`), 모바일 좌측 상단 서랍 메뉴(`#mobile-top-left-menu`) 스타일시트
+ *
+ * [전체 연결 흐름]
+ * - `index.html` 마크업
+ *   ├── `#search-panel` / `#search-toggle` ──> `js/search-controls.js:initPanels()`
+ *   ├── `#map-actions` / `#radius-popover` ──> `js/search-controls.js:initRadius()`, `js/map-engine.js:toggleTrafficLayer()`
+ *   ├── `#search-form` / `#search-results` ──> `js/search-controls.js:updateSearch()`, `geocodeAndMoveOrigin()`
+ *   └── `#mobile-top-left-menu`            ──> `js/search-controls.js:syncMobileMenuPlacement()`, `toggleMobileMenu()`
+ * ============================================================================
+ */
+
+/* [우측 하단 검색·필터 메인 패널] 접기(.is-collapsed) 클릭 시 헤더 폭만큼만 축소됨 */
 .search-panel {
     --search-font-size: 12px;
     --action-size: clamp(42px, 9.2vw, 48px);
@@ -19,39 +35,8 @@
 .search-panel.is-collapsed {
     width: fit-content;
 }
-/*
- * [CSS 문법]
- * - .클래스1.클래스2 : 두 클래스를 공백 없이 붙여 두 조건을 모두 가진 요소만 선택함.
- *
- * [표준 CSS 속성·단위·함수]
- * - position: fixed / z-index: 10 : 스크롤과 무관하게 화면 10번 층에 고정 배치함.
- * - right / bottom / padding : 우측·하단 모서리 기준 위치와 안쪽 여백을 지정함.
- * - clamp(최솟값, 권장값, 최댓값) : 최소~최대 범위 안에서 화면 폭에 맞춰 크기를 계산함.
- * - min(값1, 값2) / calc(...) : 더 작은 값을 고르고 서로 다른 단위를 사칙연산으로 합침.
- * - env(safe-area-inset-*, 0px) : 노치·홈 바 등 안전 여백을 읽고 미지원 시 0px를 씀.
- * - var(--변수명) / rgba(...) : CSS 변수 값과 반투명 색상을 대입하는 표준 함수임.
- * - width: fit-content : 내부 자식 콘텐츠가 필요한 폭만큼만 너비를 줄이는 키워드임.
- * - border / border-radius / box-shadow : 외곽선, 둥근 모서리, 바깥 그림자 속성임.
- * - px / vw : 절대 픽셀 단위(px)와 화면 가로 너비의 1% 단위(vw)임.
- *
- * [CSS 선택자명 및 커스텀 속성명]
- * - .search-panel : 화면 우측 하단에 고정되는 통합 검색·필터 패널 클래스임.
- * - .search-panel.is-collapsed : 패널을 접었을 때 헤더 너비로 축소되는 상태 선택자임.
- * - --search-font-size (12px) : 검색 패널 내부 컨트롤이 공유하는 글자 크기 변수임.
- * - --action-size : :root 기본값(42px)을 화면 비례(38px~45px)로 덮어쓴 버튼 크기 변수임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : <section id="search-panel" class="search-panel"> 요소와 매칭됨.
- * - js/search-controls.js : initPanels()가 .is-collapsed 토글 및 --search-panel-height 갱신함.
- * - js/map-engine.js : fitBounds()가 패널 높이를 읽어 지도 하단 안전 여백을 계산함.
- *
- * [동작 흐름]
- * - 기본 펼침 상태 -> 최대 444px 폭으로 우측 하단에 고정되며 불투명 배경을 사용함.
- * - #search-toggle 클릭 -> initPanels()가 #search-content 숨김 + .is-collapsed 추가
- *   ──> width: fit-content 적용 -> 헤더 버튼 너비만큼만 남기고 작게 접힘.
- * - 640px 이하 모바일 -> responsive.css가 좌우를 모두 고정해 화면 전체 폭으로 넓힘.
- */
 
+/* [검색 패널 상단 헤더 행 및 접기/펼치기 보조 버튼] */
 .panel-heading {
     display: flex;
     align-items: center;
@@ -100,35 +85,6 @@
     padding: 0 10px;
     border-radius: 12px;
 }
-/*
- * [CSS 문법]
- * - 부모 > 자식 : 직계 자식만 선택해 안쪽에 중첩된 같은 클래스와 구분하는 자식 결합자임.
- * - 조상 자손 : 특정 부모 영역 안에 위치할 때만 스타일을 적용하는 자손 결합자임.
- *
- * [표준 CSS 속성·단위·함수]
- * - display: flex / flex-wrap: nowrap : 자식들을 한 줄로 가로 배치하고 줄바꿈을 막음.
- * - align-items: center / justify-content: space-between : 세로 가운데 맞추고 양끝에 벌림.
- * - justify-content: flex-start : 여백 없이 시작 쪽(왼쪽)부터 차례대로 붙여 정렬함.
- * - flex: 0 0 auto : 크기를 늘리거나 줄이지 않고 자기 내용 너비 그대로 고정함.
- * - flex: 1 1 auto : 남은 공간에 맞춰 유연하게 늘어나거나 줄어들 수 있게 허용함.
- * - gap / margin-bottom / margin-left / padding : 요소 간 간격과 바깥·안쪽 여백임.
- * - min-width / min-height / border-radius : 최소 크기와 모서리 둥글기 속성임.
- * - color / font-size / font-family / white-space: nowrap : 글자 스타일과 줄바꿈 금지임.
- *
- * [CSS 선택자명]
- * - .panel-heading : 검색 패널 상단 줄과 반경 팝오버 상단 줄이 공유하는 헤더 행 클래스임.
- * - .search-heading : 패널 맨 왼쪽 '검색' 라벨 텍스트 클래스임.
- * - #map-actions / #search-toggle : 도구 버튼 모음 내비게이션과 접기/펼치기 버튼 ID임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : #search-panel-heading, .search-heading, #map-actions, #search-toggle에 매칭됨.
- * - js/search-controls.js : syncMobileMenuPlacement()가 640px 이하에서 툴바를 서랍으로 옮김.
- * - 서랍 이동 결과 -> 툴바가 .search-panel 밖으로 나가면 .search-panel #map-actions는 해제됨.
- *
- * [동작 흐름]
- * - 데스크톱 펼침 상태 -> #map-actions가 flex: 1 1 auto로 가용 폭을 채워 버튼을 균등 정렬함.
- * - 패널 접힘(.is-collapsed) -> 헤더 아래 여백이 0이 되고 #map-actions가 최소 폭으로 수축함.
- */
 
 .panel-toggle {
     display: inline-flex;
@@ -159,25 +115,11 @@
     cursor: pointer;
     font-size: 12px;
 }
-/*
- * [CSS 문법]
- * - :hover : 마우스 포인터가 버튼 위에 올라간 상태일 때 스타일을 적용하는 의사 클래스임.
- *
- * [표준 CSS 속성·단위·함수]
- * - display: inline-flex / align-items: center / justify-content: center : 글자 줄 안에서 중앙 정렬함.
- * - flex: 0 0 auto / min-width / min-height / padding : 축소 방지와 최소 클릭 크기를 보장함.
- * - border / border-radius / background / color / transparent : 테두리·배경·투명 색상을 지정함.
- * - font-size / line-height / cursor: pointer : 글자 크기, 줄 높이, 손가락 커서 모양을 지정함.
- *
- * [CSS 선택자명]
- * - .panel-toggle : 패널 접기/펼치기(#search-toggle) 및 반경 닫기(#radius-close) 보조 버튼임.
- * - .text-button : 테두리와 배경 없이 글자 형태로만 보이는 보조 버튼 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : #search-toggle, #radius-close(.panel-toggle)와 #notice-skip(.text-button)에 적용됨.
- * - js/search-controls.js : initPanels()가 문구·aria-expanded를 바꾸고 initNotice()가 숨김을 저장함.
- */
 
+/*
+ * [원형 지도 도구 버튼 모음(#map-actions, .map-action)]
+ * - 사용처: #radius-button, #location-button, #refresh-button, #traffic-toggle, #theme-toggle (최소 44px 이상 터치 영역 보장)
+ */
 .map-actions {
     position: static;
     display: flex;
@@ -234,37 +176,6 @@
     stroke-linecap: round;
     stroke-linejoin: round;
 }
-/*
- * [CSS 문법]
- * - [aria-expanded="true"] : 펼침 상태 ARIA 속성 값이 참인 요소만 고르는 속성 선택자임.
- * - :hover / :active / :disabled : 마우스 올림, 누른 순간, 비활성 상태를 고르는 의사 클래스임.
- * - 선택자 svg : 버튼 안에 들어 있는 <svg> 아이콘 자손만 고르는 자손 결합자임.
- *
- * [표준 CSS 속성·단위·함수]
- * - position: static : 기본 문서 배치로 두어 내부 요소 위치 기준점이 되지 않게 함.
- * - display: flex / flex-direction: row / flex-wrap: wrap : 가로 나열 후 공간 부족 시 줄바꿈함.
- * - display: grid / place-content: center / justify-items: center : 버튼 내부 요소를 정중앙 배치함.
- * - border-radius: 50% / box-shadow / text-decoration: none : 완전 원형 모양과 밑줄 제거임.
- * - touch-action: manipulation : 모바일 연속 탭 시 더블탭 확대 지연을 막아 즉시 반응하게 함.
- * - transition / transform: scale(0.94) : 색상 전환과 누름 순간 살짝 줄어드는 효과를 처리함.
- * - opacity / cursor: wait : 비활성 시 흐리게 보이고 대기 중 커서 모양을 표시함.
- * - display: block / fill: none / stroke: currentColor : SVG 하단 빈틈을 없애고 글자색을 선색으로 씀.
- * - stroke-width / stroke-linecap: round / stroke-linejoin: round : SVG 선 두께와 둥근 끝 모양임.
- *
- * [CSS 선택자명]
- * - .map-actions : 지도 도구 버튼들과 갱신 시각 배지를 묶어 담는 툴바 컨테이너임.
- * - .map-action : 반경·내위치·새로고침·교통·다크모드 버튼이 공유하는 원형 버튼 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : #map-actions와 5개 도구 버튼(#radius-button ~ #theme-toggle)에 적용됨.
- * - js/app.js / js/search-controls.js : 비동기 요청 중 disabled = true로 중복 탭을 막음.
- * - js/search-controls.js : initRadius()가 팝오버 열림 시 #radius-button에 aria-expanded를 켬.
- *
- * [동작 흐름]
- * - 모든 원형 버튼 -> --action-size 크기와 touch-action: manipulation으로 빠르게 반응함.
- * - 데이터 수신 중(disabled = true) -> 반투명(0.6)과 대기 커서로 바뀌어 중복 요청을 안내함.
- * - 다크 모드 전환 -> dark-theme.css가 버튼 배경(#1e293b)과 아이콘 색상을 어둡게 재정의함.
- */
 
 .traffic-toggle-btn {
     font-size: 13px;
@@ -281,23 +192,8 @@
     min-height: 36px;
     padding: 4px 10px;
 }
-/*
- * [CSS 문법]
- * - [aria-pressed="true"] : 토글 버튼이 눌린(켜진) 상태임을 나타내는 ARIA 속성 선택자임.
- *
- * [표준 CSS 속성·단위·함수]
- * - font-size / font-family : 버튼 내부 텍스트 크기와 글꼴 패밀리를 지정함.
- * - background / border-color / color : 활성 상태일 때 녹색(#03c75a) 배경과 흰 글자로 바꿈.
- *
- * [CSS 선택자명]
- * - .traffic-toggle-btn : 실시간 교통정보 레이어를 켜고 끄는 '교통' 버튼 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : #traffic-toggle(.map-action.traffic-toggle-btn, aria-pressed="false")과 매칭됨.
- * - js/map-engine.js : toggleTrafficLayer()가 state.trafficEnabled 반전 후 aria-pressed를 갱신함.
- * - js/map-engine.js : 이어서 syncTrafficLayer()를 호출해 지도에 교통정보 레이어를 반영함.
- */
 
+/* [탐색 반경 설정 팝오버(#radius-popover, #radius)] 기본 선택값 50 km, js/search-controls.js:initRadius() 제어 */
 .radius-tool {
     position: static;
 }
@@ -359,32 +255,8 @@
     line-height: 1.55;
     overflow-wrap: break-word;
 }
-/*
- * [표준 CSS 속성·단위·함수]
- * - position: static : 이 래퍼가 기준점이 되지 않아 자식 팝오버가 바깥 패널 기준으로 정렬됨.
- * - position: absolute / left: auto / right: 0 : 기준 요소의 오른쪽 끝에 맞춰 절대 배치함.
- * - bottom: calc(100% + 8px) : 기준 요소 위쪽 8px 간격 위치에 팝오버를 띄움.
- * - width: min(250px, 100%) / max-height: 60dvh / overflow: auto : 크기 제한 및 스크롤 속성임.
- * - display: block / white-space: nowrap / overflow-wrap: break-word : 줄바꿈 허용·금지 제어임.
- * - margin / padding / border / border-radius / box-shadow : 외곽 여백·테두리·그림자 속성임.
- * - background / color / font-size / font-family / line-height / cursor: pointer : 스타일 속성임.
- *
- * [CSS 선택자명]
- * - .radius-tool / .radius-button / .radius-button-label / #radius-value : 반경 버튼과 라벨임.
- * - .radius-popover / #radius / #radius-help : 반경 팝오버, <select> 메뉴, 안내 문구임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : .radius-tool 안의 #radius-button, #radius-popover, #radius-close, #radius에 적용됨.
- * - js/search-controls.js : initRadius()가 팝오버 표시 전환과 #radius change 이벤트를 처리함.
- * - responsive.css : 640px 이하에서는 서랍 안쪽으로 이동하므로 아래쪽 좌측 정렬로 방향을 바꿈.
- *
- * [동작 흐름]
- * - #radius-button 클릭 -> initRadius()가 검색 결과 목록을 닫고 #radius-popover를 엶
- *   ──> #radius 선택 메뉴로 포커스를 이동함.
- * - 반경 옵션 변경 -> updateRadiusUI()가 #radius-value와 #radius-help 문구를 즉시 바꿈
- *   ──> fitRadius()·updateMarkers()·loadEtaRanking()이 지도 원·마커·추천 순위를 갱신함.
- */
 
+/* [공공데이터 동기화 시각 배지(.search-updated-pill)] js/search-controls.js:updateSummary() 갱신 */
 .search-updated-pill {
     display: inline-flex;
     flex-direction: column;
@@ -414,22 +286,8 @@
     font-family: var(--font-bold), sans-serif;
     font-variant-numeric: tabular-nums;
 }
-/*
- * [표준 CSS 속성·단위·함수]
- * - display: inline-flex / flex-direction: column : 인라인 흐름 안에서 라벨과 시각을 위아래로 쌓음.
- * - justify-content: center / align-items: flex-start : 수직 가운데 맞추고 글자는 왼쪽에 정렬함.
- * - min-height / padding / margin / border / border-radius : 배지 높이와 둥근 모서리를 잡음.
- * - line-height / white-space: nowrap / display: block : 줄바꿈을 막고 시각을 다음 행으로 분리함.
- * - font-variant-numeric: tabular-nums : 숫자를 고정폭으로 그려 시각이 바뀌어도 길이가 안 흔들림.
- *
- * [CSS 선택자명]
- * - .search-updated-pill / .updated-label : 데이터 동기화 시각 표시 배지와 상단 라벨 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : .search-updated-pill 요소와 내부 <time id="updated-time">에 매칭됨.
- * - js/search-controls.js : updateSummary()가 수신 후 시각 문자열과 dateTime 속성을 갱신함.
- */
 
+/* [검색어 입력 폼(#search-form, #keyword) 및 자동완성 드롭다운(.search-results)] */
 .search-row {
     display: flex;
     align-items: center;
@@ -472,24 +330,6 @@
 #search-form button:hover {
     background: #1c52a3;
 }
-/*
- * [표준 CSS 속성·단위·함수]
- * - contain: inline-size : 글자가 길어져도 가로 크기 계산이 바깥 레이아웃을 밀지 않게 격리함.
- * - display: grid / grid-template-columns: minmax(0, 1fr) max-content : 1열 남는 폭, 2열 글자 폭임.
- * - display: flex / align-items: center / flex: 1 / min-width: 0 : 입력 행 채움과 축소를 허용함.
- * - width: 100% / height / min-width / min-height / gap : 입력 칸과 버튼의 크기 및 간격을 정함.
- * - padding / border / border-radius / background / color / font-size / font-family : 폼 외형 속성임.
- * - cursor: pointer / :hover : 마우스 올림 시 손가락 커서와 더 진한 배경색을 표시함.
- *
- * [CSS 선택자명]
- * - .search-row / #search-form / #keyword : 병원·지역·주소 검색 행, 폼, 입력 필드 선택자임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : <search class="search-row"> 안의 #search-form, #keyword, 제출 버튼과 매칭됨.
- * - js/app.js / js/search-controls.js : input·focus·submit 이벤트에 updateSearch()를 연결함.
- * - js/search-controls.js : initSearchFocus()가 한글 조합 엔터 중복 방지와 키보드 닫기를 처리함.
- * - responsive.css : 700px 이하 또는 터치 환경에서 글자를 16px로 키워 iOS 자동 확대를 막음.
- */
 
 .search-results {
     position: absolute;
@@ -568,33 +408,8 @@
     font-weight: 700;
     white-space: nowrap;
 }
-/*
- * [표준 CSS 속성·단위·함수]
- * - position: absolute / right: 0 / bottom: calc(100% + 8px) / width: 100% : 패널 위 8px에 띄움.
- * - max-height: min(44dvh, 340px) / overflow: auto : 최대 높이를 제한하고 내부 스크롤을 제공함.
- * - overscroll-behavior: contain : 목록 스크롤 끝에 닿아도 뒤쪽 지도로 스크롤이 번지지 않게 함.
- * - list-style: none : <ul> 목록 태그 앞에 기본으로 붙는 동그란 기호(불릿)를 없앰.
- * - display: flex / flex-direction: column / align-items: center / justify-content: space-between : 정렬임.
- * - border-top: 1px dashed : 위쪽 경계에 점선(dashed) 구분선을 그리는 속성임.
- * - rem / font-weight: 700 / line-height / text-align: left / white-space: nowrap : 텍스트 속성임.
- * - :hover / :focus-visible : 마우스 올림 및 키보드 초점 시 연한 파란색 강조 배경을 적용함.
- *
- * [CSS 선택자명]
- * - .search-results : 병원 검색 자동완성 및 주소 이동 목록을 감싸는 드롭다운 클래스임.
- * - .result-button : 매칭된 개별 병원 항목을 누를 수 있게 만드는 버튼 클래스임.
- * - .search-geocode-li / .search-geocode-btn : 목록 맨 아래 주소 출발점 이동 항목 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : <ul id="search-results" role="list" hidden> (Safari 보완용 role)에 매칭됨.
- * - js/search-controls.js : updateSearch()가 최대 25개 병원과 주소 이동 버튼 1개를 생성함.
- *
- * [동작 흐름]
- * - #keyword 입력 -> updateSearch()가 list.hidden = false로 전환해 검색 패널 위로 목록을 펼침.
- * - 병원 항목 클릭 -> openHospital() + focusHospitalOnMap(hospital, 15) 실행 후 목록을 닫음.
- * - 주소 이동 버튼 클릭 -> geocodeAndMoveOrigin()이 /api/geocode 호출 후 출발 기준점을 옮김.
- * - 패널 바깥 클릭 또는 Escape 키 입력 -> list.hidden = true로 목록을 숨김.
- */
 
+/* [4대 종별 체크박스 필터(.filters) 및 현재 화면 기관 수(.map-count)] */
 .filters {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -628,23 +443,6 @@
     margin: 0;
     accent-color: var(--hospital-color);
 }
-/*
- * [표준 CSS 속성·단위·함수]
- * - display: grid / grid-template-columns: repeat(4, minmax(0, 1fr)) : 4칸 격자로 균등 배치함.
- * - display: inline-flex / align-items: center / justify-content: center / gap : 라벨 중앙 정렬임.
- * - padding-inline: 6px : 글쓰기 방향 기준 좌우 안쪽 여백만 설정하는 논리 단축 속성임.
- * - accent-color : 기본 체크박스의 체크 강조 색상을 별도 구현 없이 지정 색으로 맞춰 줌.
- * - flex-shrink: 0 / min-width: 0 / white-space: nowrap / cursor: pointer : 축소·줄바꿈 제어임.
- *
- * [CSS 선택자명]
- * - .filters : 4대 응급의료기관 종별 체크박스를 감싸는 필터 바 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : .filters 안의 4개 체크박스(#filter-regional ~ #filter-other)와 매칭됨.
- * - style.css / dark-theme.css : 각 <label>의 --hospital-color가 글자와 체크 색으로 상속됨.
- * - js/app.js : 체크박스 change 시 updateMarkers()와 loadEtaRanking()을 호출해 필터를 맞춤.
- * - responsive.css : 360px 이하 또는 저높이 가로 화면에서는 2열(2×2)로 바뀜.
- */
 
 .map-count {
     margin: 6px 0 0;
@@ -656,22 +454,8 @@
 .map-count:empty {
     display: none;
 }
-/*
- * [CSS 문법]
- * - :empty : 안쪽에 텍스트나 자식 요소가 전혀 없는 빈 상태일 때만 적용하는 의사 클래스임.
- *
- * [표준 CSS 속성·단위·함수]
- * - display: none : 비어 있는 상태에서는 위쪽 여백까지 차지하지 않도록 화면에서 숨김.
- * - margin / font-size / line-height / color : 문구가 들어온 뒤 표시할 때의 여백과 글자 스타일임.
- *
- * [CSS 선택자명]
- * - .map-count : 현재 지도에 표시된 병원 수와 활성 필터 요약을 출력하는 상태 문구 클래스임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : <p id="map-count" class="map-count" role="status"></p> 요소와 매칭됨.
- * - js/markers-cluster.js : updateMarkers()가 문구를 채우면 :empty가 해제되어 화면에 나타남.
- */
 
+/* [모바일 좌측 상단 햄버거 메뉴] 데스크톱에서는 숨기고 640px 이하(responsive.css)에서만 노출함 */
 .mobile-top-left-menu {
     display: none;
 }
@@ -709,27 +493,3 @@
     box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22);
     max-width: calc(100vw - 2 * var(--edge) - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
 }
-/*
- * [CSS 문법]
- * - :hover / [aria-expanded="true"] : 마우스 올림 및 메뉴 열림 상태를 묶어 강조 색상을 줌.
- *
- * [표준 CSS 속성·단위·함수]
- * - display: none / display: inline-flex : 데스크톱에서는 숨기고 모바일 버튼은 중앙 정렬함.
- * - position: relative / width / height / border-radius / box-shadow : 44px 버튼과 서랍 외형임.
- * - max-width: calc(...) / env(safe-area-inset-*, 0px) : 안전 영역을 뺀 최대 폭 계산임.
- * - padding / border / background / rgba(...) / color / font-size / font-weight / cursor : 스타일임.
- *
- * [CSS 선택자명]
- * - .mobile-top-left-menu : 640px 이하 모바일 전용 좌측 상단 도구 메뉴 래퍼 클래스임.
- * - .mobile-menu-btn / .mobile-menu-drawer : 메뉴 토글 버튼(☰)과 툴바를 담는 서랍 패널임.
- *
- * [연동 HTML 요소 및 JS 모듈]
- * - index.html : #mobile-top-left-menu, #mobile-menu-btn, #mobile-menu-drawer와 매칭됨.
- * - js/search-controls.js : syncMobileMenuPlacement()가 640px 기준으로 #map-actions 위치를 옮김.
- * - js/search-controls.js : toggleMobileMenu()가 서랍 hidden과 aria-expanded를 전환함.
- *
- * [동작 흐름]
- * - 데스크톱(641px 이상) -> .mobile-top-left-menu 숨김 -> #map-actions가 검색 패널 헤더에 표시됨.
- * - 뷰포트 640px 이하 -> responsive.css가 메뉴 노출 -> syncMobileMenuPlacement()가 서랍으로 옮김.
- * - #mobile-menu-btn 클릭 -> toggleMobileMenu()가 state.mobileMenuOpen을 반전해 서랍을 여닫음.
- */

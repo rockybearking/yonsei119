@@ -1,38 +1,37 @@
+/*
+ * [역할 및 실행 시점]
+ * - 역할: Java 27 + Spring Boot 4.2.0 백엔드 컴파일, 프론트엔드 정적 자산 병합, JUnit 5·Playwright 테스트, 단일 배포 JAR 패키징을 정의하는 빌드 스크립트
+ * - 실행 시점: `:backend` 모듈 태스크(`compileJava`, `test`, `bootRun`, `bootJar`) 실행 시 동작함
+ *
+ * [전체 빌드 파이프라인 흐름]
+ * - 빌드 시작
+ *   ├── `copyFrontendToStatic` ──> `../frontend`의 HTML/CSS/JS/PWA 및 `Assets/universities/*.svg` 로고를 `build/resources/main/static/`으로 복사
+ *   ├── `compileJava`          ──> JDK 27 툴체인 + UTF-8 + `-parameters` 옵션으로 자바 소스 컴파일
+ *   ├── `test`                 ──> JUnit 5(`Yonsei119BackendTests` + `Yonsei119PlaywrightE2ETests`) 총 21건 자동 검증
+ *   └── `bootJar`              ──> Render/Docker 배포용 단일 실행 파일 `backend/build/libs/yonsei119.jar` 생성 (`Dockerfile`과 연결)
+ *
+ * [내장 / 플러그인 / 외부 라이브러리 구분]
+ * - Gradle 기본 내장: `java` 플러그인, `JavaLanguageVersion`, `Copy`, `JavaCompile`, `Javadoc`
+ * - Spring Boot 플러그인: `org.springframework.boot` (4.2.0), `io.spring.dependency-management` (1.1.7)
+ * - 외부 의존성: `spring-boot-starter-webmvc`, `spring-boot-starter-actuator`, `spring-boot-starter-test`, `playwright:1.65.1`
+ */
 plugins {
     id 'java'
     id 'org.springframework.boot' version '4.2.0'
     id 'io.spring.dependency-management' version '1.1.7'
 }
-/*
- * [Gradle 내장 블록 및 플러그인]
- * - plugins { ... } : 모듈에 적용할 빌드 플러그인을 적는 Gradle 내장 블록임.
- * - id '...' version '...' : 플러그인 이름과 버전을 지정하는 내장 문법임.
- * - 'java' : 자바 컴파일, 테스트, JAR 생성을 돕는 Gradle 기본 플러그인임.
- * - 'org.springframework.boot' : bootRun, bootJar 태스크를 제공하는 공식 플러그인임.
- * - 'io.spring.dependency-management' : 스프링 부트 호환 라이브러리 버전을 맞추는 플러그인임.
- * - 비교 문법 : Gradle 기본 대안으로 platform(...) BOM 임포트 방식도 있음.
- */
 
+/** 호스트 PC의 기본 JAVA_HOME 버전과 무관하게 항상 Java 27 툴체인으로 컴파일·실행하도록 고정함 */
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(27)
     }
 }
 
+/** 단일 실행 JAR의 시작점(main 메서드 보유 클래스) 지정 */
 springBoot {
     mainClass = 'com.yonsei119.Yonsei119Application'
 }
-/*
- * [Gradle 내장 확장 및 속성]
- * - java { ... } : 'java' 플러그인이 제공하는 자바 빌드 설정 블록임.
- * - toolchain { ... } : 컴파일과 실행에 쓸 JDK 버전을 고정하는 내장 블록임.
- * - languageVersion, JavaLanguageVersion.of(27) : JDK 27(CVE-2026-114938 패치 포함)을 지정하는 내장 API임.
- * - 비교 속성 : 호스트 PC 버전에 의존하는 구형 sourceCompatibility가 있음.
- *
- * [동작 흐름]
- * - 빌드 시작 -> Foojay 툴체인 리졸버가 PC 안의 JDK 27을 찾거나 자동 다운로드 -> Java 27 바이트코드 생성함.
- *   └── 다른 JDK(17, 21 등)가 기본으로 깔려 있어도 항상 Java 27로 컴파일·테스트됨.
- */
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
@@ -41,47 +40,28 @@ dependencies {
     testImplementation 'com.microsoft.playwright:playwright:1.65.1'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
-/*
- * [Gradle 내장 블록 및 의존성 범위]
- * - dependencies { ... } : 사용할 외부 라이브러리를 적는 Gradle 내장 블록임.
- * - implementation : 컴파일과 실행에 모두 포함하되 외부 모듈 API로 새지 않는 범위임.
- * - testImplementation : 테스트 코드를 컴파일하고 실행할 때만 쓰는 범위임.
- * - testRuntimeOnly : 테스트를 실제로 실행할 때만 클래스패스에 넣는 범위임.
- * - 형제 범위 : compileOnly, runtimeOnly, annotationProcessor, api 등이 있음.
- *
- * [외부 라이브러리 좌표]
- * - spring-boot-starter-webmvc : 내장 Tomcat, Spring MVC, Jackson JSON 도구를 묶은 스타터임.
- * - spring-boot-starter-test : JUnit 5, Spring Test, MockMvc, AssertJ를 묶은 테스트 스타터임.
- * - junit-platform-launcher : Gradle 워커가 JUnit 5 테스트를 실행할 때 쓰는 런처임.
- */
 
+/** 한글 주석·문자열 깨짐 방지를 위한 UTF-8 고정 및 컨트롤러 `@RequestParam` 이름 추론용 `-parameters` 활성화 */
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.compilerArgs.add('-parameters')
 }
-/*
- * [Gradle 내장 함수 및 속성]
- * - tasks.withType(JavaCompile).configureEach { ... } : 모든 자바 컴파일 태스크에 설정을 거는 API임.
- * - 비교 메서드 : 즉시 전체를 평가하는 .all { ... } 대신 지연 방식인 configureEach를 씀.
- * - options.encoding : 소스 파일을 읽을 때 쓸 문자 인코딩 속성임.
- * - options.compilerArgs.add(...) : javac 컴파일러 실행 옵션을 추가하는 리스트임.
- *
- * [동작 흐름]
- * - JavaCompile 실행 -> UTF-8 인코딩 적용 -> Windows 환경에서도 한글 리터럴 깨짐 방지함.
- * - '-parameters' 적용 -> .class 파일에 매개변수 이름 보존 -> @RequestParam 자동 매핑 가능함.
- */
 
 tasks.withType(Javadoc).configureEach {
     options.encoding = 'UTF-8'
 }
-/*
- * [Gradle 내장 함수 및 속성]
- * - tasks.withType(Javadoc).configureEach { ... } : Javadoc 생성 태스크를 지연 설정하는 API임.
- * - options.encoding : Javadoc 문서를 읽고 쓸 때의 문자셋을 UTF-8로 고정하는 속성임.
- */
 
+/*
+ * [역할 및 데이터 흐름]
+ * - 역할: 배포용 단일 JAR 안에서도 프론트엔드가 그대로 서빙되도록 `../frontend` 파일을 `classpath:/static/` 경로로 복사함
+ * - 흐름:
+ *   `../frontend` (HTML, CSS, JS, sw.js, manifest.webmanifest)
+ *   + `../frontend/Assets` (공공데이터포털 로고 + 전국 대학교병원 SVG/PNG 워터마크 로고)
+ *   ──> `backend/build/resources/main/static/`으로 병합 (발표 캡처용 대용량 루트 이미지는 제외하여 JAR 용량 경량화)
+ * - 사용처: `processResources` 선행 태스크, `WebConfig.addResourceHandlers()`의 `classpath:/static/` 폴백 경로
+ */
 tasks.register('copyFrontendToStatic', Copy) {
-    description = 'Copies frontend static modules (HTML, CSS, JS, PWA) into backend static resources.'
+    description = 'Copies frontend static modules (HTML, CSS, JS, PWA, university logos) into backend static resources.'
     from('../frontend') {
         exclude '**/.DS_Store', '**/Thumbs.db', 'Assets/**'
     }
@@ -91,103 +71,28 @@ tasks.register('copyFrontendToStatic', Copy) {
     }
     into layout.buildDirectory.dir('resources/main/static')
 }
-/*
- * [Gradle 내장 타입·함수·속성]
- * - tasks.register('이름', Copy) : 파일 복사 전용 Copy 태스크를 지연 등록하는 문법임.
- * - 형제 태스크 타입 : 폴더 동기화 Sync, 삭제 Delete, 압축 Zip 등이 있음.
- * - from(...), exclude(...), include(...), into(...) : 원본 경로와 필터, 대상 경로를 정하는 메서드임.
- * - layout.buildDirectory.dir(...) : 빌드 출력 폴더 아래 경로를 안전하게 만드는 내장 API임.
- *
- * [빌드 태스크명]
- * - 'copyFrontendToStatic' : 프론트엔드 정적 파일을 백엔드 리소스 폴더로 모으는 태스크임.
- *
- * [동작 흐름]
- * - ../frontend/ 스캔 -> OS 임시 파일(.DS_Store, Thumbs.db)과 Assets/ 전체를 우선 제외함.
- *   ├── ../frontend/의 HTML, CSS, JS, manifest.webmanifest, sw.js 복사함.
- *   └── ../frontend/Assets/에서는 앱 아이콘(공공데이터포탈_logo.png)만 골라 Assets/로 복사함.
- *   ──> 최종 위치 : backend/build/resources/main/static/ 으로 모여 배포 JAR 용량을 줄임.
- */
 
 tasks.named('processResources') {
     dependsOn('copyFrontendToStatic')
 }
-/*
- * [Gradle 내장 함수 및 태스크명]
- * - tasks.named('이름') : 이미 등록된 Gradle 태스크를 이름으로 찾아 설정하는 함수임.
- * - 'processResources' : 리소스 파일을 빌드 폴더로 처리하는 'java' 플러그인 내장 태스크임.
- * - dependsOn('...') : 지정한 태스크가 먼저 끝나야 실행되도록 순서를 묶는 함수임.
- * - 형제 순서 제어 : 선행 여부와 관계없이 순서만 정하는 mustRunAfter(...) 등이 있음.
- *
- * [동작 흐름]
- * - processResources 호출 -> copyFrontendToStatic 먼저 실행 -> 정적 파일 복사 완료 후 리소스 처리함.
- */
 
+/** `Dockerfile`의 `COPY --from=builder /workspace/backend/build/libs/yonsei119.jar` 경로와 일치하도록 산출물 파일명 고정 */
 tasks.named('bootJar') {
     archiveFileName = 'yonsei119.jar'
 }
-/*
- * [Gradle 내장 태스크명 및 속성]
- * - 'bootJar' : 'org.springframework.boot' 플러그인이 만드는 실행 JAR 생성 태스크임.
- * - 형제 태스크 : 로컬 실행용 bootRun, 컨테이너 이미지 빌드용 bootBuildImage가 있음.
- * - archiveFileName : 최종 생성될 압축·JAR 파일 이름을 고정하는 내장 속성임.
- * - 형제 속성 : destinationDirectory, archiveBaseName, archiveVersion 등이 있음.
- *
- * [빌드 산출물 파일명]
- * - 'yonsei119.jar' : 버전이 바뀌어도 파일명이 고정되도록 지정한 산출물 이름임.
- *
- * [동작 흐름]
- * - bootJar 실행 -> backend/build/libs/yonsei119.jar 생성함.
- *   └── 파일명이 고정되어 Dockerfile의 COPY --from=builder 경로와 항상 일치함.
- *
- * [실행 방법]
- * - 빌드 후 단독 실행 : .\gradlew.bat bootJar 후 java -jar backend/build/libs/yonsei119.jar
- */
 
+/** 실행 불가능한 일반 `*-plain.jar` 중복 생성을 비활성화함 */
 tasks.named('jar') {
     enabled = false
 }
-/*
- * [Gradle 내장 태스크명 및 속성]
- * - 'jar' : 'java' 플러그인이 만드는 일반 라이브러리 JAR(*-plain.jar) 태스크임.
- * - enabled = false : 태스크 실행 자체를 끄는 Gradle 내장 불리언 속성임.
- * - 형제 제어 : 조건에 따라 실행 여부를 정하는 onlyIf { ... }가 있음.
- *
- * [동작 흐름]
- * - 빌드 실행 -> 'jar' 태스크 건너뜀 -> 실행 불가능한 *-plain.jar 파일 생성을 막음.
- *   └── 최종 결과물로 실행 가능한 yonsei119.jar 하나만 깔끔하게 남김.
- */
 
+/** 로컬 `bootRun` 실행 시 프로젝트 루트(`.env` 및 `./frontend` 위치)를 작업 디렉터리로 고정함 */
 tasks.named('bootRun') {
     workingDir = rootProject.projectDir
 }
-/*
- * [Gradle 내장 태스크명 및 속성]
- * - 'bootRun' : 스프링 부트 앱을 로컬에서 바로 띄우는 공식 실행 태스크임.
- * - workingDir : 자바 프로세스가 실행될 기준 작업 폴더(user.dir)를 정하는 속성임.
- * - rootProject.projectDir : 최상위 루트 프로젝트 폴더를 가리키는 Gradle 내장 속성임.
- * - 비교 속성 : projectDir은 현재 하위 모듈 폴더를 가리킴.
- *
- * [동작 흐름]
- * - bootRun 실행 -> 작업 폴더를 모노레포 루트(yonsei119/)로 고정함.
- *   ├── application.yml이 루트의 .env 파일을 바로 읽을 수 있게 함.
- *   └── WebConfig.java가 ./frontend/ 경로의 최신 HTML/CSS/JS를 즉시 찾아 서빙함.
- *   ──> 로컬 개발 중 프론트 파일을 고쳐도 JAR 재빌드 없이 http://localhost:8080 새로고침으로 바로 확인됨.
- */
 
+/** JUnit 5 플랫폼 활성화 및 로컬 설치된 Chrome/Edge 채널 재사용(불필요한 브라우저 중복 다운로드 방지) 설정 */
 tasks.named('test') {
     useJUnitPlatform()
     environment 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1'
 }
-/*
- * [Gradle 내장 태스크명 및 함수]
- * - 'test' : 'java' 플러그인이 자동으로 등록하는 테스트 실행 태스크임.
- * - useJUnitPlatform() : JUnit 5 테스트 엔진을 쓰도록 켜는 내장 함수임.
- * - 형제 함수 : JUnit 4용 useJUnit(), TestNG용 useTestNG()가 있음.
- *
- * [동작 흐름]
- * - :backend:test 실행 -> JUnit Platform 엔진 가동 -> src/test 아래 JUnit 5 테스트 일괄 검증함.
- *
- * [실행 방법]
- * - Windows : .\gradlew.bat :backend:test (또는 루트 단축 .\gradlew.bat checkAll)
- * - Linux/macOS : ./gradlew :backend:test
- */

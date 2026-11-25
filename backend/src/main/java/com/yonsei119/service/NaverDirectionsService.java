@@ -27,6 +27,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -36,58 +37,39 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
-/*
- * [패키지 및 임포트]
- * - com.yonsei119.service : 응급실 추천·경로 탐색·혼잡도·지오코딩 서비스 패키지 선언임.
- * - package, import : 소속 패키지와 HTTP·비동기·JSON·스프링·DTO·유틸 타입 사용을 선언함.
- *
- * [자바/라이브러리 내장 타입 (이름 변경 불가)]
- * - Logger, LoggerFactory (org.slf4j) : SLF4J 로깅 인터페이스와 로거 팩토리 클래스임.
- * - JsonNode (tools.jackson.databind) : Jackson 3의 읽기 전용 JSON 트리 노드 타입임.
- * - JsonMapper (tools.jackson.databind.json) : Jackson 3 JSON 파서·직렬화기 클래스임.
- * - ObjectNode (tools.jackson.databind.node) : 속성 추가·수정이 가능한 JSON 객체 노드임.
- * - URI, URLEncoder (java.net) : URI 생성 및 UTF-8 쿼리 인코딩 클래스임.
- * - HttpClient, HttpRequest, HttpResponse (java.net.http) : Java 11+ 표준 HTTP 통신 타입임.
- * - StandardCharsets (java.nio.charset), Duration (java.time) : 문자셋 상수 및 시간 간격 타입임.
- * - ArrayList, Comparator, LinkedHashSet, List, Locale, Map, Set (java.util) : 컬렉션·정렬·로케일 타입임.
- * - CompletableFuture (java.util.concurrent) : 비동기 작업 조합·병렬 실행 클래스임.
- * - ExecutorService, Executors (java.util.concurrent) : 스레드풀 인터페이스와 생성 팩토리임.
- * - AtomicInteger (java.util.concurrent.atomic) : 스레드 안전하게 정수를 증가시키는 숫자 객체임.
- *
- * [프로젝트 내부 참조 타입]
- * - Yonsei119Properties (com.yonsei119.config) : application.yml 설정 바인딩 레코드임.
- * - DirectionsResponseDto, HospitalDto, HospitalEtaRankDto : 경로·병원·ETA 순위 응답 DTO임.
- * - BoundedTtlCache, GeoUtils (com.yonsei119.util) : TTL 제한 캐시 및 좌표·거리 유틸리티임.
- */
 
+/*
+ * [역할 및 실행 시점]
+ * - 역할: 네이버 클라우드 Directions 5 / 15 자동차 길찾기 API를 호출하고, 반경 내 응급실 추천 순위를 계산하는 내비게이션 관제사
+ * - 실행 시점: 서버 부팅 시 @Service 싱글톤 빈으로 생성되며, `/api/directions` 또는 `/api/directions/rank` 요청 시 동작함
+ *
+ * [전체 호출 및 데이터 흐름]
+ * - 1) 단건 경로 조회 (`getDrivingRoute`)
+ *   EmergencyApiController.getDirections()
+ *   ──> 좌표·경유지 검증 ──> routeCache(60초 TTL) 확인
+ *   ──> 미적중 시 2배치 병렬 호출(빠른길·최적·편한길 + 무료우선) ──> mergeDirectionsJsonBodies() 병합
+ *   ──> parseDirectionsJson()
+ *       ├── 해상 페리 항로(`guide.type == 48/49`, 예: 육지↔울릉도·백령도·제주도) 감지 시 code=-304 차단 응답 반환!
+ *       └── 정상 육로 시 RouteCongestionAnalyzer로 공식 구간 혼잡도(0~3) 추출 후 60초 캐싱·반환
+ *
+ * - 2) 주변 응급실 ETA 추천 순위 (`rankHospitalsByDrivingTime`)
+ *   EmergencyApiController.rankDirections()
+ *   ──> 종별·가용병상·증상 필터 ──> 반경(기본 50km) 내 상위 후보 최대 8곳 선별
+ *   ──> 가상 스레드 병렬 `getDrivingEtaSummary()` (페리 도서 병원 자동 제외!)
+ *   ──> `HospitalRecommendationScorer.evaluate()` 점수 합산 ──> 수용최적/최단시간 정렬 후 1~N위 반환
+ *
+ * [내장 / 프레임워크 / 라이브러리 구분]
+ * - Java 표준 내장: HttpClient, CompletableFuture, Executors(가상 스레드), Semaphore, AtomicInteger, Comparator
+ * - Spring 프레임워크: @Service
+ * - 외부 라이브러리: Jackson 3(JsonMapper, JsonNode, ObjectNode), SLF4J(Logger), Jakarta(@PreDestroy)
+ *
+ * [사용처 및 IDE 추적 가이드]
+ * - 주요 호출처: EmergencyApiController(getDirections, rankDirections), Yonsei119BackendTests(Test 5, 7, 9, 12)
+ * - 프론트엔드 연결부: frontend/js/directions-eta.js (`loadDirectionsForHospital`, `refreshActiveRoute`, `loadEtaRanking`)
+ * - Java 호출 계층 추적: 메서드명 위에서 `Ctrl + Alt + H`
+ */
 @Service
 public class NaverDirectionsService {
-/*
- * [스프링 내장 어노테이션]
- * - @Service 정의 (출처: org.springframework.stereotype.Service, 이름 변경 불가)
- *   · 역할 : 핵심 비즈니스 로직을 담당하는 서비스 계층 클래스를 스프링 싱글톤 빈으로 자동 생성·등록하는 어노테이션임.
- * - @Service 현재 코드 적용
- *   · 적용 대상 : NaverDirectionsService 클래스 — 네이버 Directions 5/15 경로 탐색과 병원 ETA 순위 서비스 빈임.
- *   · 작동 원리 : @Component를 메타 어노테이션으로 포함하며, 컴포넌트 스캔 시 싱글톤 빈 1개를 등록하고 생성자 DI를 연결함.
- *   · 실행 시점 : 스프링 애플리케이션 부팅 및 ApplicationContext 초기화 단계에서 빈 생성과 의존성 주입이 완료됨.
- *   · 비교 : 범용 빈 @Component, 웹 API @RestController, 데이터 저장소 @Repository와 계층 역할만 구분함.
- *
- * [자바 문법]
- * - public class : 외부 패키지에서도 접근 가능한 공개 클래스 선언부임.
- *
- * [클래스명]
- * - NaverDirectionsService : 네이버 Directions 5/15 경로 탐색과 응급실 ETA 추천 순위를 담당함.
- *
- * [호출 경로 및 협력 구조]
- * - EmergencyApiController.getDirections() (GET /api/directions) -> getDrivingRoute(...)
- * - EmergencyApiController.rankDirections() (GET /api/directions/rank) -> rankHospitalsByDrivingTime(...)
- * - 생성자 주입 빈: Yonsei119Properties(설정), RouteCongestionAnalyzer(혼잡도), HospitalRecommendationScorer(추천 점수)
- * - 내부 캐시: BoundedTtlCache로 60초 TTL routeCache(경로) 및 etaCache(요약 ETA) 관리
- *
- * [동작 흐름]
- * - 단건 경로 탐색: 좌표 검증 -> routeCache 조회 -> 2배치 병렬 호출 -> route 병합 -> 전 옵션 캐싱 -> 반환
- * - 주변 병원 순위: 종별·병상·증상 필터 -> 최대 8곳 선별 -> 병렬 ETA 조회 -> 점수 산출 -> 정렬·순위 반환
- */
 
     private static final Logger log = LoggerFactory.getLogger(NaverDirectionsService.class);
     private static final long ROUTE_CACHE_TTL_SECONDS = 60L;
@@ -96,22 +78,16 @@ public class NaverDirectionsService {
     private static final int MAX_WAYPOINTS_LENGTH = 256;
     private static final int MAX_BATCH_CONCURRENCY = 6;
     private static final int MAX_ETA_CONCURRENCY = 8;
+    // 네이버 Directions API에서 해상 페리 항로 진입(48)·출구(49)를 뜻하는 공식 guide type 코드
+    private static final int GUIDE_TYPE_FERRY_ENTER = 48;
+    private static final int GUIDE_TYPE_FERRY_EXIT = 49;
+    public static final int FERRY_ROUTE_UNSUPPORTED_CODE = -304;
+    private static final String FERRY_ROUTE_UNSUPPORTED_MESSAGE =
+            "해상 페리 항로가 포함된 도서 지역(울릉도·백령도·제주 등)은 자동차 경로 안내를 제공하지 않습니다.";
     private static final Pattern WAYPOINT_PATTERN = Pattern.compile("^[0-9.,:|\\-]+$");
-    /*
-     * [자바 문법]
-     * - private static final : 클래스 내부에서만 공유되며 실행 중 변경되지 않는 정적 상수임.
-     *
-     * [상수명]
-     * - log : SLF4J 로깅용 정적 로거 상수임.
-     * - ROUTE_CACHE_TTL_SECONDS : 경로·ETA 캐시 보관 수명(60초) 상수임.
-     * - MAX_ROUTE_CACHE_ENTRIES : routeCache 최대 보관 건수(256건) 상수임.
-     * - MAX_ETA_CACHE_ENTRIES : etaCache 최대 보관 건수(512건) 상수임.
-     * - MAX_WAYPOINTS_LENGTH : 경유지 파라미터 최대 허용 길이(256자) 상수임.
-     *
-     * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-     * - LoggerFactory.getLogger(클래스.class) : 지정한 클래스 이름 기준의 Logger를 생성함.
-     */
+    private static final EtaSummary FERRY_BLOCKED_ETA = new EtaSummary(0.0, -1, "-", 0, 0, true);
 
+    /** 네이버 Directions 5대 주행 옵션 코드와 한글 표시명 매핑 */
     public static final Map<String, String> OPTION_LABELS = Map.of(
             "trafast", "실시간 빠른길",
             "traoptimal", "실시간 최적",
@@ -119,20 +95,10 @@ public class NaverDirectionsService {
             "traavoidtoll", "무료 우선",
             "traavoidcaronly", "자동차전용 회피"
     );
+
     private static final List<String> ALL_FOUR_OPTIONS = List.of(
             "trafast", "traoptimal", "tracomfort", "traavoidtoll"
     );
-    /*
-     * [자바 문법]
-     * - public static final, private static final, 제네릭 타입(Map<String, String>, List<String>)
-     *
-     * [상수명]
-     * - OPTION_LABELS : 네이버 Directions 5대 옵션 코드와 한국어 라벨을 연결한 불변 맵 상수임.
-     * - ALL_FOUR_OPTIONS : 기본 경로 조회 시 한꺼번에 조회·캐싱하는 4대 주행 옵션 목록 상수임.
-     *
-     * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-     * - Map.of(...), List.of(...) : 수정 불가(Immutable) 맵과 리스트를 생성함.
-     */
 
     private final Yonsei119Properties properties;
     private final RouteCongestionAnalyzer congestionAnalyzer;
@@ -147,21 +113,6 @@ public class NaverDirectionsService {
             new BoundedTtlCache<>(MAX_ROUTE_CACHE_ENTRIES, ROUTE_CACHE_TTL_SECONDS);
     private final BoundedTtlCache<String, EtaSummary> etaCache =
             new BoundedTtlCache<>(MAX_ETA_CACHE_ENTRIES, ROUTE_CACHE_TTL_SECONDS);
-    /*
-     * [자바 문법]
-     * - private final, new, 제네릭 타입, 다이아몬드 연산자(<>)
-     *
-     * [필드명 (멤버 변수)]
-     * - properties : application.yml의 네이버 API 인증키 및 Directions URL 설정 객체임.
-     * - congestionAnalyzer : 구간별 주행 속도·혼잡도 세분화 분석을 담당하는 빈 필드임.
-     * - recommendationScorer : 병원 병상·공지 평가와 증상 필터링을 담당하는 빈 필드임.
-     * - httpClient : 네이버 Directions HTTP GET 요청을 실행하는 재사용 클라이언트 필드임.
-     * - jsonMapper : 스프링 부트 4 자동 구성 JsonMapper 빈을 주입받는 Jackson 3 파서·직렬화기 필드임.
-     * - httpBatchExecutor / batchConcurrencyLimiter : 단건 경로 배치를 가상 스레드로 실행(최대 6동시)함.
-     * - etaRankExecutor / etaConcurrencyLimiter : 주변 병원 ETA 계산을 가상 스레드로 실행(최대 8동시)함.
-     * - routeCache : 전체 경로 응답 DTO를 최대 256건·60초간 보관하는 캐시 필드임.
-     * - etaCache : 병원 순위 계산용 경량 ETA 요약을 최대 512건·60초간 보관하는 캐시 필드임.
-     */
 
     public NaverDirectionsService(
             Yonsei119Properties properties,
@@ -169,15 +120,6 @@ public class NaverDirectionsService {
             HospitalRecommendationScorer recommendationScorer,
             JsonMapper jsonMapper
     ) {
-    /*
-     * [자바 문법]
-     * - public NaverDirectionsService(...) : 스프링 컨테이너가 4개 빈을 생성자 주입하는 생성자임.
-     * - this.필드명 : 매개변수를 멤버 필드에 대입함.
-     *
-     * [생성자 및 매개변수명]
-     * - 생성자명: NaverDirectionsService
-     * - 매개변수명: properties, congestionAnalyzer, recommendationScorer, jsonMapper
-     */
         this.properties = properties;
         this.congestionAnalyzer = congestionAnalyzer;
         this.recommendationScorer = recommendationScorer;
@@ -192,51 +134,13 @@ public class NaverDirectionsService {
         this.etaRankExecutor = Executors.newThreadPerTaskExecutor(
                 Thread.ofVirtual().name("yonsei119-naver-eta-", 1).factory()
         );
-        /*
-         * [자바 문법]
-         * - new, Thread.ofVirtual() : Java 21+/27 가상 스레드 실행기로 HTTP I/O 대기를 경량화함.
-         *
-         * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
-         * - HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build() : 10초 타임아웃 HTTP 클라이언트 생성.
-         * - Thread.ofVirtual().name(..., 1).factory() : 가상 스레드 이름 접두사와 시작 순번을 설정함.
-         * - Executors.newThreadPerTaskExecutor(ThreadFactory) : 작업당 가상 스레드 1개를 할당해 블로킹 I/O 효율을 높임.
-         *
-         * [동작 흐름]
-         * - ForkJoinPool.commonPool 고갈과 플랫폼 스레드 점유를 막기 위해 가상 스레드 실행기 2개 + Semaphore 상한을 조합함.
-         *   ├── httpBatchExecutor: 가상 스레드 + Semaphore(6)
-         *   └── etaRankExecutor: 가상 스레드 + Semaphore(8)
-         */
     }
 
     @PreDestroy
     public void shutdown() {
-    /*
-     * [자바/스프링 내장 어노테이션]
-     * - @PreDestroy 정의 (출처: jakarta.annotation.PreDestroy, 이름 변경 불가)
-     *   · 역할 : 스프링 컨테이너가 종료되면서 빈을 소멸시키기 직전에 자원 정리용 메서드를 1회 자동 실행해 주는 생명주기 어노테이션임.
-     * - @PreDestroy 현재 코드 적용
-     *   · 적용 대상 : NaverDirectionsService.shutdown() 메서드 — 2개 가상 스레드 실행기와 HttpClient 자원을 해제함.
-     *   · 작동 원리 : CommonAnnotationBeanPostProcessor가 @PreDestroy 대상인 NaverDirectionsService.shutdown() 메서드를 자동 실행함.
-     *   · 실행 시점 : 서버 종료나 Spring ApplicationContext가 닫히며 싱글톤 빈이 제거되기 직전에 1회만 호출됨.
-     *   · 비교 : 빈 생성 직후 초기화 콜백 @PostConstruct, 인터페이스 구현 방식 DisposableBean.destroy()와 역할·구현 방식이 다름.
-     *
-     * [자바 문법]
-     * - public void : 반환값이 없는 종료 정리 메서드 선언임.
-     *
-     * [메서드명]
-     * - shutdown
-     */
         httpBatchExecutor.shutdownNow();
         etaRankExecutor.shutdownNow();
         httpClient.close();
-        /*
-         * [자바/스프링 내장 메서드 (이름 변경 불가)]
-         * - ExecutorService.shutdownNow() : 대기·실행 중인 작업에 인터럽트를 걸어 실행기를 정리함.
-         * - HttpClient.close() (Java 21+) : 내부 HTTP 연결 풀과 선택자 자원을 정리함.
-         *
-         * [동작 흐름]
-         * - 빈 종료 콜백 호출 -> httpBatchExecutor·etaRankExecutor.shutdownNow() -> httpClient.close() 자원 해제
-         */
     }
 
     private static <T> T runWithPermit(Semaphore semaphore, Supplier<T> task) {
@@ -256,26 +160,15 @@ public class NaverDirectionsService {
     }
 
     private boolean isMissingNaverApiCredentials() {
-    /*
-     * [자바 문법]
-     * - private boolean : 클래스 내부 전용 인증키 누락 여부 검사 메서드임.
-     *
-     * [메서드명]
-     * - isMissingNaverApiCredentials
-     */
         return properties.naver() == null || !properties.naver().hasApiCredentials();
-        /*
-         * [자바 문법]
-         * - 논리합(||), null 비교(==), return
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .isBlank() (String) : 빈 문자열이거나 공백 문자로만 이루어졌는지 검사함.
-         *
-         * [동작 흐름]
-         * - properties.naver() null 확인 -> clientId·clientSecret null 또는 공백 확인 -> 하나라도 비면 true 반환
-         */
     }
 
+    /*
+     * [역할 및 데이터 흐름]
+     * - 역할: 출발지~병원 자동차 경로를 조회하고 4대 주행 옵션(빠른길·최적·편한길·무료우선)을 한 번에 비교·캐싱함
+     * - 주의: 네이버 Directions API는 위경도 순서가 아닌 `"경도(lng),위도(lat)"` 순서를 요구하므로 startParam/goalParam에서 순서를 맞춤
+     * - 사용처: EmergencyApiController.getDirections() (GET /api/directions)
+     */
     public DirectionsResponseDto getDrivingRoute(
             double startLat,
             double startLng,
@@ -285,24 +178,6 @@ public class NaverDirectionsService {
             String option,
             String waypoints
     ) {
-    /*
-     * [자바 문법]
-     * - public, 기본형 double
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [프로젝트 내부 참조 타입]
-     * - DirectionsResponseDto (반환 DTO 레코드)
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: getDrivingRoute
-     * - startLat/startLng (출발 위경도), goalLat/goalLng (도착 위경도)
-     * - apiType ("directions5"|"directions15"), option (주행 옵션), waypoints (경유지 문자열)
-     *
-     * [호출 경로]
-     * - EmergencyApiController.getDirections() -> GET /api/directions 에서 호출됨.
-     */
         String normalizedApi = normalizeApiType(apiType);
         String normalizedOption = normalizeOption(option);
         String apiLabel = "directions15".equals(normalizedApi) ? "Directions 15" : "Directions 5";
@@ -334,6 +209,7 @@ public class NaverDirectionsService {
         Set<String> allRequestedOptions = new LinkedHashSet<>(ALL_FOUR_OPTIONS);
         allRequestedOptions.add(normalizedOption);
 
+        // 네이버 API는 1회 호출당 최대 3개 옵션만 허용하므로 2개 배치로 나누어 동시에 요청함
         String batch1Options = "trafast:traoptimal:tracomfort";
         String batch2Options = "traavoidcaronly".equals(normalizedOption)
                 ? "traavoidtoll:traavoidcaronly"
@@ -341,12 +217,6 @@ public class NaverDirectionsService {
 
         String startParam = String.format(Locale.US, "%.6f,%.6f", startLng, startLat);
         String goalParam = String.format(Locale.US, "%.6f,%.6f", goalLng, goalLat);
-        /*
-         * [좌표 순서 및 배치 옵션 구성 원리]
-         * - 네이버 Directions API의 start/goal은 (위도, 경도)가 아닌 "경도(lng),위도(lat)" 순으로 전달함.
-         * - 1회 호출당 option은 최대 3개까지 허용되므로 batch1(3개)과 batch2(1~2개)로 나누어 동시 요청함.
-         * - baseEndpoint는 application.yml의 yonsei119.naver.directions5-url 또는 directions15-url 값임.
-         */
 
         try {
             CompletableFuture<HttpResponse<String>> future1 = CompletableFuture.supplyAsync(
@@ -394,8 +264,17 @@ public class NaverDirectionsService {
                     if (safeWaypoints.isEmpty() && "directions5".equals(normalizedApi)) {
                         etaCache.put(
                                 buildEtaCacheKey(optKey, startLat, startLng, goalLat, goalLng),
-                                new EtaSummary(optDto.distanceKm(), optDto.durationMinutes(), optDto.durationText(), optDto.tollFare(), optDto.taxiFare())
+                                new EtaSummary(optDto.distanceKm(), optDto.durationMinutes(), optDto.durationText(),
+                                        optDto.tollFare(), optDto.taxiFare(), false)
                         );
+                    }
+                } else if (optDto.code() == FERRY_ROUTE_UNSUPPORTED_CODE) {
+                    routeCache.put(
+                            buildRouteCacheKey(normalizedApi, optKey, startLat, startLng, goalLat, goalLng, safeWaypoints),
+                            optDto
+                    );
+                    if (safeWaypoints.isEmpty() && "directions5".equals(normalizedApi)) {
+                        etaCache.put(buildEtaCacheKey(optKey, startLat, startLng, goalLat, goalLng), FERRY_BLOCKED_ETA);
                     }
                 }
             }
@@ -409,44 +288,9 @@ public class NaverDirectionsService {
             log.error("네이버 {} 호출 중 예외 발생: {}", apiLabel, ex.getMessage(), ex);
             return createErrorResponse(normalizedApi, apiLabel, normalizedOption, optionLabel, -1, "경로 탐색 요청 중 오류가 발생했습니다.");
         }
-        /*
-         * [자바 문법]
-         * - if, 향상된 for(:), try { ... } catch (Exception ex), 삼항 연산자(? :), 람다(() -> ...)
-         *
-         * [지역 변수명]
-         * - normalizedApi, normalizedOption, apiLabel, optionLabel, safeWaypoints, cacheKey, cached, baseEndpoint
-         * - allRequestedOptions, batch1Options, batch2Options, startParam, goalParam, future1, future2
-         * - response1, response2, primaryResponse, mergedBody, optKey, label, optDto, primaryCached, ex
-         *
-         * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
-         * - new LinkedHashSet<>(Collection), .add(...) (Set) : 삽입 순서를 유지해 중복 없는 집합을 만듦.
-         * - Map.getOrDefault(Object key, V defaultVal) (Map) : 키가 없으면 기본값을 반환함.
-         * - String.format(Locale.US, "%.6f,%.6f", ...) : 소수점 6자리 미국식 점(.) 표기로 포맷함.
-         * - CompletableFuture.supplyAsync(Supplier, Executor) : 지정 스레드풀에서 비동기 작업을 실행함.
-         * - .join() (CompletableFuture) : 비동기 작업이 끝날 때까지 기다려 결과를 꺼냄.
-         * - .statusCode(), .body() (HttpResponse), .isEmpty() (List, String)
-         * - log.warn(...), log.error(...) (Logger)
-         *
-         * [동작 흐름]
-         * - 1단계: API·옵션 정규화 -> 좌표 범위 검증 -> 경유지 정제(sanitizeWaypoints)
-         * - 2단계: routeCache 적중 시 즉시 반환 -> 미적중 시 인증키 확인 후 2배치 병렬 HTTP 호출
-         * - 3단계: 2xx 응답 2개 병합(mergeDirectionsJsonBodies) -> 전 옵션 파싱 -> routeCache·etaCache 적재
-         * - 4단계: 요청 cacheKey DTO 우선 반환(실패 시 createErrorResponse로 안전 응답 반환)
-         */
     }
 
     private static String sanitizeWaypoints(String rawWaypoints) {
-    /*
-     * [자바 문법]
-     * - private static
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: sanitizeWaypoints
-     * - rawWaypoints : 사용자 요청으로 전달된 경유지 문자열임.
-     */
         if (rawWaypoints == null || rawWaypoints.isBlank()) {
             return "";
         }
@@ -458,21 +302,6 @@ public class NaverDirectionsService {
             return "";
         }
         return trimmed;
-        /*
-         * [자바 문법]
-         * - if, 논리 부정 연산자, return
-         *
-         * [지역 변수명]
-         * - trimmed
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .isBlank(), .trim(), .length() (String) : 공백 확인, 앞뒤 제거, 길이를 조회함.
-         * - .substring(int beginIndex, int endIndex), .matches(String regex) (String)
-         *
-         * [동작 흐름]
-         * - null·공백 -> "" 반환 -> 256자 초과분 절단
-         * - └── ^[0-9.,:|\-]+$ 정규식 통과 시만 반환(허용 외 문자 제거로 URL 인젝션 차단)
-         */
     }
 
     private HttpResponse<String> sendDirectionsHttpRequest(
@@ -482,18 +311,6 @@ public class NaverDirectionsService {
             String optionParam,
             String safeWaypoints
     ) {
-    /*
-     * [자바 문법]
-     * - private
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - HttpResponse<String>, String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: sendDirectionsHttpRequest
-     * - baseEndpoint (Directions 5/15 URL), startParam ("경도,위도"), goalParam ("경도,위도")
-     * - optionParam (콜론 구분 옵션 문자열), safeWaypoints (정제된 경유지 문자열)
-     */
         try {
             StringBuilder urlBuilder = new StringBuilder(baseEndpoint)
                     .append("?start=").append(URLEncoder.encode(startParam, StandardCharsets.UTF_8))
@@ -512,69 +329,16 @@ public class NaverDirectionsService {
                     .header("Accept", "application/json")
                     .GET()
                     .build();
-            /*
-             * [외부 API URL 조립 3단계 분해 및 인증 헤더]
-             * - 1단계 기본 URL 출처(application.yml):
-             *   baseEndpoint는 properties.naver().directions5Url() 또는 directions15Url()에서 전달됨.
-             *   원본 설정 키는 application.yml의 yonsei119.naver.directions5-url과 directions15-url임.
-             * - 2단계 쿼리 파라미터(? / &) 및 URL 인코딩:
-             *   StringBuilder로 ?start=..., &goal=..., &option=..., 선택적 &waypoints=...를 연결함.
-             *   모든 값에 URLEncoder.encode(..., UTF_8)를 적용해 ','->'%2C', ':'->'%3A', '|'->'%7C' 변환함.
-             *   완성된 urlBuilder.toString() 문자열을 URI.create(...)로 변환해 .uri(...)에 전달함.
-             * - 3단계 인증 헤더(.header(...)):
-             *   X-NCP-APIGW-API-KEY-ID : properties.naver().clientId() (yonsei119.naver.client-id)
-             *   X-NCP-APIGW-API-KEY    : properties.naver().clientSecret() (yonsei119.naver.client-secret)
-             *   Accept                 : "application/json"
-             *
-             * [최종 URL 시각 구조도]
-             *   https://maps.apigw.ntruss.com/map-direction/v1/driving   <-- 1단계: application.yml directions5-url (또는 directions15-url)
-             *     ?start=127.901229%2C37.319040                         <-- 2단계: 출발 경도,위도 UTF-8 인코딩
-             *     &goal=127.945610%2C37.319120                          <-- 2단계: 도착 경도,위도 UTF-8 인코딩
-             *     &option=trafast%3Atraoptimal%3Atracomfort             <-- 2단계: 콜론 구분 최대 3개 옵션 UTF-8 인코딩
-             *     &waypoints=127.920000%2C37.320000 (선택)             <-- 2단계(선택): safeWaypoints 존재 시 추가
-             *   HTTP Headers:
-             *     X-NCP-APIGW-API-KEY-ID = <properties.naver().clientId()>
-             *     X-NCP-APIGW-API-KEY    = <properties.naver().clientSecret()>
-             *     Accept                 = application/json
-             */
 
             return httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (Exception ex) {
             log.warn("네이버 Directions 배치 호출 실패 (option={}): {}", optionParam, ex.getMessage());
             return null;
         }
-        /*
-         * [자바 문법]
-         * - try { ... } catch (Exception ex), if, new, return null
-         *
-         * [지역 변수명]
-         * - urlBuilder, request, ex
-         *
-         * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
-         * - new StringBuilder(String), .append(...), .toString() (StringBuilder)
-         * - URLEncoder.encode(String, Charset), URI.create(String)
-         * - HttpRequest.newBuilder().uri(...).timeout(Duration.ofSeconds(10)).header(...).GET().build()
-         * - httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
-         * - log.warn(...) (Logger)
-         *
-         * [동작 흐름]
-         * - URL 조립·NCP 헤더 설정 -> httpClient.send 동기 GET 전송 -> HttpResponse 반환
-         * - └── 네트워크·타임아웃 예외 발생 -> 경고 로그 기록 후 null 반환
-         */
     }
 
+    /** 2개 배치로 나누어 받은 네이버 Directions JSON의 `route` 객체를 하나의 트리로 병합함 */
     private String mergeDirectionsJsonBodies(String body1, String body2) {
-    /*
-     * [자바 문법]
-     * - private
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: mergeDirectionsJsonBodies
-     * - body1 (배치1 JSON 응답 문자열), body2 (배치2 JSON 응답 문자열)
-     */
         if (body1 == null || body1.isBlank()) {
             return body2 != null ? body2 : "{}";
         }
@@ -595,30 +359,44 @@ public class NaverDirectionsService {
             log.debug("Directions 응답 병합 생략: {}", ex.getMessage());
         }
         return body1;
-        /*
-         * [자바 문법]
-         * - instanceof 패턴 매칭(`root1.path("route") instanceof ObjectNode routeObj1`) :
-         *   타입 검사와 동시에 형변환된 지역 변수(routeObj1)를 바로 선언하는 Java 16+ 문법임.
-         * - if, 삼항 연산자(? :), 논리곱(&&), 논리합(||), 향상된 for(:), try { ... } catch
-         *
-         * [지역 변수명]
-         * - root1, root2, routeObj1, routeObj2, fieldName, ex
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .isBlank() (String) : 빈 문자열이나 공백만 있는지 확인함.
-         * - jsonMapper.readTree(String), jsonMapper.writeValueAsString(Object) : JSON 트리 읽기·직렬화함.
-         * - .path("키") (JsonNode) : 키가 없어도 MissingNode를 반환해 NullPointerException을 막음.
-         * - .get("키") (JsonNode/ObjectNode 비교) : 키가 없으면 null을 반환하므로 확인 후 사용해야 함.
-         * - .propertyNames() (ObjectNode) : JSON 객체가 가진 모든 키 이름 컬렉션을 반환함.
-         * - .set(String key, JsonNode value) (ObjectNode) : 대상 JSON 객체에 속성을 추가·덮어씀.
-         * - log.debug(...) (Logger)
-         *
-         * [동작 흐름]
-         * - 한쪽 배치 응답 비어 있음 -> 유효한 다른 쪽 응답(없으면 "{}") 반환
-         * - 두 응답 모두 route ObjectNode 보유 -> body2의 route 필드를 body1에 병합 -> 단일 JSON 반환
-         */
     }
 
+    /*
+     * [역할 및 데이터 흐름]
+     * - 역할: 경로 내 `guide` 배열을 검사해 해상 페리(여객선) 탑승 구간이 포함되어 있는지 감지함
+     * - 실제 네이버맵 일치 원리:
+     *   · 네이버 Directions REST API는 육지에서 울릉군보건의료원 등을 조회할 때 묵호항 등 여객선 터미널을 거쳐
+     *     `type: 48("페리항로 진입")`, `type: 49("페리항로 출구")`가 포함된 경로를 `code: 0`으로 반환함.
+     *   · 반면 실제 네이버 지도 웹/앱 자동차 길찾기는 도서 페리 횡단 경로를 제공하지 않으므로 동일하게 차단함!
+     *   · 단, 섬 내부 육로 이동(예: 제주시 내 -> 제주대병원, 울릉읍 내 -> 울릉군보건의료원)은 페리 구간이 없으므로 정상 안내됨.
+     */
+    public static boolean containsFerryCrossing(JsonNode guideNode) {
+        if (guideNode == null || !guideNode.isArray()) {
+            return false;
+        }
+        for (JsonNode step : guideNode) {
+            int type = step.path("type").asInt(0);
+            if (type == GUIDE_TYPE_FERRY_ENTER || type == GUIDE_TYPE_FERRY_EXIT) {
+                return true;
+            }
+            String instructions = step.path("instructions").asString("");
+            if (instructions.contains("페리") || instructions.contains("여객선") || instructions.contains("항로 진입") || instructions.contains("항로 출구")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /*
+     * [역할 및 데이터 흐름]
+     * - 역할: 네이버 Directions JSON 문자열을 파싱해 좌표열, 공식 혼잡도 구간, 대안 경로 요약을 담은 `DirectionsResponseDto`로 조립함
+     * - 흐름:
+     *   JSON 트리 파싱 ──> 최상위 code == 0 확인
+     *   ──> 5대 옵션 순회하며 페리 미포함 육로만 alternatives에 적재
+     *   ──> 요청 옵션 경로가 페리 항로를 포함하면 다른 육로 옵션 탐색 후, 모두 페리면 code=-304 오류 DTO 즉시 반환
+     *   ──> path([경도, 위도]), congestionAnalyzer.buildDetailedSections(), guidePrompts 조립 후 반환
+     * - 사용처: getDrivingRoute(), Yonsei119BackendTests(Test 5, 7, 9)
+     */
     public DirectionsResponseDto parseDirectionsJson(
             String jsonBody,
             String apiType,
@@ -626,21 +404,6 @@ public class NaverDirectionsService {
             String option,
             String optionLabel
     ) {
-    /*
-     * [자바 문법]
-     * - public
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [프로젝트 내부 참조 타입]
-     * - DirectionsResponseDto
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: parseDirectionsJson
-     * - jsonBody (단일 또는 병합된 Directions JSON), apiType, apiLabel
-     * - option (요청 주행 옵션 코드), optionLabel (한국어 옵션명)
-     */
         try {
             JsonNode root = jsonMapper.readTree(jsonBody);
             int code = root.path("code").asInt(-1);
@@ -653,10 +416,17 @@ public class NaverDirectionsService {
             JsonNode routeNode = root.path("route");
             List<DirectionsResponseDto.RouteOptionSummaryDto> alternatives = new ArrayList<>();
             List<String> optionOrder = List.of("trafast", "traoptimal", "tracomfort", "traavoidtoll", "traavoidcaronly");
+            boolean anyFerryDetected = false;
+
             for (String optKey : optionOrder) {
                 JsonNode arr = routeNode.path(optKey);
                 if (arr.isArray() && !arr.isEmpty()) {
-                    JsonNode sum = arr.get(0).path("summary");
+                    JsonNode candidateRoute = arr.get(0);
+                    if (containsFerryCrossing(candidateRoute.path("guide"))) {
+                        anyFerryDetected = true;
+                        continue;
+                    }
+                    JsonNode sum = candidateRoute.path("summary");
                     int distM = sum.path("distance").asInt(0);
                     double distKm = Math.round((distM / 100.0)) / 10.0;
                     long durMs = sum.path("duration").asLong(0L);
@@ -669,29 +439,49 @@ public class NaverDirectionsService {
                 }
             }
 
-            JsonNode optionArray = routeNode.path(option);
-            if (!optionArray.isArray() || optionArray.isEmpty()) {
+            JsonNode selectedRoute = null;
+            JsonNode requestedArray = routeNode.path(option);
+            if (requestedArray.isArray() && !requestedArray.isEmpty()) {
+                JsonNode candidate = requestedArray.get(0);
+                if (containsFerryCrossing(candidate.path("guide"))) {
+                    anyFerryDetected = true;
+                } else {
+                    selectedRoute = candidate;
+                }
+            }
+
+            if (selectedRoute == null) {
                 for (String fieldName : routeNode.propertyNames()) {
-                    JsonNode candidate = routeNode.path(fieldName);
-                    if (candidate.isArray() && !candidate.isEmpty()) {
-                        optionArray = candidate;
+                    JsonNode candidateArr = routeNode.path(fieldName);
+                    if (candidateArr.isArray() && !candidateArr.isEmpty()) {
+                        JsonNode candidate = candidateArr.get(0);
+                        if (containsFerryCrossing(candidate.path("guide"))) {
+                            anyFerryDetected = true;
+                            continue;
+                        }
+                        selectedRoute = candidate;
                         break;
                     }
                 }
             }
 
-            if (!optionArray.isArray() || optionArray.isEmpty()) {
+            if (selectedRoute == null) {
+                if (anyFerryDetected) {
+                    return createErrorResponse(
+                            apiType, apiLabel, option, optionLabel,
+                            FERRY_ROUTE_UNSUPPORTED_CODE, FERRY_ROUTE_UNSUPPORTED_MESSAGE
+                    );
+                }
                 return createErrorResponse(apiType, apiLabel, option, optionLabel, code, "탐색된 도로 경로 데이터가 없습니다.");
             }
 
-            JsonNode firstRoute = optionArray.get(0);
-            JsonNode summary = firstRoute.path("summary");
+            JsonNode summary = selectedRoute.path("summary");
             int distanceMeters = summary.path("distance").asInt(0);
             double distanceKm = Math.round((distanceMeters / 100.0)) / 10.0;
             long durationMs = summary.path("duration").asLong(0L);
             int durationMinutes = Math.max(1, (int) Math.round(durationMs / 60000.0));
 
-            JsonNode pathNode = firstRoute.path("path");
+            JsonNode pathNode = selectedRoute.path("path");
             List<List<Double>> path = new ArrayList<>();
             if (pathNode.isArray()) {
                 for (JsonNode coord : pathNode) {
@@ -702,11 +492,11 @@ public class NaverDirectionsService {
             }
 
             List<DirectionsResponseDto.RouteSectionDto> sections = congestionAnalyzer.buildDetailedSections(
-                    firstRoute.path("section"), firstRoute.path("guide")
+                    selectedRoute.path("section"), selectedRoute.path("guide")
             );
 
             List<String> guidePrompts = new ArrayList<>();
-            JsonNode guideNode = firstRoute.path("guide");
+            JsonNode guideNode = selectedRoute.path("guide");
             if (guideNode.isArray()) {
                 for (JsonNode step : guideNode) {
                     String instructions = step.path("instructions").asString("").trim();
@@ -727,33 +517,18 @@ public class NaverDirectionsService {
             log.warn("네이버 Directions JSON 파싱 오류: {}", ex.getMessage());
             return createErrorResponse(apiType, apiLabel, option, optionLabel, -2, "경로 응답 JSON 파싱에 실패했습니다.");
         }
-        /*
-         * [자바 문법]
-         * - try { ... } catch (Exception ex), if, 향상된 for(:), break, (int) 형변환, 제네릭, new, return
-         *
-         * [지역 변수명]
-         * - root, code, message, routeNode, alternatives, optionOrder, optKey, arr, sum, distM, distKm, durMs, durMin
-         * - optionArray, fieldName, candidate, firstRoute, summary, distanceMeters, distanceKm, durationMs, durationMinutes
-         * - pathNode, path, coord, sections, guidePrompts, guideNode, step, instructions, ex
-         *
-         * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
-         * - jsonMapper.readTree(String) (JsonMapper)
-         * - .path("키") (JsonNode) : 누락 시 MissingNode를 반환해 null 예외 없이 안전하게 탐색함.
-         * - .get(int index) (JsonNode) : JSON 배열에서 지정 인덱스의 요소를 추출함.
-         * - .get("키") (JsonNode 비교) : 객체 키가 없을 때 null을 반환함(.path와 차이).
-         * - .isArray(), .isEmpty(), .size(), .propertyNames() (JsonNode)
-         * - .asInt(기본값), .asLong(기본값), .asDouble(), .asString(기본값) (JsonNode)
-         * - List.of(...), List.copyOf(...), new ArrayList<>(), .add(...) (List)
-         * - Math.round(double), Math.max(int, int) (Math), .trim(), .isEmpty() (String)
-         *
-         * [동작 흐름]
-         * - 1단계: 최상위 code != 0 -> 오류 응답 DTO 즉시 반환
-         * - 2단계: routeNode의 5개 옵션 순회 -> 대안 경로 요약(alternatives) 목록 조립
-         * - 3단계: 요청 option 배열 추출(없으면 첫 유효 배열 폴백) -> summary·path 좌표열([경도, 위도]) 파싱
-         * - 4단계: section·guide는 congestionAnalyzer에 위임 -> guidePrompts와 함께 불변 DTO 조립 후 반환
-         */
     }
 
+    /*
+     * [역할 및 데이터 흐름]
+     * - 역할: 출발 기준 반경(기본 50km) 내 병원들의 실도로 도착 시간과 수용 가능성을 병렬 평가해 추천 순위를 산출함
+     * - 흐름:
+     *   1) 종별·가용병상·증상 필터 통과 병원 추출(matchingPool)
+     *   2) 반경 내 후보를 1차 사전 점수(candidatePreScore) 순으로 최대 8곳 압축
+     *   3) 가상 스레드 병렬로 getDrivingEtaSummary() 호출 (페리 도서 병원은 null 필터링으로 자동 제외!)
+     *   4) HospitalRecommendationScorer.evaluate() 점수 계산 후 1~N위 부여해 반환
+     * - 사용처: EmergencyApiController.rankDirections() (GET /api/directions/rank)
+     */
     public List<HospitalEtaRankDto> rankHospitalsByDrivingTime(
             List<HospitalDto> allHospitals,
             double startLat,
@@ -769,25 +544,6 @@ public class NaverDirectionsService {
             String rankMode,
             String option
     ) {
-    /*
-     * [자바 문법]
-     * - public, 기본형 double·int·boolean, 제네릭 타입(List<HospitalDto>, List<HospitalEtaRankDto>)
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - List, String
-     *
-     * [프로젝트 내부 참조 타입]
-     * - HospitalEtaRankDto, HospitalDto
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: rankHospitalsByDrivingTime
-     * - allHospitals (전체 병원 목록), startLat/startLng (출발 위경도), radiusKm (반경 km), limit (최대 건수)
-     * - includeRegional/includeTertiary/includeMedical/includeOther (병원 종별 필터 4종)
-     * - onlyAvailableBeds (가용병상 보유 필터), symptomPreset (증상 프리셋), rankMode, option
-     *
-     * [호출 경로]
-     * - EmergencyApiController.rankDirections() -> GET /api/directions/rank 에서 호출됨.
-     */
         if (allHospitals == null || allHospitals.isEmpty() || GeoUtils.isInvalidWorldCoordinate(startLat, startLng)) {
             return List.of();
         }
@@ -836,6 +592,9 @@ public class NaverDirectionsService {
                 .map(hospital -> CompletableFuture.supplyAsync(() -> runWithPermit(etaConcurrencyLimiter, () -> {
                     double straightKm = Math.round(GeoUtils.haversineKm(startLat, startLng, hospital.lat(), hospital.lng()) * 10.0) / 10.0;
                     EtaSummary eta = getDrivingEtaSummary(startLat, startLng, hospital.lat(), hospital.lng(), normalizedOption);
+                    if (eta != null && eta.ferryBlocked()) {
+                        return null;
+                    }
 
                     String erBeds = hospital.beds() != null ? hospital.beds().getOrDefault("hvec", "") : "";
                     String typeGroup = hospital.regional()
@@ -876,6 +635,7 @@ public class NaverDirectionsService {
 
         List<HospitalEtaRankDto> sorted = futures.stream()
                 .map(CompletableFuture::join)
+                .filter(Objects::nonNull)
                 .sorted(rankComparator)
                 .limit(safeLimit)
                 .toList();
@@ -890,65 +650,15 @@ public class NaverDirectionsService {
                         item.availabilityStatus(), item.hasBlockingNotice(), item.recommendationScore(), item.recommendationReason()
                 ))
                 .toList();
-        /*
-         * [자바 문법]
-         * - Stream 파이프라인, 람다 표현식, 메서드 참조(::), 삼항 연산자(? :), if, 제네릭, new, return
-         *
-         * [지역 변수명]
-         * - safeLimit, safeRadius, normalizedOption, useOptimalScore, matchingPool, beds, candidates
-         * - futures, hospital, straightKm, eta, erBeds, typeGroup, typeLabel, durMin, drvKm, durText, toll, taxi, eval
-         * - rankComparator, sorted, rankCounter, item
-         *
-         * [자바/라이브러리 내장 생성자 및 메서드 (이름 변경 불가)]
-         * - .stream(), .filter(...), .sorted(...), .limit(...), .map(...), .toList() (Stream)
-         * - Comparator.comparingDouble(...), .thenComparingInt(...), .thenComparingDouble(...) : 다중 정렬 조건을 연결함.
-         * - CompletableFuture.supplyAsync(Supplier, Executor), CompletableFuture::join : 병렬 작업 실행 및 결과 수집.
-         * - new AtomicInteger(1), .getAndIncrement() : 스레드 안전하게 1부터 순위를 증가시킴.
-         * - List.of(), Math.max(...), Math.min(...), Math.round(...)
-         * - .equalsIgnoreCase(...), .isBlank(), .isEmpty(), .trim() (String), .get(...), .getOrDefault(...) (Map)
-         *
-         * [동작 흐름]
-         * - 1단계(조건 필터): 종별 4종 + 가용병상(> 0) + 증상 프리셋 통과 병원(matchingPool) 추출
-         * - 2단계(1차 후보): 반경 내 병원을 candidatePreScore 순으로 최대 min(safeLimit+3, 8)곳 선별
-         *   └── 증상 필터 적용 시 반경 내 0건이면 반경 해제 후 전국에서 safeLimit곳 대체 선별
-         * - 3단계(병렬 ETA·점수): etaRankExecutor로 getDrivingEtaSummary 호출(실패 시 직선거리*1.8분 추정)
-         *   └── recommendationScorer.evaluate로 수용 점수 산출
-         * - 4단계(정렬·순위): "optimal"(점수->시간->거리) 또는 "fastest"(시간->점수->거리) 정렬 -> 1~N위 반환
-         */
     }
 
     private double candidatePreScore(HospitalDto h, double startLat, double startLng, boolean useOptimalScore) {
-    /*
-     * [자바 문법]
-     * - private double, 기본형 boolean
-     *
-     * [프로젝트 내부 참조 타입]
-     * - HospitalDto
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: candidatePreScore
-     * - h (후보 병원 DTO), startLat/startLng (출발 위경도), useOptimalScore (수용 최적 모드 여부)
-     */
         double distKm = GeoUtils.haversineKm(startLat, startLng, h.lat(), h.lng());
         if (!useOptimalScore) {
             return distKm;
         }
         int estMinutes = Math.max(1, (int) Math.round(distKm * 1.6));
         return recommendationScorer.evaluate(h, estMinutes, null).recommendationScore();
-        /*
-         * [자바 문법]
-         * - double, int, if, 논리 부정 연산자, (int) 형변환, return
-         *
-         * [지역 변수명]
-         * - distKm (직선거리 km), estMinutes (추정 주행 시간 분)
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - Math.max(int, int), Math.round(double) (Math)
-         *
-         * [동작 흐름]
-         * - useOptimalScore == false (최단시간) -> 직선거리(distKm)만 즉시 반환
-         * - useOptimalScore == true (수용최적) -> distKm * 1.6 추정 분에 병상·공지 가중치 반영 점수 반환
-         */
     }
 
     private static boolean matchesGroupFilter(
@@ -958,38 +668,14 @@ public class NaverDirectionsService {
             boolean includeMedical,
             boolean includeOther
     ) {
-    /*
-     * [자바 문법]
-     * - private static boolean
-     *
-     * [프로젝트 내부 참조 타입]
-     * - HospitalDto
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: matchesGroupFilter
-     * - 매개변수명: h, includeRegional, includeTertiary, includeMedical, includeOther
-     */
         String group = h.type() != null ? h.type().group() : "other";
         boolean groupAllowed = ("tertiary".equals(group) && includeTertiary)
                 || ("medical".equals(group) && includeMedical)
                 || ("other".equals(group) && includeOther);
         return groupAllowed || (h.regional() && includeRegional);
-        /*
-         * [자바 문법]
-         * - 삼항 연산자(? :), 논리곱(&&), 논리합(||), return
-         *
-         * [지역 변수명]
-         * - group, groupAllowed
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .equals(Object) (String)
-         *
-         * [동작 흐름]
-         * - tertiary·medical·other 종별 일치 || (h.regional() && includeRegional) 검사
-         * - └── 둘 중 하나라도 참이면 true 반환(권역센터이면서 상급종합인 병원 누락 방지)
-         */
     }
 
+    /** ETA 순위 계산을 위해 단일 옵션(Directions 5) 요약만 가볍게 조회하며, 페리 항로 감지 시 차단 마커를 캐싱함 */
     private EtaSummary getDrivingEtaSummary(
             double startLat,
             double startLng,
@@ -997,27 +683,18 @@ public class NaverDirectionsService {
             double goalLng,
             String normalizedOption
     ) {
-    /*
-     * [자바 문법]
-     * - private, 기본형 double
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [프로젝트 내부 참조 타입]
-     * - EtaSummary (NaverDirectionsService 내부에 정의된 private 중첩 레코드)
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: getDrivingEtaSummary
-     * - 매개변수명: startLat, startLng, goalLat, goalLng, normalizedOption
-     */
         String fullRouteKey = buildRouteCacheKey("directions5", normalizedOption, startLat, startLng, goalLat, goalLng, "");
         DirectionsResponseDto cachedRoute = routeCache.get(fullRouteKey);
-        if (cachedRoute != null && cachedRoute.code() == 0 && cachedRoute.durationMinutes() > 0) {
-            return new EtaSummary(
-                    cachedRoute.distanceKm(), cachedRoute.durationMinutes(),
-                    cachedRoute.durationText(), cachedRoute.tollFare(), cachedRoute.taxiFare()
-            );
+        if (cachedRoute != null) {
+            if (cachedRoute.code() == FERRY_ROUTE_UNSUPPORTED_CODE) {
+                return FERRY_BLOCKED_ETA;
+            }
+            if (cachedRoute.code() == 0 && cachedRoute.durationMinutes() > 0) {
+                return new EtaSummary(
+                        cachedRoute.distanceKm(), cachedRoute.durationMinutes(),
+                        cachedRoute.durationText(), cachedRoute.tollFare(), cachedRoute.taxiFare(), false
+                );
+            }
         }
 
         String etaKey = buildEtaCacheKey(normalizedOption, startLat, startLng, goalLat, goalLng);
@@ -1048,7 +725,12 @@ public class NaverDirectionsService {
             if (!optionArray.isArray() || optionArray.isEmpty()) {
                 return null;
             }
-            JsonNode summary = optionArray.get(0).path("summary");
+            JsonNode firstRoute = optionArray.get(0);
+            if (containsFerryCrossing(firstRoute.path("guide"))) {
+                etaCache.put(etaKey, FERRY_BLOCKED_ETA);
+                return FERRY_BLOCKED_ETA;
+            }
+            JsonNode summary = firstRoute.path("summary");
             int distanceMeters = summary.path("distance").asInt(0);
             double distanceKm = Math.round(distanceMeters / 100.0) / 10.0;
             long durationMs = summary.path("duration").asLong(0L);
@@ -1058,7 +740,7 @@ public class NaverDirectionsService {
             int durationMinutes = Math.max(1, (int) Math.round(durationMs / 60000.0));
             EtaSummary parsed = new EtaSummary(
                     distanceKm, durationMinutes, formatDurationKorean(durationMs),
-                    summary.path("tollFare").asInt(0), summary.path("taxiFare").asInt(0)
+                    summary.path("tollFare").asInt(0), summary.path("taxiFare").asInt(0), false
             );
             etaCache.put(etaKey, parsed);
             return parsed;
@@ -1066,39 +748,10 @@ public class NaverDirectionsService {
             log.debug("ETA 요약 JSON 파싱 생략: {}", ex.getMessage());
             return null;
         }
-        /*
-         * [자바 문법]
-         * - if, try { ... } catch (Exception ex), (int) 형변환, new, return null
-         *
-         * [지역 변수명]
-         * - fullRouteKey, cachedRoute, etaKey, cachedEta, startParam, goalParam, response
-         * - root, optionArray, summary, distanceMeters, distanceKm, durationMs, durationMinutes, parsed, ex
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - String.format(Locale.US, ...), .statusCode(), .body() (HttpResponse)
-         * - jsonMapper.readTree(String), .path(String), .get(int), .isArray(), .isEmpty() (JsonNode)
-         * - .asInt(int), .asLong(long) (JsonNode)
-         * - Math.round(double), Math.max(int, int) (Math), log.debug(...) (Logger)
-         *
-         * [동작 흐름]
-         * - 1단계: routeCache에 전체 경로 존재 -> 재호출 없이 요약 필드만 추출해 반환
-         * - 2단계: etaCache 적중 -> 즉시 반환 | 미적중 -> Directions 5 단일 옵션 1회 HTTP 호출
-         * - 3단계: path·section·guide 생략 -> summary만 파싱해 etaCache 저장 후 반환
-         */
     }
 
+    /** 밀리초(ms) 주행 시간을 "약 11분 20초" 또는 "약 1시간 15분" 형태의 한국어 문구로 변환함 */
     public static String formatDurationKorean(long durationMs) {
-    /*
-     * [자바 문법]
-     * - public static, 기본형 long
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: formatDurationKorean
-     * - durationMs : 밀리초(ms) 단위 주행 소요 시간임.
-     */
         if (durationMs <= 0) {
             return "약 1분 미만";
         }
@@ -1114,159 +767,44 @@ public class NaverDirectionsService {
             return seconds == 0 ? "약 " + minutes + "분" : String.format("약 %d분 %d초", minutes, seconds);
         }
         return minutes == 0 ? "약 " + hours + "시간" : String.format("약 %d시간 %d분", hours, minutes);
-        /*
-         * [자바 문법]
-         * - int, 나눗셈(/), 나머지(%), 삼항 연산자(? :), if, (int) 형변환, return
-         *
-         * [지역 변수명]
-         * - totalSeconds, totalMinutes, seconds, hours, minutes
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - Math.round(double), Math.max(int, int) (Math), String.format(String, Object...) (String)
-         *
-         * [동작 흐름]
-         * - 0 이하 -> "약 1분 미만" | 60초 미만 -> "약 N초"
-         * - 1시간 미만 -> "약 M분" 또는 "약 M분 S초" | 1시간 이상 -> "약 H시간" 또는 "약 H시간 M분"
-         */
     }
 
     private static String buildRouteCacheKey(
             String apiType, String option, double startLat, double startLng, double goalLat, double goalLng, String waypoints
     ) {
-    /*
-     * [자바 문법]
-     * - private static, 기본형 double
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: buildRouteCacheKey
-     * - 매개변수명: apiType, option, startLat, startLng, goalLat, goalLng, waypoints
-     */
         return String.format(Locale.US, "%s|%s|%.5f,%.5f|%.5f,%.5f|%s",
                 apiType, option, startLat, startLng, goalLat, goalLng, waypoints);
-        /*
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - String.format(Locale.US, ...) : OS 로케일 무관하게 소수점(.)을 고정해 포맷 문자열을 생성함.
-         *
-         * [동작 흐름]
-         * - 위경도를 소수점 5자리(약 1.1m)로 반올림 -> "api|option|출발|도착|경유지" 형식 routeCache 키 생성
-         */
     }
 
     private static String buildEtaCacheKey(
             String option, double startLat, double startLng, double goalLat, double goalLng
     ) {
-    /*
-     * [자바 문법]
-     * - private static, 기본형 double
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: buildEtaCacheKey
-     * - 매개변수명: option, startLat, startLng, goalLat, goalLng
-     */
         return String.format(Locale.US, "eta|%s|%.5f,%.5f|%.5f,%.5f", option, startLat, startLng, goalLat, goalLng);
-        /*
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - String.format(Locale.US, ...) : 미국식 소수점(.) 고정 포맷 문자열을 생성함.
-         *
-         * [동작 흐름]
-         * - 위경도를 소수점 5자리로 고정 -> "eta|option|출발|도착" 형식 etaCache 키 생성
-         */
     }
 
     private static String normalizeApiType(String apiType) {
-    /*
-     * [자바 문법]
-     * - private static
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: normalizeApiType
-     * - apiType : 클라이언트가 전달한 Directions API 버전 문자열임.
-     */
         if (apiType != null && apiType.trim().equalsIgnoreCase("directions15")) {
             return "directions15";
         }
         return "directions5";
-        /*
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .trim(), .equalsIgnoreCase(String) (String) : 공백 제거 및 대소문자 무시 비교를 수행함.
-         *
-         * [동작 흐름]
-         * - null 아님 && trim 후 "directions15" 일치 -> "directions15" 반환
-         * - └── 그 외 모든 입력 -> 안전한 기본값 "directions5" 반환
-         */
     }
 
     private static String normalizeOption(String option) {
-    /*
-     * [자바 문법]
-     * - private static
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: normalizeOption
-     * - option : 클라이언트가 전달한 주행 옵션 코드 문자열임.
-     */
         if (option == null || option.isBlank()) {
             return "trafast";
         }
         String lower = option.trim().toLowerCase(Locale.ROOT);
         return OPTION_LABELS.containsKey(lower) ? lower : "trafast";
-        /*
-         * [자바 문법]
-         * - if, 삼항 연산자(? :), return
-         *
-         * [지역 변수명]
-         * - lower
-         *
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - .isBlank(), .trim(), .toLowerCase(Locale.ROOT) (String), Map.containsKey(Object) (Map)
-         *
-         * [동작 흐름]
-         * - null·공백 -> 기본값 "trafast" 즉시 반환
-         * - 소문자 변환 -> OPTION_LABELS에 있는 5대 공식 키면 일치한 옵션 코드, 없으면 "trafast" 반환
-         */
     }
 
     private static DirectionsResponseDto createErrorResponse(
             String apiType, String apiLabel, String option, String optionLabel, int code, String message
     ) {
-    /*
-     * [자바 문법]
-     * - private static, 기본형 int
-     *
-     * [자바/라이브러리 내장 타입 (이름 변경 불가)]
-     * - String
-     *
-     * [프로젝트 내부 참조 타입]
-     * - DirectionsResponseDto
-     *
-     * [메서드명 및 매개변수명]
-     * - 메서드명: createErrorResponse
-     * - 매개변수명: apiType, apiLabel, option, optionLabel, code, message
-     */
         return new DirectionsResponseDto(
                 apiType, apiLabel, option, optionLabel, code, message,
                 0, 0.0, 0L, 0, "-", "", 0, 0, 0,
                 List.of(), List.of(), List.of(), List.of()
         );
-        /*
-         * [자바/라이브러리 내장 메서드 (이름 변경 불가)]
-         * - List.of() : 요소가 없는 수정 불가 빈 리스트를 생성함.
-         *
-         * [동작 흐름]
-         * - 거리·시간·요금은 0 및 "-"로 채움 -> List.of() 4개로 null 없는 안전 오류 DTO 반환
-         */
     }
 
     private record EtaSummary(
@@ -1274,16 +812,8 @@ public class NaverDirectionsService {
             int durationMinutes,
             String durationText,
             int tollFare,
-            int taxiFare
+            int taxiFare,
+            boolean ferryBlocked
     ) {
-    /*
-     * [자바 문법]
-     * - private record : Java 16+ 불변 데이터 전용 중첩 레코드 선언임(생성자·접근자 자동 생성).
-     *
-     * [중첩 레코드명 및 컴포넌트명]
-     * - 레코드명: EtaSummary
-     * - distanceKm (실도로 거리 km), durationMinutes (소요 분), durationText (한국어 시간)
-     * - tollFare (통행료 원), taxiFare (예상 택시요금 원)
-     */
     }
 }

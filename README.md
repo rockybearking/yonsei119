@@ -47,7 +47,7 @@
 <div align="center">
 
 | 이름 | 학과 | 학번 | 담당 역할 |
-| :---: | :---: | :---: | :---: |
+| :---: | :---: | :---: | :--- |
 | **김관호 (팀장)** | 소프트웨어학과 | 2021245078 | 프론트엔드 & 반응형 인터페이스 구현<br>레이아웃 최적화<br>바텀시트 제스처 UX & 웹 (WCAG 2.1) 설계 |
 | **이재원** | 소프트웨어학과 | 2023245138 | OpenAPI 백엔드 메모리 캐시<br>네이버 지도(v3) 구현<br>내비게이션(네이버/카카오/티맵) 라우터 구현 |
 | **장안나** | 컴퓨터정보통신공학부 | 2020253074 | XML 전수 분석 & 매핑 테이블 수립<br>상급종합병원(47개소) 분류기 및 중증질환-공지 교차 검증<br>데이터 무결성 검증 |
@@ -65,8 +65,8 @@
 | 영역 | 기준 경로 | 기술 구성 | 핵심 책임 |
 | :---: | :--- | :--- | :--- |
 | **클라이언트 웹 · PWA** | `frontend/` | HTML5 · 8 CSS · 11 ES Modules · Service Worker | 네이버 지도 v3 관제 UI, 병상·질환 인스펙션, 대학병원 배경 로고 워터마크, 오프라인 앱 쉘 폴백 |
-| **백엔드 API · 수집 엔진** | `backend/src/main/` | Java 27.0.1.1 · Spring Boot 4.2.0 · Actuator | NEMC 7대 OpenAPI 병렬 수집, 메모리 캐시·사전 직렬화 ETag, Directions/Geocoding 프록시, 보안 헤더·레이트 리미트 |
-| **자동화 검증 스위트** | `backend/src/test/` | JUnit 5 · MockMvc · Playwright Chromium | 백엔드 API·캐시·보안 회귀 테스트 19건 및 실브라우저 E2E 테스트 2건 |
+| **백엔드 API · 수집 엔진** | `backend/src/main/` | Java 27.0.1.1 · Spring Boot 4.2.0 · Actuator | NEMC 7대 OpenAPI 병렬 수집, 60초 실시간 캐시·사전 직렬화 ETag, Directions/Geocoding 프록시, 보안 헤더·레이트 리미트 |
+| **자동화 검증 스위트** | `backend/src/test/` | JUnit 5 · MockMvc · Playwright Chromium | 백엔드 API·캐시·보안 회귀 테스트 및 실브라우저 E2E 테스트 |
 | **빌드 · 컨테이너 · 배포** | 루트 설정 파일 | Gradle 9.9.2 · Foojay JDK 27 · Docker | 단일 JAR(`yonsei119.jar`) 패키징, 경량 멀티스테이지 JRE 이미지 빌드, Render 자동 배포 |
 
 </div>
@@ -76,13 +76,13 @@
 
 | 구분 | 파일명 | 주요 역할 |
 | :---: | :--- | :--- |
-| **문서 / PWA** | `index.html`, `manifest.webmanifest`, `sw.js` | 지도·필터·검색 패널·상세 시트 HTML 구조, PWA 매니페스트, 오프라인 스냅샷 서비스 워커 |
+| **문서 / PWA** | `index.html`, `manifest.webmanifest`, `sw.js` | 지도·필터·검색 패널(기본 반경 50km)·상세 시트 HTML 구조, PWA 매니페스트, Render 콜드스타트 보존 및 오프라인 서비스 워커 |
 | **시각 자산** | `Assets/` · `Assets/badges/` | 앱 아이콘·다이어그램·발표 화면 15종 및 GitHub README 로컬 SVG 배지 8종 |
 | **스타일시트 (`css/`)** | `style.css`, `panels-toolbar.css`, `map-overlays.css`, `sheet-egen.css` | 디자인 토큰, 필터 바·48×48 툴바, 반경 원·클러스터 배지, E-Gen 바텀시트 스타일 |
-| **스타일시트 (`css/`)** | `directions-eta.css`, `dialogs-toast.css`, `dark-theme.css`, `responsive.css` | 주행 경로 배너·ETA 카드, 모달·토스트, 다크 관제 테마, 모바일 반응형 뷰포트 분기 |
-| **초기화 · 상태 (`js/`)** | `theme-init.js`, `constants.js`, `state.js`, `utils.js`, `app.js` | 페인트 전 다크모드 초기화, NEMC 필드 사전, 전역 상태 store, 결측/초과수용 판별, 앱 부트스트랩 |
-| **지도 · 탐색 (`js/`)** | `map-engine.js`, `markers-cluster.js`, `search-controls.js` | 네이버 지도 v3 엔진·현위치 탐색, 종별 클러스터 마커·반경 원, 키워드·주소 검색 제어 |
-| **상세 · 경로 (`js/`)** | `hospital-sheet.js`, `directions-eta.js`, `user-features.js` | 병원 상세 시트·대학병원 정적 배경 로고·개발자 모드 원시 인스펙터, Directions 5/15 경로선·ETA 순위 |
+| **스타일시트 (`css/`)** | `directions-eta.css`, `dialogs-toast.css`, `dark-theme.css`, `responsive.css` | 주행 경로 배너·ETA 카드·소통 범례, 모달·토스트, 다크 관제 테마, 모바일 반응형 뷰포트 분기 |
+| **초기화 · 상태 (`js/`)** | `theme-init.js`, `constants.js`, `state.js`, `utils.js`, `app.js` | 페인트 전 다크모드 초기화, NEMC 필드 사전, 전역 상태 store, 결측/초과수용/공지 판별, 앱 부트스트랩 |
+| **지도 · 탐색 (`js/`)** | `map-engine.js`, `markers-cluster.js`, `search-controls.js` | 네이버 지도 v3 엔진·현위치 탐색, 종별 클러스터 마커·반경 원, 키워드·주소 검색 및 60초 자동 동기화 제어 |
+| **상세 · 경로 (`js/`)** | `hospital-sheet.js`, `directions-eta.js`, `user-features.js` | 병원 상세 시트·대학병원 정적 배경 로고·개발자 모드 원시 인스펙터, Directions 5/15 경로선(교통 색상 1:1 일치·도서 페리 차단)·ETA 순위 |
 
 </details>
 
@@ -93,9 +93,9 @@
 | :---: | :--- | :--- |
 | **`com.yonsei119`** | `Yonsei119Application` | `.env` 환경변수 자동 로드, 스케줄링 활성화 및 애플리케이션 부트스트랩 |
 | **`...config`** | `Yonsei119Properties`, `WebConfig`, `SecurityHeadersFilter`, `ApiRateLimitFilter` | API 키·CORS·레이트 리미트 바인딩, 정적 리소스(Weak ETag), CSP 보안 헤더, IP 토큰 버킷 제한(429) |
-| **`...controller`** | `EmergencyApiController` | `/api/config`, `/api/hospitals` (`ETag`/`304`), `/api/directions*`, `/api/geocode*`, `/api/health` 공개 REST API |
-| **`...service`** | `NmcOpenApiClient`, `EmergencyDataService`, `HospitalClassifier`, `HospitalRecommendationScorer` | 7대 NEMC OpenAPI 병렬 XML 파싱, 45초 스냅샷 갱신·사전 직렬화·Micrometer 지표, 47개 상급종합 분류 및 추천 점수 |
-| **`...service`** | `NaverDirectionsService`, `NaverGeocodingService`, `RouteCongestionAnalyzer` | 네이버 Directions 5/15 길찾기·ETA 순위, 3단계 하이브리드 지오코딩·역지오코딩, 구간 혼잡도 분석 |
+| **`...controller`** | `EmergencyApiController` | `/api/config`, `/api/hospitals` (`ETag`/`304`), `/api/directions*`, `/api/geocode*`, `/api/health`(콜드스타트 워밍업 연동) 공개 REST API |
+| **`...service`** | `NmcOpenApiClient`, `EmergencyDataService`, `HospitalClassifier`, `HospitalRecommendationScorer` | 7대 NEMC OpenAPI 병렬 XML 파싱, 60초 실시간 스냅샷 갱신·사전 직렬화·Micrometer 지표, 47개 상급종합 분류 및 추천 점수 |
+| **`...service`** | `NaverDirectionsService`, `NaverGeocodingService`, `RouteCongestionAnalyzer` | 네이버 Directions 5/15 길찾기(해상 페리 감지 차단)·ETA 순위, 3단계 하이브리드 지오코딩·역지오코딩, 공식 구간 혼잡도 매핑 |
 | **`...dto` / `util`** | DTO 레코드 8종 · `BoundedTtlCache`, `GeoUtils` | API 응답 불변 레코드 스키마, 용량 상한 TTL 인메모리 캐시, Haversine 구면 거리 연산 |
 | **`resources/`** | `application.yml` | 가상 스레드(Virtual Threads), HTTP/2, Actuator 지표, 캐시·레이트 리미트 기본 구성 |
 
@@ -106,7 +106,7 @@
 
 | 영역 | 경로 / 파일 | 주요 역할 |
 | :---: | :--- | :--- |
-| **자동화 테스트** | `Yonsei119BackendTests`, `Yonsei119PlaywrightE2ETests` | JUnit 5 기반 백엔드 통합 검증 19건 + Chromium 실브라우저 E2E 2건 |
+| **자동화 테스트** | `Yonsei119BackendTests`, `Yonsei119PlaywrightE2ETests` | JUnit 5 기반 백엔드 통합 검증 + Chromium 실브라우저 E2E 테스트 |
 | **Gradle 멀티프로젝트** | `build.gradle`, `settings.gradle`, `backend/build.gradle` | Gradle 9.9.2 + Foojay JDK 27 툴체인, 프론트 정적 복사(`copyFrontendToStatic`), `checkAll`·`bootJar` 태스크 |
 | **배포 · 환경 설정** | `Dockerfile`, `render.yaml`, `.env.example` | Java 27 경량 멀티스테이지 JRE 도커 빌드, Render 배포 정의, API 키 템플릿 |
 
@@ -150,12 +150,12 @@
 
 | 비교 항목 | 기존 공식 대시보드 (E-Gen) | 본 프로젝트 (`yonsei119`) |
 | :---: | :---: | :--- |
-| **데이터 응답 속도** | 페이지 전환 시마다 개별 조회로 로딩 지연 | **Spring Boot 사전 로딩 및 메모리 캐싱으로 즉시(0.05초 내) 응답** |
+| **데이터 응답 속도** | 페이지 전환 시마다 개별 조회로 로딩 지연 | **Spring Boot 사전 로딩 및 60초 자동 캐싱으로 즉시(0.05초 내) 응답** |
 | **지도 시각화** | 단순 리스트 및 텍스트 위주, 위치 파악 지연 | **네이버 지도(v3) 다크/일반 관제 뷰, 클러스터링 및 반경 원 표출** |
-| **경로 및 소요시간** | 단순 직선거리 표기 또는 길찾기 연계 미흡 | **네이버 Directions 5/15 주행 경로선, 예상 소요시간(분) 및 3사 내비 연동** |
-| **검색 반경** | 행정구역(시·도/구·군) 단위 정적 조회 | **내 위치 기준 5km / 10km / 20km / 50km / 100km / 전국 동적 탐색** |
+| **경로 및 소요시간** | 단순 직선거리 표기 또는 길찾기 연계 미흡 | **네이버 Directions 5/15 주행 경로선(교통 레이어 색상 일치), 예상 소요시간(분) 및 3사 내비 연동** |
+| **검색 반경** | 행정구역(시·도/구·군) 단위 정적 조회 | **내 위치 기준 기본 50km (5km / 10km / 20km / 50km / 100km / 전국) 동적 탐색** |
 | **데이터 무결성** | 결측치 및 기준 차이에 대한 설명 부재 | **결측치(`-`) vs `0`석(만실) vs 음수(`초과수용`) 분리, '개발자 모드' 공개** |
-| **교차 검증** | 공지사항과 질환 수용 여부가 분리 표기됨 | **실시간 긴급 공지를 파싱하여 차단된 질환을 `[불가능]`으로 자동 전환** |
+| **교차 검증** | 공지사항과 질환 수용 여부가 분리 표기됨 | **실시간 긴급 공지 본문을 정밀 파싱하여 실제 차단된 질환을 `[불가능]`으로 자동 전환** |
 
 </div>
 
@@ -180,10 +180,10 @@
 | `GET /api/config` | `EmergencyApiController` | 네이버 지도 클라이언트 ID, 다크모드 스타일 ID 및 기본 출발 좌표 반환 |
 | `GET /api/hospitals` | `EmergencyDataService` | 전국 530여 개 기관 통합 데이터 반환 (`?compact=true`, `?refresh=true`, 사전 직렬화 + Weak `ETag` / `304 Not Modified`) |
 | `GET /api/hospitals/{hpid}` | `EmergencyApiController` | 단건 병원 전체 원본 필드(개발자 모드 온디맨드 보강) 반환 |
-| `GET /api/directions` | `NaverDirectionsService` | 출발지~병원 간 네이버 Directions 5/15 주행 경로선, 예상 소요시간, 요금 반환 *(IP Rate Limit 적용)* |
-| `GET /api/directions/rank` | `NaverDirectionsService` | 주변 응급실 수용최적/최단시간 ETA 순위 산정 *(IP Rate Limit 적용)* |
+| `GET /api/directions` | `NaverDirectionsService` | 출발지~병원 간 네이버 Directions 5/15 주행 경로선, 예상 소요시간, 요금 반환 *(해상 여객선 구간 감지 차단 및 IP Rate Limit 적용)* |
+| `GET /api/directions/rank` | `NaverDirectionsService` | 주변 응급실 수용최적/최단시간 ETA 순위 산정 (기본 반경 50km) *(IP Rate Limit 적용)* |
 | `GET /api/geocode` · `/reverse-geocode` | `NaverGeocodingService` | 3단계 하이브리드 주소 검색 및 출발 좌표 역지오코딩 *(IP Rate Limit 적용)* |
-| `GET /api/health` · `/actuator/*` | `EmergencyApiController` · Actuator | 서버 가동 상태(`UP`) 및 `/actuator/metrics` 커스텀 지표(`yonsei119.hospitals.cached.count` 등) 노출 |
+| `GET /api/health` · `/actuator/*` | `EmergencyApiController` · Actuator | 초기 캐시 워밍업(`503 WARMING_UP` → `200 UP`) 및 `/actuator/metrics` 커스텀 지표 노출 |
 
 </div>
 
@@ -250,7 +250,7 @@ gantt
 * 병원 종별(상급종합/권역응급/의료원/일반) 필터링 체계 및 사용자 중심 동적 탐색 반경(Circle Overlay) 도출
 
 ### 4. 2026.09.18 — 탐색 반경과 모바일 반응형 웹 설계
-* 반경 설정 필터(5km, 10km, 20km, 50km, 100km, 전국) 및 Haversine 거리 연산 구현
+* 반경 설정 필터(5km, 10km, 20km, 50km, 100km, 전국 · 기본 50km) 및 Haversine 거리 연산 구현
 * PC 데스크톱 및 모바일 스마트폰 뷰포트 분기 처리
 
 ### 5. 2026.09.21 — 1차 중간 발표
@@ -276,7 +276,7 @@ gantt
 ### 10. 2026.10.14 — 3대 기술적 문제점 인식 -> 대응
 * 결측치(`null`, 빈 태그)와 `0`석(만실)을 엄격히 분리하여 결측치는 `-` 대시로 표기로 변경합니다.
 * 음수 병상 값(`-2` 등)이 '**초과수용(Overcapacity)**'을 의미함을 규명합니다.
-* 활성 공지에서 '차단/불가' 키워드 감지 시 해당 질환을 `[불가능]`으로 자동 전환도록 교차 검증하게 끔 구현.
+* 활성 공지 본문에서 실제 '차단/불가/제한' 키워드 감지 시 해당 질환을 `[불가능]`으로 자동 전환하도록 교차 검증을 구현했습니다.
 
 ### 11. 2026.10.21 — 개발자 모드 추가
 * API 수신 원본을 무가공 상태로 대조할 수 있도록 따로이 안전장치 마련 덕분에 실제 응답을 1:1로 직접 검증할 수 있음.
@@ -321,15 +321,15 @@ gantt
 | :---: | :---: | :---: | :---: |
 | **핵심 이슈** | 브라우저 직접 호출 시 로딩 지연<br>E-Gen 중앙망 vs 공공 API 시차 | 인증키 이중 인코딩 오류<br>불명확한 필드명(`hvs` 등) 오해석 가능성 | 결측치(`null`)를 `0`석(만실)으로 오인<br>음수 병상값 및 공지 불일치 |
 | **원인 분석** | 개별 요청의 병목 현상으로 의심됨 | 실제 생성 코드와<br>기준 병상수를 질환 번호로 오분류하는 환각 발견 | XML 태그 누락 빈번<br>현장 공지와 질환 API 간 갱신 시차 |
-| **자체 해결** | **Spring Boot 사전 로딩 & 자동 캐싱 구현** | **개발자 모드**를 구현하여 원본값과 수신값이 서로 일치하는지 무결성 추가 | **결측치 `-` vs `0`석 엄격 분리 표기**<br>**음수 `'초과수용'` 파싱 및 교차검증** |
+| **자체 해결** | **Spring Boot 사전 로딩 & 60초 자동 캐싱 구현** | **개발자 모드**를 구현하여 원본값과 수신값이 서로 일치하는지 무결성 추가 | **결측치 `-` vs `0`석 엄격 분리 표기**<br>**음수 `'초과수용'` 파싱 및 교차검증** |
 
 </div>
 
 ### 클라이언트 다중 API 호출 병목 및 공공데이터 동기화 시차
 * **현상**: 기존 브라우저 직접 호출 구조에서는 접속 시마다 7개의 대용량 XML을 내려받아야 했고, 병원 현장 상황이 공공데이터포털로 미러링되기까지 구조적인 시차가 존재했습니다.
 * **해결책**:
-  1. **Spring Boot 백엔드 캐시 엔진(`EmergencyDataService`) 구축**: 서버 기동 즉시 백그라운드에서 530여 개 병원 데이터를 미리 수집(`warmUpCacheOnStartup`)하고 45초마다 자동 갱신(`@Scheduled`)하여 **0.05초 이내 즉시 응답**을 달성했습니다.
-  2. **수신 시각 표출 및 직통 전화 연결**: 새로고침 버튼 우측에 수신 타임스탬프(`hh:mm:ss`)를 명시하고, 원클릭 응급실 직통전화(`tel:`) 버튼과 면책 조항 팝업을 배치했습니다.
+  1. **Spring Boot 백엔드 캐시 엔진(`EmergencyDataService`) 구축**: 서버 기동 즉시 백그라운드에서 530여 개 병원 데이터를 미리 수집(`warmUpCacheOnStartup`)하고 60초마다 자동 갱신(`@Scheduled`)하며, 프론트엔드도 열린 탭에서 60초 주기로 무음 동기화(`If-None-Match` ETag)하여 **0.05초 이내 즉시 응답**을 달성했습니다.
+  2. **수신 시각 표출 및 직통 전화 연결**: 새로고침 버튼 우측에 수신 타임스탬프(`HH:MM`)를 명시하고, 원클릭 응급실 직통전화(`tel:`) 버튼과 면책 조항 팝업을 배치했습니다.
 
 ### AI 코드 생성 도구의 맹점과 명세서(V13) 전수 수동 검증
 * **현상**: 공공데이터 인증키(`serviceKey`) 이중 인코딩 에러가 발생하거나, 직관성이 떨어지는 필드명(`hvec`, `hvs01`, `mkioskty1` 등)을 잘못 매핑하는 환각 코드가 발생했습니다.
@@ -342,16 +342,16 @@ gantt
 * **해결책**:
   1. **백엔드 원본 문자열 보존**: `NmcOpenApiClient`에서 XML 텍스트를 숫자로 강제 형변환하지 않고 빈 문자열(`""`)과 음수(`"-3"`)를 그대로 보존합니다.
   2. **결측치와 초과수용 분리**: 결측값은 `-` 대시로, 음수 값은 **'기준 정원 초과 수용'**으로 판독하여 `초과수용 N/기준` 빨간색 배지로 표출합니다.
-  3. **긴급 공지 교차 검증**: 질환 API가 `'가능(Y)'`이어도 활성 공지에 `'불가/차단/부재'` 키워드가 있으면 `[불가능]`으로 자동 오버라이드합니다.
+  3. **긴급 공지 교차 검증**: 질환 API가 `'가능(Y)'`이어도 활성 공지 본문에 실제 `'불가/차단/부재/제한'` 키워드가 있으면 `[불가능]`으로 자동 오버라이드합니다.
 
 ```javascript
-// 결측치(공란)와 음수 초과수용을 엄격히 구분하는 핵심 로직 (frontend/js/utils.js)
+// 결측치(공란)와 음수 초과수용을 엄격히 구분하는 핵심 로직 (frontend/js/hospital-sheet.js)
 if (isBlankOrNull(rawVal)) {
     return { className: 'egen-badge-dash', text: '-' }; // 미정보(결측치)
 }
 if (current < 0) {
     const overflow = Math.abs(current);
-    return { className: 'egen-badge-pill-red', text: `초과수용 ${overflow}` }; // 정원 초과 수용 중
+    return { className: 'egen-badge-pill-red egen-badge-overflow', text: `초과수용 ${overflow}` }; // 정원 초과 수용 중
 }
 ```
 
@@ -361,10 +361,10 @@ if (current < 0) {
 
 ### 1. 네이버 Directions 5 / Directions 15 기반 실시간 자동차 경로 및 소요시간(ETA)
 * 병원 상세 시트에서 **Directions 5 (일반 빠른탐색)**와 **Directions 15 (다중경유·광역)** 엔진 및 주행 옵션(`실시간 빠른길`, `실시간 최적`, `실시간 편한길`, `무료 우선`)을 선택할 수 있습니다.
-* 출발지부터 응급실까지의 **예상 소요 시간(분), 실도로 주행 거리(km), 통행료·택시비·유류비**를 산출하고 지도 위에 **주행 경로선(Polyline)**을 즉시 렌더링합니다.
+* 네이버 실시간 교통정보 레이어와 1:1로 통일된 소통 색상(원활 `#27c441`, 서행 `#ff8d00`, 정체 `#ff3b30`, 미계측 기본선 `#3b82f6`)으로 경로선을 렌더링하며, 울릉도 등 해상 여객선(페리) 구간이 포함된 목적지는 실제 네이버 지도 서비스와 동일하게 자동차 경로 안내를 차단합니다.
 
-### 2. 백엔드 사전 로딩(Pre-warming) 캐싱 및 초기 렌더링 최적화
-* 백엔드 서버가 메모리에 최신 병원 스냅샷을 상시 유지하므로 사용자는 대기 시간 없이 전국 병원 데이터를 조회할 수 있습니다.
+### 2. 백엔드 사전 로딩(Pre-warming) 캐싱 및 Render 무료 플랜 콜드스타트 최적화
+* 초기 7종 공공데이터 적재 완료 전까지 `/api/health`가 `503(WARMING_UP)`을 반환하고 서비스 워커(`sw.js`)가 문서 진입 요청을 타임아웃 없이 통과시켜, Render Free 플랜 휴면 복귀 시 기본 로딩 화면이 끝난 직후 모든 병원 카드가 즉시 표시됩니다.
 * 초기 지도 렌더링 성능을 위해 최초 접속 시 `'일반·기타'` 필터는 기본 체크 해제 상태로 시작하며, 권역응급의료센터·상급종합병원·의료원을 우선 표출합니다.
 
 ### 3. 전광판 텍스트 애니메이션 및 레이아웃 스래싱 방지
@@ -382,7 +382,7 @@ if (current < 0) {
 ### 6. 엄격한 CSP 보안 헤더 · IP 레이트 리미터 · Playwright 실브라우저 E2E
 * **Content Security Policy (`SecurityHeadersFilter`)**: 네이버 지도 SDK·WebGL 스타일·한글 웹폰트·워커(`blob:`) 출처만 명시적으로 허용하고 HTML 인라인 이벤트 핸들러를 제거해 XSS 방어를 강화했습니다.
 * **IP 토큰 버킷 레이트 리미터 (`ApiRateLimitFilter`)**: 네이버 유료 API를 대리 호출하는 `/api/directions*`, `/api/geocode*` 엔드포인트에 기본 분당 60회 제한(`X-RateLimit-*`, `429 Too Many Requests` + `Retry-After`)을 적용합니다.
-* **Playwright 실브라우저 E2E (`Yonsei119PlaywrightE2ETests`)**: 실제 Chromium에서 Render `503` 지연 복구, 초기 다크모드, CSP 무위반, 툴바 버튼 규격, 대학병원 배경 로고·ETA 순위 흐름을 자동 검증합니다.
+* **Playwright 실브라우저 E2E (`Yonsei119PlaywrightE2ETests`)**: 실제 Chromium에서 Render `503` 지연 복구, 초기 다크모드, CSP 무위반, 기본 탐색 반경 `50 km`, 대학병원 배경 로고·ETA 순위 흐름을 자동 검증합니다.
 
 ### 7. 전국 대학교병원 정적 배경 로고 워터마크
 * **소속 대학교 엠블럼 배경 (`#sheet-univ-watermark`)**: 전국 대학교병원 및 상급종합병원(의료원 제외) 상세 시트를 열면 소속 대학교 로고가 가장 뒤 배경에 다크·라이트 테마 맞춤 투명도로 정적 배치되어 스크롤 시에도 흔들림 없이 유지됩니다.
