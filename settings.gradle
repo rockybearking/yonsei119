@@ -1,22 +1,35 @@
 /*
  * [1. 역할 및 실행 시점]
- * - 역할 : 루트 프로젝트 이름(`yonsei119`), 하위 모듈(`backend`), JDK 27 자동 탐색을 선언함
+ * - 역할 : 루트 프로젝트 이름(`yonsei119`), 하위 모듈(`backend`), 플러그인 미러 저장소 및 JDK 27 자동 탐색을 선언함
  * - 실행 시점 : `gradlew` 실행 시 초기화(Initialization) 단계에서 가장 먼저 읽힘
  *
  * [2. 전체 초기화 흐름 (시퀀스 다이어그램)]
  *
- *    [gradlew]              [settings.gradle]            [Foojay Plugin]      [:backend]
- *        |                          |                           |                  |
- *        |-- 1. initialize build -->|                           |                  |  최상위 설정 스크립트 로드
- *        |                          |-- 2. resolve JDK 27 ----->|                  |  OpenJDK 27 툴체인 자동 연결
- *        |                          |-- 3. include 'backend' ---|----------------->|  하위 백엔드 모듈 등록
- *        v                          v                           v                  v
+ *    [gradlew]         [settings.gradle]         [Google Mirror / Portal]   [Foojay Plugin]   [:backend]
+ *        |                     |                            |                      |               |
+ *        |-- 1. initialize --->|                            |                      |               |  최상위 설정 스크립트 로드
+ *        |                     |-- 2. pluginManagement ---->|                      |               |  Maven Central 429 우회 미러 우선 연결
+ *        |                     |-- 3. resolve JDK 27 -------|--------------------->|               |  OpenJDK 27 툴체인 자동 연결
+ *        |                     |-- 4. include 'backend' ----|----------------------|-------------->|  하위 백엔드 모듈 등록
+ *        v                     v                            v                      v               v
  *
  * [3. 사용된 Gradle 표준 내장 요소]
+ *   ㄴ pluginManagement : 플러그인 해석 저장소 우선순위(Google Maven Central 미러 1순위)를 지정하는 표준 블록
  *   ㄴ plugins          : 설정 플러그인을 선언하는 Gradle 표준 블록
  *   ㄴ rootProject.name : 최상위 프로젝트 고유 이름을 고정하는 표준 속성
  *   ㄴ include          : 하위 서브프로젝트 폴더(`backend/`)를 연결하는 표준 함수
  */
+pluginManagement {
+    repositories {
+        maven {
+            name = 'GoogleMavenCentral'
+            url = uri('https://maven-central.storage-download.googleapis.com/maven2/')
+        }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }

@@ -15,7 +15,8 @@
  *
  * [3. 사용된 Gradle 표준 내장 요소]
  *   ㄴ allprojects      : 루트와 하위 모듈 공통 그룹·버전·저장소를 지정하는 표준 블록
- *   ㄴ mavenCentral()   : Maven Central 공식 원격 저장소를 등록하는 표준 함수
+ *   ㄴ maven { url }    : Render 공유 IP의 Maven Central 429 우회를 위해 Google 미러를 1순위 등록
+ *   ㄴ mavenCentral()   : Google 미러에서 찾지 못한 경우에만 사용하는 Maven Central 폴백 저장소
  *   ㄴ tasks.register() : 필요할 때만 태스크를 생성하는 지연 등록 표준 메서드
  *   ㄴ dependsOn()      : 선행 실행할 하위 모듈 태스크를 연결하는 표준 메서드
  */
@@ -24,6 +25,10 @@ allprojects {
     version = '3.0.0'
 
     repositories {
+        maven {
+            name = 'GoogleMavenCentral'
+            url = uri('https://maven-central.storage-download.googleapis.com/maven2/')
+        }
         mavenCentral()
     }
 }
